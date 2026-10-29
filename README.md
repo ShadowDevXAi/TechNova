@@ -8,7 +8,8 @@ React + FastAPI + MongoDB implementation with real persistence, JWT login, role-
 
 ## Quick start with Docker
 1. Copy `.env.example` to `.env`.
-2. Set strong unique values for `MONGO_ROOT_PASSWORD`, `JWT_SECRET`, `BOOTSTRAP_FOUNDER_EMAIL`, and `BOOTSTRAP_FOUNDER_PASSWORD`. Do not use the example values.
+2. Set unique values for `MONGO_ROOT_PASSWORD`, `JWT_SECRET`, `BOOTSTRAP_FOUNDER_NAME`, `BOOTSTRAP_FOUNDER_EMAIL`, and `BOOTSTRAP_FOUNDER_PASSWORD`. Do not use example values.
+3. For Render, set `MONGODB_URI`, `JWT_SECRET`, `BOOTSTRAP_FOUNDER_NAME`, `BOOTSTRAP_FOUNDER_EMAIL`, `BOOTSTRAP_FOUNDER_PASSWORD`, `FRONTEND_ORIGINS`, and `PUBLIC_APP_URL` in the backend environment. Use `RESET_DELIVERY_MODE=email` only after SMTP is configured.
 3. From this folder run:
    ```bash
    docker compose up --build
@@ -39,9 +40,9 @@ MongoDB is published only to localhost by default. The frontend container's ngin
    Vite proxies `/api` to `http://localhost:8000`.
 
 ## Roles
-- `Founder`: all permissions; only one founder account is bootstrapped. The API prevents changing/deleting the founder through ordinary member endpoints.
-- `Core Management`: can review/approve members, manage tasks and teams, issue/revoke cards, and view members.
-- `Member`: can view own profile, view tasks assigned to them, and update their own task status/submission notes.
+- `Founder` (club Owner): full administrative control, including assigning teams to any non-Founder member, changing roles, issuing/revoking cards, assigning tasks to Core Management and Members, and viewing the audit log.
+- `Core Management`: can approve registrations, manage teams, assign tasks to Members only, and scan/verify Member IDs only.
+- `Member`: can view their own profile and digital ID with a secure QR in its top-left corner, see only their assigned tasks, and update their own task status/submission notes.
 
 Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat this as a practical starter, not a completed security audit.
 
@@ -52,7 +53,8 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 - `GET /api/members`, `POST /api/members`, `PATCH /api/members/{id}`, `POST /api/members/{id}/approve`
 - `GET /api/tasks`, `POST /api/tasks`, `PATCH /api/tasks/{id}`
 - `POST /api/cards/{member_id}/issue`, `POST /api/cards/{member_id}/revoke`
-- `GET /api/verify/{token}` (public, minimal response)
+- `POST /api/cards/me/issue` (authenticated users get their own stable QR)
+- `GET /api/verify/{token}` (authenticated Founder/Core Management; Core Management can verify Member IDs only)
 - `GET /api/teams`, `POST /api/teams`
 - `GET /api/dashboard`
 
@@ -70,7 +72,8 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 - Decide whether college approval is required before claiming affiliation. Use only authorized club/college branding.
 - Review privacy notice and consent, data retention/deletion, and access policies.
 - Rotate bootstrap credentials immediately after first login; this project requires the bootstrap password to be configured before startup.
-- QR tokens are random and only their SHA-256 hashes are stored. Public verification intentionally returns limited details.
+- QR tokens are signed with the server secret and token hashes are stored; raw tokens are not stored. QR verification requires an authenticated Founder/Core Management account and writes audit events.
+- The MongoDB URI and founder credentials must be environment variables, never committed to source. Rotate any credential that was ever committed.
 - Do not store sensitive government identifiers, passwords in plain text, or unnecessary student information.
 
 ## Current scope and honest limitations

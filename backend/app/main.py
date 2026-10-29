@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
 import os
+import hmac
+import hashlib
 from datetime import datetime, timezone
 from bson import ObjectId
 from fastapi import FastAPI, Depends, HTTPException, status, Header, Request, UploadFile, File
@@ -95,10 +97,11 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
+    allow_origins=list(dict.fromkeys([
         "http://localhost:5173",
-        "https://technova-1-qx44.onrender.com",
-    ],
+        "http://localhost:8080",
+        *settings.origins(),
+    ])),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -143,7 +146,9 @@ async def me(user: dict = Depends(get_current_user)):
 
 @app.patch("/api/auth/profile")
 async def update_profile(body: dict, request: Request, user: dict = Depends(get_current_user)):
-    allowed = {"name", "team"}
+    if "team" in body and body.get("team") not in (None, "", user.get("team")):
+        raise HTTPException(403, "Only the Founder can assign teams")
+    allowed = {"name"}
     changes = {k: body[k].strip() for k in allowed if isinstance(body.get(k), str) and body[k].strip()}
     if "name" in changes and len(changes["name"]) > 100:
         raise HTTPException(422, "Name must be at most 100 characters")
@@ -170,9 +175,11 @@ async def change_password(body: dict, user: dict = Depends(get_current_user)):
 @limiter.limit("5/hour")
 async def password_reset_request(body: dict, request: Request):
     email = str(body.get("email", "")).strip().lower()
-    # This starter returns a development-only reset token. Production must deliver it via email
-    # and must never expose it in the API response.
+    # Development reset tokens are opt-in only; fail closed on public deployments.
     response = {"message": "If the account exists, reset instructions will be sent."}
+    delivery_mode = os.getenv("RESET_DELIVERY_MODE", "disabled").lower()
+    if delivery_mode not in {"development", "email"}:
+        return response
     if not email or len(email) > 320:
         return response
     user = await db.users.find_one({"email": email, "status": {"$ne": "Suspended"}})
@@ -184,7 +191,6 @@ async def password_reset_request(body: dict, request: Request):
         from datetime import timedelta
         await db.password_resets.update_one({"token_hash": token_hash(raw)}, {"$set": {"expires_at": utcnow() + timedelta(minutes=20)}})
         await audit(None, "password_reset_requested", str(user["_id"]), {}, request)
-        delivery_mode = os.getenv("RESET_DELIVERY_MODE", "development").lower()
         if delivery_mode == "development":
             # Local-development convenience only; disable this outside local development.
             response["development_reset_token"] = raw
@@ -273,6 +279,15 @@ async def update_member(member_id: str, data: MemberPatch, request: Request, act
     changes=data.model_dump(exclude_unset=True,exclude_none=True)
     if "role" in changes and changes["role"]=="Founder": raise HTTPException(403,"Founder role cannot be assigned")
     if actor["role"]!="Founder" and "role" in changes: raise HTTPException(403,"Only Founder can change roles")
+    if "team" in changes:
+        if actor["role"] != "Founder":
+            raise HTTPException(403, "Only the Founder can assign teams")
+        team_name = changes["team"].strip()
+        if not team_name:
+            raise HTTPException(422, "Team name cannot be empty")
+        if team_name != "Unassigned" and not await db.teams.find_one({"name": team_name}):
+            raise HTTPException(400, "Choose an existing team")
+        changes["team"] = team_name
     if actor["role"]!="Founder" and changes.get("status")=="Suspended": raise HTTPException(403,"Only Founder can suspend members")
     if changes.get("status")=="Active": changes["approved_at"]=utcnow()
     if changes: await db.users.update_one({"_id":target["_id"]},{"$set":changes})
@@ -435,18 +450,82 @@ async def create_team(data: TeamCreate, request: Request, actor: dict = Depends(
     await audit(actor,"team_created",str(res.inserted_id),{"name":data.name},request)
     return {"id":str(res.inserted_id),"name":data.name,"description":data.description}
 
+def signed_card_token(member_key: str, card_id: ObjectId) -> str:
+    """Create a reproducible signed QR token without storing the raw token."""
+    card_key = str(card_id)
+    payload = f"technova-card-v2:{member_key}:{card_key}".encode("utf-8")
+    signature = hmac.new(settings.jwt_secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    return f"{card_key}.{signature}"
+
+
+async def active_card_from_token(raw: str) -> dict | None:
+    """Validate persistent signed QR tokens and continue to accept legacy random tokens."""
+    card_key, separator, signature = raw.partition(".")
+    if separator and ObjectId.is_valid(card_key) and len(signature) == 64:
+        card = await db.cards.find_one({
+            "_id": ObjectId(card_key), "status": "Active", "token_version": 2,
+        })
+        if not card:
+            return None
+        expected = signed_card_token(card["member_id"], card["_id"]).partition(".")[2]
+        if not hmac.compare_digest(signature, expected):
+            return None
+        if not hmac.compare_digest(str(card.get("token_hash", "")), token_hash(raw)):
+            return None
+        return card
+    return await db.cards.find_one({"token_hash": token_hash(raw), "status": "Active"})
+
+
+async def mint_card(target: dict, actor: dict, request: Request, *, reuse_active: bool, action: str) -> dict:
+    if target.get("status") != "Active":
+        raise HTTPException(400, "Only active members can receive cards")
+    member_key = str(target["_id"])
+    if reuse_active:
+        current = await db.cards.find_one({
+            "member_id": member_key, "status": "Active", "token_version": 2,
+        })
+        if current:
+            raw = signed_card_token(member_key, current["_id"])
+            return {
+                "member_id": target["member_id"],
+                "verification_url": f"{settings.public_app_url.rstrip('/')}/verify/{raw}",
+                "status": "Active", "issued_at": current["issued_at"],
+            }
+    await db.cards.update_many(
+        {"member_id": member_key, "status": "Active"},
+        {"$set": {"status": "Revoked", "revoked_at": utcnow()}},
+    )
+    card_id = ObjectId()
+    raw = signed_card_token(member_key, card_id)
+    issued_at = utcnow()
+    await db.cards.insert_one({
+        "_id": card_id, "member_id": member_key, "token_hash": token_hash(raw),
+        "token_version": 2, "status": "Active", "issued_by": str(actor["_id"]),
+        "issued_at": issued_at, "revoked_at": None,
+    })
+    await audit(actor, action, member_key, {"member_id": target["member_id"]}, request)
+    return {
+        "member_id": target["member_id"],
+        "verification_url": f"{settings.public_app_url.rstrip('/')}/verify/{raw}",
+        "status": "Active", "issued_at": issued_at,
+    }
+
+
+@app.post("/api/cards/me/issue")
+async def issue_own_card(request: Request, actor: dict = Depends(get_current_user)):
+    """Return the signed-in user's stable QR card, creating it only if necessary."""
+    if actor.get("status") != "Active":
+        raise HTTPException(403, "Only active members can issue a digital ID")
+    return await mint_card(actor, actor, request, reuse_active=True, action="card_self_issued")
+
+
 @app.post("/api/cards/{member_id}/issue")
 async def issue_card(member_id: str, request: Request, actor: dict = Depends(allow("Founder"))):
-    target=await db.users.find_one({"_id":oid(member_id)})
-    if not target: raise HTTPException(404,"Member not found")
-    if target["status"]!="Active": raise HTTPException(400,"Only active members can receive cards")
-    # One current card per member; revoke previous token before issuing a replacement.
-    await db.cards.update_many({"member_id":str(target["_id"]),"status":"Active"},{"$set":{"status":"Revoked","revoked_at":utcnow()}})
-    raw=new_card_token()
-    card={"member_id":str(target["_id"]),"token_hash":token_hash(raw),"status":"Active","issued_by":str(actor["_id"]),"issued_at":utcnow(),"revoked_at":None}
-    await db.cards.insert_one(card)
-    await audit(actor,"card_issued",member_id,{},request)
-    return {"member_id":target["member_id"],"verification_url":f"{settings.public_app_url.rstrip('/')}/verify/{raw}","token":raw,"status":"Active","issued_at":card["issued_at"]}
+    target = await db.users.find_one({"_id": oid(member_id)})
+    if not target:
+        raise HTTPException(404, "Member not found")
+    return await mint_card(target, actor, request, reuse_active=False, action="card_issued")
+
 
 @app.post("/api/cards/{member_id}/revoke")
 async def revoke_card(member_id: str, request: Request, actor: dict = Depends(allow("Founder"))):
@@ -457,24 +536,26 @@ async def revoke_card(member_id: str, request: Request, actor: dict = Depends(al
     return {"message":"Active cards revoked"}
 
 @app.get("/api/verify/{token}")
-async def verify_card(token: str, request: Request):
+async def verify_card(token: str, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
     if len(token)<30 or len(token)>200:
-        raise HTTPException(404,"Card not found")
-    card=await db.cards.find_one({"token_hash":token_hash(token)})
-    if not card or card["status"]!="Active":
-        return {"valid":False,"status":"Invalid or revoked"}
-    member=await db.users.find_one({"_id":oid(card["member_id"])})
-    if not member or member["status"]!="Active":
-        return {"valid":False,"status":"Member inactive"}
-    await audit(None,"card_verified",str(member["_id"]),{},request)
-    return {"valid":True,"status":"Active","name":member["name"],"member_id":member["member_id"],"role":member["role"],"club":"TechNova"}
+        raise HTTPException(404, "Card not found")
+    card = await active_card_from_token(token)
+    if not card:
+        return {"valid": False, "status": "Invalid or revoked"}
+    member = await db.users.find_one({"_id": oid(card["member_id"])})
+    if not member or member["status"] != "Active":
+        return {"valid": False, "status": "Member inactive"}
+    if actor.get("role") == "Core Management" and member.get("role") != "Member":
+        raise HTTPException(403, "Core Management can verify Member IDs only")
+    await audit(actor, "card_verified", str(member["_id"]), {"member_id": member["member_id"]}, request)
+    return {"valid": True, "status": "Active", "name": member["name"], "member_id": member["member_id"], "role": member["role"], "club": "TechNova"}
 
 @app.post("/api/verify/{token}/confirm")
 async def confirm_card_verification(token: str, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
     """Record an authenticated staff confirmation after a QR has been scanned and checked."""
     if len(token) < 30 or len(token) > 200:
         raise HTTPException(404, "Card not found")
-    card = await db.cards.find_one({"token_hash": token_hash(token), "status": "Active"})
+    card = await active_card_from_token(token)
     if not card:
         raise HTTPException(404, "Card is invalid or revoked")
     member = await db.users.find_one({"_id": oid(card["member_id"])})

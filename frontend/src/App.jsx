@@ -114,14 +114,16 @@ function App() {
   });
   const [verifyToken, setVerifyToken] = useState("");
   const [verifyResult, setVerifyResult] = useState(null);
+  const [autoVerifyRoute, setAutoVerifyRoute] = useState(false);
   const [issuedCard, setIssuedCard] = useState(null);
+  const [ownCard, setOwnCard] = useState(null);
   const [scanEnabled, setScanEnabled] = useState(false);
   const [cardRoleFilter, setCardRoleFilter] = useState("Founder");
   const [settingsForm, setSettingsForm] = useState({
     current_password: "",
     new_password: "",
   });
-  const [profileForm, setProfileForm] = useState({ name: "", team: "" });
+  const [profileForm, setProfileForm] = useState({ name: "" });
   const [audit, setAudit] = useState([]);
 
   const notify = (s) => {
@@ -147,7 +149,8 @@ function App() {
       setMembers(ms);
       setTasks(ts);
       setTeams(tm);
-      if (!selected && ms.length) setSelected(ms[0]);
+      if (me.role === "Member") setSelected(me);
+      else if (!selected && ms.length) setSelected(ms[0]);
     } catch (e) {
       localStorage.removeItem("tn_token");
       setToken("");
@@ -166,11 +169,36 @@ function App() {
       setPage("Verification");
       setVerifyToken(decodeURIComponent(p[1]));
       setVerifyResult(null);
+      setAutoVerifyRoute(true);
     }
   }, []);
 
   useEffect(() => {
-    if (!scanEnabled || page !== "Verification") return;
+    if (!autoVerifyRoute || !token || !user || page !== "Verification" || !verifyToken) return;
+    let cancelled = false;
+    const candidate = extractCardToken(verifyToken);
+    api("/verify/" + encodeURIComponent(candidate), token)
+      .then((result) => {
+        if (!cancelled) { setVerifyResult(result); setAutoVerifyRoute(false); }
+      })
+      .catch((err) => {
+        if (!cancelled) { setVerifyResult({ valid: false, status: err.message }); setAutoVerifyRoute(false); }
+      });
+    return () => { cancelled = true; };
+  }, [autoVerifyRoute, token, user?.id, page, verifyToken]);
+
+  useEffect(() => {
+    if (page !== "Digital ID Cards" || !token || !user ||
+        selected?.id !== user.id || ownCard?.member_id === user.member_id) return;
+    let cancelled = false;
+    api("/cards/me/issue", token, { method: "POST" })
+      .then((card) => { if (!cancelled) setOwnCard(card); })
+      .catch((err) => { if (!cancelled) fail(err); });
+    return () => { cancelled = true; };
+  }, [page, token, user?.id, user?.member_id, selected?.id, ownCard?.member_id]);
+
+  useEffect(() => {
+    if (!scanEnabled || page !== "Verification" || !isAdmin) return;
     let scanner;
     try {
       scanner = new Html5QrcodeScanner(
@@ -197,7 +225,7 @@ function App() {
             }
             const result = await api(
               "/verify/" + encodeURIComponent(candidate),
-              ""
+              token
             );
             setVerifyResult(result);
           } catch (err) {
@@ -257,6 +285,9 @@ function App() {
     localStorage.removeItem("tn_token");
     setToken("");
     setUser(null);
+    setSelected(null);
+    setOwnCard(null);
+    setIssuedCard(null);
     setMembers([]);
     setTasks([]);
     setDashboard(null);
@@ -411,7 +442,7 @@ function App() {
       if (!candidate) {
         throw new Error("Scan a QR code or paste its verification URL");
       }
-      let v = await api("/verify/" + encodeURIComponent(candidate), "");
+      let v = await api("/verify/" + encodeURIComponent(candidate), token);
       setVerifyResult(v);
     } catch (e) {
       setVerifyResult({ valid: false, status: e.message });
@@ -456,7 +487,7 @@ function App() {
     try {
       let updated = await api("/auth/profile", token, {
         method: "PATCH",
-        body: JSON.stringify(profileForm),
+        body: JSON.stringify({ name: profileForm.name || user.name }),
       });
       setUser(updated);
       notify("Profile saved");
@@ -754,7 +785,7 @@ function App() {
           </button>
         ))}
         <label className="navlabel">MANAGE</label>
-        {links.slice(4).map(([n, I]) => (
+        {links.slice(4).filter(([n]) => n !== "Verification" || isAdmin).map(([n, I]) => (
           <button
             className={"nav " + (page === n ? "chosen" : "")}
             key={n}
@@ -1033,7 +1064,20 @@ function App() {
                               {m.role}
                             </span>
                           </td>
-                          <td>{m.team}</td>
+                          <td>
+                            {isFounder && m.role !== "Founder" ? (
+                              <select
+                                aria-label={`Assign team to ${m.name}`}
+                                value={m.team || "Unassigned"}
+                                onChange={(e) => updateMember(m, { team: e.target.value })}
+                              >
+                                <option value="Unassigned">Unassigned</option>
+                                {teams.map((team) => (
+                                  <option key={team.id} value={team.name}>{team.name}</option>
+                                ))}
+                              </select>
+                            ) : m.team}
+                          </td>
                           <td>
                             <span className={"pill " + m.status.toLowerCase()}>
                               {m.status}
@@ -1266,7 +1310,7 @@ function App() {
                   <Download size={14} /> Print / Save card as PDF
                 </button>
               </div>
-              <div className="card-role-tabs">
+              {isAdmin && <div className="card-role-tabs">
                 {["Founder", "Core Management", "Member"].map((role) => (
                   <button
                     key={role}
@@ -1286,11 +1330,12 @@ function App() {
                     </span>
                   </button>
                 ))}
-              </div>
-              <div className="idlayout">
+              </div>}
+              <div className={isAdmin ? "idlayout" : "idlayout member-idlayout"}>
                 <div
                   className={
                     "idcard " +
+                    (selected?.id === user.id && ownCard?.verification_url ? "hasOwnQr " : "") +
                     (selected?.role === "Founder"
                       ? "founderCard"
                       : selected?.role === "Core Management"
@@ -1298,6 +1343,12 @@ function App() {
                       : "memberCard")
                   }
                 >
+                  {selected?.id === user.id && ownCard?.verification_url && (
+                    <div className="id-qr-corner" title="Your secure TechNova verification QR">
+                      <QRCodeSVG value={ownCard.verification_url} size={76} level="M" />
+                      <small>SCAN ID</small>
+                    </div>
+                  )}
                   <div className="cardbrand">
                     <div className="miniTN">TN</div>
                     <div>
@@ -1331,6 +1382,10 @@ function App() {
                           <b>{selected.status}</b>
                         </p>
                         <p>
+                          <small>EMAIL</small>
+                          <b>{selected.email || "—"}</b>
+                        </p>
+                        <p>
                           <small>COLLEGE</small>
                           <b>Mangaldeep College of Engineering</b>
                         </p>
@@ -1344,7 +1399,7 @@ function App() {
                     <div className="empty">Choose a member.</div>
                   )}
                 </div>
-                <div className="panel qrpanel">
+                {isAdmin && <div className="panel qrpanel">
                   <h3>Choose a cardholder</h3>
                   <p>Only active members can receive cards.</p>
                   <div className="picker">
@@ -1418,7 +1473,7 @@ function App() {
                       </div>
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
             </>
           )}
@@ -1579,16 +1634,11 @@ function App() {
                       }
                     />
                   </label>
-                  <label>
-                    Team
-                    <input
-                      maxLength="80"
-                      value={profileForm.team || user.team}
-                      onChange={(e) =>
-                        setProfileForm({ ...profileForm, team: e.target.value })
-                      }
-                    />
-                  </label>
+                  <div className="profile-team">
+                    <small>Assigned team</small>
+                    <b>{user.team || "Unassigned"}</b>
+                    <span>Team assignments are managed by the Founder.</span>
+                  </div>
                   <button className="secondary">Save profile</button>
                 </form>
 
