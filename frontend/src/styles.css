@@ -5515,3 +5515,185 @@ footer {
   .system-status { display: none !important; }
   .sidebar, header, .hero, footer { display: none !important; }
 }
+
+
+/* Navigation and scrolling reliability fixes */
+html {
+  min-height: 100%;
+  overflow-x: clip;
+  scroll-padding-top: 86px;
+}
+
+body {
+  min-height: 100%;
+  overflow-x: clip;
+}
+
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.sidebar {
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(112, 229, 255, .3) rgba(8, 14, 25, .25);
+  scrollbar-gutter: stable;
+  align-items: stretch;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 7px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+  background: rgba(8, 14, 25, .25);
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 99px;
+  background: rgba(112, 229, 255, .28);
+  background-clip: padding-box;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(112, 229, 255, .48);
+  background-clip: padding-box;
+}
+
+.brand,
+.workspace,
+.navlabel,
+.nav,
+.sidebottom {
+  flex-shrink: 0;
+}
+
+.sidebottom {
+  margin-top: auto;
+  padding-bottom: 2px;
+}
+
+main {
+  min-width: 0;
+}
+
+.content {
+  scroll-margin-top: 86px;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 1001;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    transform: translateX(-105%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform .22s ease, visibility .22s ease;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(2, 6, 14, .7);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    cursor: default;
+    animation: navBackdropIn .18s ease both;
+  }
+
+  .hamb {
+    display: grid;
+    place-items: center;
+    position: relative;
+    z-index: 1002;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    border-radius: 11px;
+    border: 1px solid rgba(112, 229, 255, .18);
+    background: rgba(15, 26, 44, .9);
+    color: #d7f7ff;
+  }
+
+  .close {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    border-radius: 10px;
+    border: 1px solid rgba(112, 229, 255, .16);
+    background: rgba(15, 26, 44, .8);
+    color: #cfeeff;
+  }
+
+  .brand {
+    position: sticky;
+    top: -1px;
+    z-index: 2;
+    background: linear-gradient(180deg, #0b1322 82%, rgba(11,19,34,0));
+    padding-top: 1px;
+  }
+
+  .sidebottom {
+    margin-top: 22px;
+  }
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .content {
+    scroll-margin-top: 72px;
+  }
+}
+
+@keyframes navBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar-backdrop {
+    transition: none !important;
+    animation: none !important;
+  }
+}
