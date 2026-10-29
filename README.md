@@ -9,7 +9,6 @@ React + FastAPI + MongoDB implementation with real persistence, JWT login, role-
 ## Quick start with Docker
 1. Copy `.env.example` to `.env`.
 2. Set unique values for `MONGO_ROOT_PASSWORD`, `JWT_SECRET`, `BOOTSTRAP_FOUNDER_NAME`, `BOOTSTRAP_FOUNDER_EMAIL`, and `BOOTSTRAP_FOUNDER_PASSWORD`. Do not use example values.
-3. For Render, set `MONGODB_URI`, `JWT_SECRET`, `BOOTSTRAP_FOUNDER_NAME`, `BOOTSTRAP_FOUNDER_EMAIL`, `BOOTSTRAP_FOUNDER_PASSWORD`, `FRONTEND_ORIGINS`, and `PUBLIC_APP_URL` in the backend environment. Use `RESET_DELIVERY_MODE=email` only after SMTP is configured.
 3. From this folder run:
    ```bash
    docker compose up --build
@@ -17,6 +16,8 @@ React + FastAPI + MongoDB implementation with real persistence, JWT login, role-
 4. Open `http://localhost:8080`.
 5. Sign in using the bootstrap founder email/password you configured in `.env`.
 6. API docs are at `http://localhost:8000/docs`.
+
+For Render deployments, set `MONGODB_URI`, `JWT_SECRET`, `BOOTSTRAP_FOUNDER_NAME`, `BOOTSTRAP_FOUNDER_EMAIL`, `BOOTSTRAP_FOUNDER_PASSWORD`, `FRONTEND_ORIGINS`, and `PUBLIC_APP_URL` in the backend environment. Use `RESET_DELIVERY_MODE=email` only after SMTP is configured.
 
 MongoDB is published only to localhost by default. The frontend container's nginx proxies `/api/` to FastAPI.
 
