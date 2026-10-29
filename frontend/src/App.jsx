@@ -31,12 +31,6 @@ const API_BASE = (
   "https://technova-5h0g.onrender.com"
 ).replace(/\/$/, "");
 
-
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  "https://technova-5h0g.onrender.com"
-).replace(/\/$/, "");
-
 const api = async (path, token, opts = {}) => {
   const isForm = opts.body instanceof FormData;
 
@@ -54,12 +48,12 @@ const api = async (path, token, opts = {}) => {
   try {
     data = await r.json();
   } catch {
-    // Handle empty or non-JSON responses.
+    // Response was empty or not JSON.
   }
 
   if (!r.ok) {
     throw new Error(
-      data.detail || data.message || "Request failed: " + r.status
+      data.detail || data.message || `Request failed: ${r.status}`
     );
   }
 
