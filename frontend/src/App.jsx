@@ -1127,12 +1127,13 @@ function App() {
                     onClick={() => {
                       setTaskForm({
                         ...taskForm,
-                        assignee_id:
-                          members.find(
-                            (m) => m.status === "Active" && m.role === "Member"
-                          )?.id ||
-                          members[0]?.id ||
-                          "",
+                        assignee_id: members.find(
+                          (m) =>
+                            m.status === "Active" &&
+                            (isFounder
+                              ? ["Core Management", "Member"].includes(m.role)
+                              : m.role === "Member")
+                        )?.id || "",
                       });
                       setModal("task");
                     }}
@@ -1407,12 +1408,13 @@ function App() {
                     onClick={() => {
                       setTaskForm({
                         ...taskForm,
-                        assignee_id:
-                          members.find(
-                            (m) => m.status === "Active" && m.role === "Member"
-                          )?.id ||
-                          members[0]?.id ||
-                          "",
+                        assignee_id: members.find(
+                          (m) =>
+                            m.status === "Active" &&
+                            (isFounder
+                              ? ["Core Management", "Member"].includes(m.role)
+                              : m.role === "Member")
+                        )?.id || "",
                       });
                       setModal("task");
                     }}
