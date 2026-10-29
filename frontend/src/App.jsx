@@ -165,6 +165,31 @@ function App() {
     if (token) load(token);
   }, [token]);
 
+  // Keep navigation usable on short screens and on mobile devices.
+  useEffect(() => {
+    if (!mobile) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setMobile(false);
+    };
+    const onResize = () => {
+      if (window.innerWidth > 760) setMobile(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [mobile]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setSearch("");
+  }, [page]);
+
   useEffect(() => {
     const p = window.location.pathname.match(/^\/verify\/([^/]+)$/);
     if (p) {
@@ -806,7 +831,19 @@ function App() {
 
   return (
     <div className="shell">
-      <aside className={mobile ? "sidebar open" : "sidebar"}>
+      {mobile && (
+        <button
+          className="sidebar-backdrop"
+          aria-label="Close navigation menu"
+          onClick={() => setMobile(false)}
+        />
+      )}
+      <aside
+        id="technova-main-navigation"
+        className={mobile ? "sidebar open" : "sidebar"}
+        aria-label="Main navigation"
+        aria-hidden={window.innerWidth <= 760 && !mobile}
+      >
         <div className="brand">
           <div className="logo">TN</div>
           <div>
@@ -815,7 +852,7 @@ function App() {
             </b>
             <small>TECHNOLOGY DEVELOPMENT CLUB</small>
           </div>
-          <button className="close" onClick={() => setMobile(false)}>
+          <button className="close" aria-label="Close navigation menu" onClick={() => setMobile(false)}>
             <X />
           </button>
         </div>
@@ -857,7 +894,10 @@ function App() {
         {isFounder && (
           <button
             className={"nav " + (page === "Audit Log" ? "chosen" : "")}
-            onClick={() => setPage("Audit Log")}
+            onClick={() => {
+              setPage("Audit Log");
+              setMobile(false);
+            }}
           >
             <ShieldCheck size={17} />
             Audit Log
@@ -886,8 +926,14 @@ function App() {
 
       <main>
         <header>
-          <button className="hamb" onClick={() => setMobile(!mobile)}>
-            <Menu />
+          <button
+            className="hamb"
+            aria-label={mobile ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={mobile}
+            aria-controls="technova-main-navigation"
+            onClick={() => setMobile(!mobile)}
+          >
+            {mobile ? <X /> : <Menu />}
           </button>
           <div className="crumb">
             TechNova <span>/</span> <b>{page}</b>
@@ -900,7 +946,7 @@ function App() {
             <div className="search">
               <Search size={15} />
               <input
-                placeholder="Search current page…"
+                placeholder="Search members or tasks…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
