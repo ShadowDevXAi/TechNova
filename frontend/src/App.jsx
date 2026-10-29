@@ -1520,37 +1520,23 @@ function App() {
                             </td>
                             <td>
                               <button
+                                type="button"
                                 className="textbtn"
-                                onClick={async () => {
-                                  let text = prompt("Add a task comment");
-                                  if (text) {
-                                    try {
-                                      await api(
-                                        `/tasks/${t.id}/comments`,
-                                        token,
-                                        {
-                                          method: "POST",
-                                          body: JSON.stringify({ text }),
-                                        }
-                                      );
-                                      notify("Comment added");
-                                    } catch (e) {
-                                      fail(e);
-                                    }
-                                  }
-                                }}
+                                onClick={() => openTaskDetails(t)}
                               >
-                                Comment
+                                <MessageSquare size={13} /> Details
                               </button>{" "}
                               <label className="filebtn">
                                 Attach
                                 <input
                                   type="file"
                                   hidden
-                                  onChange={(e) =>
-                                    e.target.files?.[0] &&
-                                    uploadAttachment(t.id, e.target.files[0])
-                                  }
+                                  accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.zip"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) uploadAttachment(t.id, file);
+                                    e.target.value = "";
+                                  }}
                                 />
                               </label>
                             </td>
@@ -1673,9 +1659,7 @@ function App() {
                   <h3>Choose a cardholder</h3>
                   <p>Only active members can receive cards.</p>
                   <div className="picker">
-                    {members
-                      .filter((m) => m.role === cardRoleFilter)
-                      .map((m) => (
+                    {filteredCardMembers.map((m) => (
                         <button
                           className={selected?.id === m.id ? "picked" : ""}
                           key={m.id}
@@ -1911,7 +1895,7 @@ function App() {
                 )}
               </div>
               <div className="teams">
-                {teams.map((t) => (
+                {filteredTeams.map((t) => (
                   <div className="panel team" key={t.id}>
                     <FolderKanban />
                     <h3>{t.name}</h3>
@@ -1922,7 +1906,7 @@ function App() {
                     </small>
                     {isAdmin && (
                       <div className="team-roster">
-                        {members.filter((m) => m.team === t.name).map((member) => (
+                        {visibleTeamMembers(t.name).map((member) => (
                           <div className="team-member" key={member.id}>
                             <span>
                               <b>{member.name}</b>
@@ -1931,8 +1915,10 @@ function App() {
                             <em>{member.role}</em>
                           </div>
                         ))}
-                        {!members.some((m) => m.team === t.name) && (
-                          <p className="team-empty">No members assigned yet.</p>
+                        {!visibleTeamMembers(t.name).length && (
+                          <p className="team-empty">
+                            {searchTerm ? "No roster entries match this search." : "No members assigned yet."}
+                          </p>
                         )}
                       </div>
                     )}
@@ -1945,7 +1931,7 @@ function App() {
                     <p>Members who have not been placed in a team.</p>
                     <small>{members.filter((m) => !m.team || m.team === "Unassigned").length} members</small>
                     <div className="team-roster">
-                      {members.filter((m) => !m.team || m.team === "Unassigned").map((member) => (
+                      {filteredUnassignedMembers.map((member) => (
                         <div className="team-member" key={member.id}>
                           <span>
                             <b>{member.name}</b>
