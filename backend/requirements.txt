@@ -1,0 +1,10 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+motor==3.7.0
+pymongo==4.11.3
+pydantic[email]==2.10.6
+pydantic-settings==2.8.1
+python-jose[cryptography]==3.4.0
+pwdlib[argon2]==0.2.1
+python-multipart==0.0.20
+slowapi==0.1.9
