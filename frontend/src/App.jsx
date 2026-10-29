@@ -1069,15 +1069,30 @@ function App() {
               <span className="system-status-dot" />
               Workspace live
             </div>
-            <div className="search">
-              <Search size={15} />
-              <input
-                placeholder="Search current page…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <button className="bell" title="Refresh data" onClick={refresh}>
+            {searchPlaceholder && (
+              <div className="search">
+                <Search size={15} />
+                <input
+                  aria-label={searchPlaceholder}
+                  placeholder={searchPlaceholder}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setSearch("")}>
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              className={"bell " + (refreshing ? "is-refreshing" : "")}
+              title={refreshing ? "Refreshing workspace data" : "Refresh workspace data"}
+              aria-label={refreshing ? "Refreshing workspace data" : "Refresh workspace data"}
+              onClick={refresh}
+              disabled={refreshing}
+            >
               <RefreshCw size={17} />
             </button>
             <div className="avatar">{initials(user.name)}</div>
