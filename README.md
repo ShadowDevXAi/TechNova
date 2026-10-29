@@ -42,8 +42,9 @@ MongoDB is published only to localhost by default. The frontend container's ngin
 
 ## Roles
 - `Founder` (club Owner): full administrative control, including assigning teams to any non-Founder member, changing roles, issuing/revoking cards, assigning tasks to Core Management and Members, and viewing the audit log.
-- `Core Management`: can approve registrations, manage teams, assign tasks to Members only, and scan/verify Member IDs only.
-- `Member`: can view their own profile and digital ID with a secure QR in its top-left corner, see only their assigned tasks, and update their own task status/submission notes.
+- `Core Management`: can view team rosters, approve registrations, manage team definitions, assign tasks to Members only, scan Member IDs, and confirm Member task submissions after scanning the assignee's QR.
+- `Founder` (club Owner): can view all team rosters and assign teams; can scan any active role's ID and confirm tasks assigned to Members or Core Management.
+- `Member`: can view their own profile and digital ID with a secure QR in its top-left corner, see only their assigned tasks, and submit completed work for review. A Member cannot mark a task Done directly.
 
 Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat this as a practical starter, not a completed security audit.
 
@@ -53,6 +54,8 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 - `POST /api/auth/register` (public registration always creates a pending `Member`)
 - `GET /api/members`, `POST /api/members`, `PATCH /api/members/{id}`, `POST /api/members/{id}/approve`
 - `GET /api/tasks`, `POST /api/tasks`, `PATCH /api/tasks/{id}`
+- `GET /api/tasks/pending-confirmation?member_id=TN-M-0001` (Founder/Core Management; after QR scan)
+- `POST /api/tasks/{id}/confirm-completion` (requires the scanned assignee's active `card_token`)
 - `POST /api/cards/{member_id}/issue`, `POST /api/cards/{member_id}/revoke`
 - `POST /api/cards/me/issue` (authenticated users get their own stable QR)
 - `GET /api/verify/{token}` (authenticated Founder/Core Management; Core Management can verify Member IDs only)
@@ -74,6 +77,7 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 - Review privacy notice and consent, data retention/deletion, and access policies.
 - Rotate bootstrap credentials immediately after first login; this project requires the bootstrap password to be configured before startup.
 - QR tokens are signed with the server secret and token hashes are stored; raw tokens are not stored. QR verification requires an authenticated Founder/Core Management account and writes audit events.
+- Task completion flow: a Member changes a task to `Review` to submit it. The work appears in the completion queue after a Founder/Core Management user scans that assignee's active QR code. The backend verifies the QR belongs to the task assignee before allowing confirmation; only then does status change to `Done`. Core Management can confirm Member tasks; the Founder can also confirm Core Management tasks.
 - The MongoDB URI and founder credentials must be environment variables, never committed to source. Rotate any credential that was ever committed.
 - Do not store sensitive government identifiers, passwords in plain text, or unnecessary student information.
 

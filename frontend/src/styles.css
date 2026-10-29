@@ -4251,3 +4251,75 @@ footer {
   .id-qr-corner svg { width: 64px; height: 64px; }
   .idcard.hasOwnQr .cardbrand { padding-left: 82px; min-height: 82px; }
 }
+
+
+/* Team rosters are shown to Founder and Core Management only. */
+.team-roster {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  margin-top: 14px;
+}
+.team-member {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  background: #08111d;
+  border: 1px solid #20364c;
+  border-radius: 8px;
+}
+.team-member span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.team-member b {
+  font-size: 11px;
+  color: #e9f5ff;
+}
+.team-member small,
+.team-empty {
+  color: #8199b2;
+  font-size: 9px;
+}
+.team-member em {
+  flex: 0 0 auto;
+  color: #55dff7;
+  font-size: 9px;
+  font-style: normal;
+}
+.team-empty {
+  margin: 6px 0 0;
+}
+.task-review-queue {
+  margin-top: 20px;
+  padding: 18px;
+}
+.task-review-queue .panelhead {
+  align-items: flex-start;
+  gap: 12px;
+}
+.task-review-queue .primary {
+  white-space: nowrap;
+}
+.queue-help {
+  display: block;
+  padding-top: 12px;
+}
+.unassigned-team {
+  border-style: dashed;
+}
+@media (max-width: 760px) {
+  .team-member {
+    align-items: flex-start;
+  }
+  .task-review-queue {
+    padding: 12px;
+  }
+  .task-review-queue .primary {
+    white-space: normal;
+  }
+}

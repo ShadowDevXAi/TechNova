@@ -47,6 +47,10 @@ class TaskPatch(BaseModel):
     due_date: str | None = None
     submission_note: str | None = Field(default=None, max_length=2000)
 
+class TaskCompletionConfirm(BaseModel):
+    card_token: str = Field(min_length=30, max_length=200)
+
+
 class TeamCreate(BaseModel):
     name: str = Field(min_length=2, max_length=80)
     description: str = Field(default="", max_length=500)
