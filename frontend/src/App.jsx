@@ -1463,13 +1463,7 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {tasks
-                        .filter((t) =>
-                          (t.title + " " + t.assignee_name)
-                            .toLowerCase()
-                            .includes(search.toLowerCase())
-                        )
-                        .map((t) => (
+                      {filteredTasks.map((t) => (
                           <tr key={t.id}>
                             <td>
                               <b>{t.title}</b>
@@ -1565,8 +1559,10 @@ function App() {
                     </tbody>
                   </table>
                 </div>
-                {!tasks.length && (
-                  <div className="empty">No tasks created yet.</div>
+                {!filteredTasks.length && (
+                  <div className="empty">
+                    {searchTerm ? "No tasks match your search." : "No tasks created yet."}
+                  </div>
                 )}
               </div>
             </>
@@ -2071,7 +2067,7 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {audit.map((a) => (
+                      {filteredAudit.map((a) => (
                         <tr key={a.id}>
                           <td>
                             {a.created_at
@@ -2086,8 +2082,10 @@ function App() {
                     </tbody>
                   </table>
                 </div>
-                {!audit.length && (
-                  <div className="empty">Click Refresh to load audit events.</div>
+                {!filteredAudit.length && (
+                  <div className="empty">
+                    {searchTerm ? "No audit events match your search." : "No audit events loaded yet. Use Refresh to try again."}
+                  </div>
                 )}
               </div>
             </>
