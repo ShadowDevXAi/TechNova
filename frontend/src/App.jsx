@@ -893,6 +893,10 @@ function App() {
             TechNova <span>/</span> <b>{page}</b>
           </div>
           <div className="topright">
+            <div className="system-status" title="Your TechNova workspace is connected">
+              <span className="system-status-dot" />
+              Workspace live
+            </div>
             <div className="search">
               <Search size={15} />
               <input
