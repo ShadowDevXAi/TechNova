@@ -1170,12 +1170,12 @@ function App() {
                   </div>
                   <button
                     className="textbtn"
-                    onClick={() => setPage("Tasks & Projects")}
+                    onClick={() => navigateToPage("Tasks & Projects")}
                   >
                     View all <ArrowUpRight size={14} />
                   </button>
                 </div>
-                {(dashboard?.recent_tasks || []).map((t) => (
+                {filteredRecentTasks.map((t) => (
                   <div className="taskrow" key={t.id}>
                     <span className="taskicon">
                       <Code2 size={17} />
@@ -1195,12 +1195,13 @@ function App() {
                     </span>
                   </div>
                 ))}
-                {!dashboard?.recent_tasks?.length && (
+                {!filteredRecentTasks.length && (
                   <div className="empty">
-                    No tasks yet.{" "}
-                    {isAdmin
-                      ? "Create the first task to get started."
-                      : "Tasks assigned to you will appear here."}
+                    {searchTerm
+                      ? "No recent tasks match your search."
+                      : "No tasks yet. " + (isAdmin
+                        ? "Create the first task to get started."
+                        : "Tasks assigned to you will appear here.")}
                   </div>
                 )}
               </div>
