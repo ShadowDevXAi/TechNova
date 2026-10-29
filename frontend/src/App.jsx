@@ -716,11 +716,59 @@ function App() {
     }
   }
 
+  function navigateToPage(nextPage) {
+    setPage(nextPage);
+    setSearch("");
+    setMobile(false);
+    if (nextPage === "Audit Log") loadAudit();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const searchTerm = search.trim().toLowerCase();
+  const matchesSearch = (...values) =>
+    !searchTerm || values.flat().filter(Boolean).join(" ").toLowerCase().includes(searchTerm);
   const filteredMembers = members.filter((m) =>
-    (m.name + " " + m.member_id + " " + m.team + " " + m.email)
-      .toLowerCase()
-      .includes(search.toLowerCase())
+    matchesSearch(m.name, m.member_id, m.team, m.email, m.role, m.status)
   );
+  const filteredTasks = tasks.filter((t) =>
+    matchesSearch(t.title, t.description, t.project, t.assignee_name, t.priority, t.status, t.submission_note)
+  );
+  const filteredRecentTasks = (dashboard?.recent_tasks || []).filter((t) =>
+    matchesSearch(t.title, t.project, t.assignee_name, t.status)
+  );
+  const filteredTeams = teams.filter((team) =>
+    matchesSearch(team.name, team.description) ||
+    members.some((member) => member.team === team.name &&
+      matchesSearch(member.name, member.member_id, member.email, member.role, member.status))
+  );
+  const visibleTeamMembers = (teamName) => {
+    const team = teams.find((item) => item.name === teamName);
+    const teamMatches = matchesSearch(team?.name, team?.description);
+    return members.filter((member) => member.team === teamName &&
+      (!searchTerm || teamMatches || matchesSearch(member.name, member.member_id, member.email, member.role, member.status))
+    );
+  };
+  const filteredUnassignedMembers = members.filter((member) =>
+    (!member.team || member.team === "Unassigned") &&
+    matchesSearch(member.name, member.member_id, member.email, member.role, member.status, "Unassigned")
+  );
+  const filteredCardMembers = members.filter((member) =>
+    member.role === cardRoleFilter &&
+    matchesSearch(member.name, member.member_id, member.email, member.team, member.status)
+  );
+  const filteredAudit = audit.filter((entry) =>
+    matchesSearch(entry.action, entry.actor_role, entry.target, JSON.stringify(entry.details || {}),
+      entry.created_at ? new Date(entry.created_at).toLocaleString() : "")
+  );
+  const searchPlaceholder = {
+    Overview: "Search recent tasks…",
+    Members: "Search members…",
+    "Tasks & Projects": "Search tasks, projects, assignees…",
+    "Digital ID Cards": "Search cardholders…",
+    Verification: "Search submitted tasks…",
+    Teams: "Search teams and people…",
+    "Audit Log": "Search audit events…",
+  }[page];
 
   if (!token || !user) {
     return (
