@@ -21,6 +21,10 @@ import {
   UserCheck,
   LockKeyhole,
   AlertTriangle,
+  MessageSquare,
+  Paperclip,
+  Send,
+  FileText,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Html5QrcodeScanner } from "html5-qrcode";
@@ -90,6 +94,11 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [mobile, setMobile] = useState(false);
+  const [taskDetailTask, setTaskDetailTask] = useState(null);
+  const [taskComments, setTaskComments] = useState([]);
+  const [taskAttachments, setTaskAttachments] = useState([]);
+  const [taskCommentDraft, setTaskCommentDraft] = useState("");
+  const [taskDetailsLoading, setTaskDetailsLoading] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [resetToken, setResetToken] = useState("");
   const [resetEmail, setResetEmail] = useState("");
@@ -430,6 +439,7 @@ function App() {
   }
 
   async function uploadAttachment(taskId, file) {
+    if (!file) return;
     const fd = new FormData();
     fd.append("file", file);
     try {
@@ -437,7 +447,74 @@ function App() {
         method: "POST",
         body: fd,
       });
+      if (taskDetailTask?.id === taskId) {
+        setTaskAttachments(await api(`/tasks/${taskId}/attachments`, token));
+      }
       notify("Attachment uploaded");
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function openTaskDetails(task) {
+    setTaskDetailTask(task);
+    setTaskComments([]);
+    setTaskAttachments([]);
+    setTaskCommentDraft("");
+    setTaskDetailsLoading(true);
+    try {
+      const [comments, attachments] = await Promise.all([
+        api(`/tasks/${task.id}/comments`, token),
+        api(`/tasks/${task.id}/attachments`, token),
+      ]);
+      setTaskComments(comments);
+      setTaskAttachments(attachments);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setTaskDetailsLoading(false);
+    }
+  }
+
+  async function addTaskComment(event) {
+    event.preventDefault();
+    const text = taskCommentDraft.trim();
+    if (!text || !taskDetailTask) return;
+    try {
+      const created = await api(`/tasks/${taskDetailTask.id}/comments`, token, {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      });
+      setTaskComments((current) => [...current, created]);
+      setTaskCommentDraft("");
+      notify("Comment posted");
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function downloadTaskAttachment(attachment) {
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/attachments/${attachment.id}/download`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (!response.ok) {
+        let detail = {};
+        try { detail = await response.json(); } catch {}
+        const error = new Error(detail.detail || `Download failed: ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = attachment.filename || "technova-attachment";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       fail(e);
     }
