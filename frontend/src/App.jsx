@@ -1299,8 +1299,21 @@ function App() {
                               ) : (
                                 <select
                                   value={t.status}
-                                  onChange={(e) =>
-                                    updateTask(t, { status: e.target.value })
+                                  onChange={(e) => {
+                                    const nextStatus = e.target.value;
+                                    if (nextStatus === "Review") {
+                                      const note = prompt(
+                                        "Optional: add a completion note for the reviewer",
+                                        t.submission_note || ""
+                                      );
+                                      if (note === null) return;
+                                      updateTask(t, {
+                                        status: nextStatus,
+                                        submission_note: note.trim(),
+                                      });
+                                    } else {
+                                      updateTask(t, { status: nextStatus });
+                                    }
                                   }
                                 >
                                   <option>Todo</option>
