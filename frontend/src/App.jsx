@@ -2172,12 +2172,17 @@ function App() {
                 </label>
                 <label>
                   Team
-                  <input
+                  <select
                     value={memberForm.team}
                     onChange={(e) =>
                       setMemberForm({ ...memberForm, team: e.target.value })
                     }
-                  />
+                  >
+                    <option value="Unassigned">Unassigned</option>
+                    {teams.map((team) => (
+                      <option key={team.id} value={team.name}>{team.name}</option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   Status
