@@ -25,17 +25,31 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { Html5QrcodeScanner } from "html5-qrcode";
 
-const api = async (path, token, opts = {}) => {
-  const isForm = opts.body instanceof FormData;
-  const r = await fetch("/api" + path, {
-    ...opts,
-    headers: {
-      ...(!isForm ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: "Bearer " + token } : {}),
-      ...(opts.headers || {}),
-    },
-  });
+const API_BASE = (
+import.meta.env.VITE_API_BASE_URL ||
+"https://technova-5h0g.onrender.com"
+).replace(//$/, "");
 
+const api = async (path, token, opts = {}) => {
+const isForm = opts.body instanceof FormData;
+
+const r = await fetch("${API_BASE}/api${path}", {
+...opts,
+headers: {
+...(!isForm ? { "Content-Type": "application/json" } : {}),
+...(token ? { Authorization: "Bearer " + token } : {}),
+...(opts.headers || {}),
+},
+});
+
+const data = await r.json();
+
+if (!r.ok) {
+throw new Error(data.detail || "Request failed");
+}
+
+return data;
+};
   let data = {};
   try {
     data = await r.json();
