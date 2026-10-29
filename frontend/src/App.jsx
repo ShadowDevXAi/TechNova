@@ -52,9 +52,12 @@ const api = async (path, token, opts = {}) => {
   }
 
   if (!r.ok) {
-    throw new Error(
+    const error = new Error(
       data.detail || data.message || `Request failed: ${r.status}`
     );
+    error.status = r.status;
+    error.path = path;
+    throw error;
   }
 
   return data;
@@ -85,6 +88,7 @@ function App() {
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [resetToken, setResetToken] = useState("");
@@ -151,19 +155,43 @@ function App() {
       setMembers(ms);
       setTasks(ts);
       setTeams(tm);
-      if (me.role === "Member") setSelected(me);
-      else if (!selected && ms.length) setSelected(ms[0]);
+      setSelected((current) => {
+        if (me.role === "Member") return me;
+        if (!current) return ms[0] || null;
+        return ms.find((member) => member.id === current.id) || ms[0] || null;
+      });
     } catch (e) {
-      localStorage.removeItem("tn_token");
-      setToken("");
-      setUser(null);
-      setError(e.message);
+      // A temporary network error should not forcibly sign the user out.
+      if (e.status === 401) {
+        localStorage.removeItem("tn_token");
+        setToken("");
+        setUser(null);
+        setSelected(null);
+        setError("Your session has expired. Please sign in again.");
+      } else {
+        fail(e);
+      }
     }
   };
 
   useEffect(() => {
     if (token) load(token);
   }, [token]);
+
+  // Lock the page behind the mobile drawer and support closing it with Escape.
+  useEffect(() => {
+    if (!mobile) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setMobile(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [mobile]);
 
   useEffect(() => {
     const p = window.location.pathname.match(/^\/verify\/([^/]+)$/);
@@ -317,10 +345,12 @@ function App() {
   }
 
   async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
     try {
       await load();
-    } catch (e) {
-      fail(e);
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -806,7 +836,7 @@ function App() {
 
   return (
     <div className="shell">
-      <aside className={mobile ? "sidebar open" : "sidebar"}>
+      <aside className={mobile ? "sidebar open" : "sidebar"} id="technova-sidebar">
         <div className="brand">
           <div className="logo">TN</div>
           <div>
@@ -815,7 +845,7 @@ function App() {
             </b>
             <small>TECHNOLOGY DEVELOPMENT CLUB</small>
           </div>
-          <button className="close" onClick={() => setMobile(false)}>
+          <button type="button" className="close" aria-label="Close navigation menu" onClick={() => setMobile(false)}>
             <X />
           </button>
         </div>
@@ -826,43 +856,45 @@ function App() {
             <small>{user.role} workspace</small>
           </div>
         </div>
-        <label className="navlabel">WORKSPACE</label>
-        {links.slice(0, 4).map(([n, I]) => (
-          <button
-            className={"nav " + (page === n ? "chosen" : "")}
-            key={n}
-            onClick={() => {
-              setPage(n);
-              setMobile(false);
-            }}
-          >
-            <I size={17} />
-            {n}
-          </button>
-        ))}
-        <label className="navlabel">MANAGE</label>
-        {links.slice(4).filter(([n]) => n !== "Verification" || isAdmin).map(([n, I]) => (
-          <button
-            className={"nav " + (page === n ? "chosen" : "")}
-            key={n}
-            onClick={() => {
-              setPage(n);
-              setMobile(false);
-            }}
-          >
-            <I size={17} />
-            {n}
-          </button>
-        ))}
-        {isFounder && (
-          <button
-            className={"nav " + (page === "Audit Log" ? "chosen" : "")}
-            onClick={() => setPage("Audit Log")}
-          >
-            <ShieldCheck size={17} />
-            Audit Log
-          </button>
-        )}
+        <nav className="sidebar-nav" aria-label="Main navigation">
+          <label className="navlabel">WORKSPACE</label>
+          {links.slice(0, 4).map(([n, I]) => (
+            <button
+              type="button"
+              className={"nav " + (page === n ? "chosen" : "")}
+              key={n}
+              aria-current={page === n ? "page" : undefined}
+              onClick={() => navigateToPage(n)}
+            >
+              <I size={17} />
+              <span>{n}</span>
+            </button>
+          ))}
+          <label className="navlabel">MANAGE</label>
+          {links.slice(4).filter(([n]) => n !== "Verification" || isAdmin).map(([n, I]) => (
+            <button
+              type="button"
+              className={"nav " + (page === n ? "chosen" : "")}
+              key={n}
+              aria-current={page === n ? "page" : undefined}
+              onClick={() => navigateToPage(n)}
+            >
+              <I size={17} />
+              <span>{n}</span>
+            </button>
+          ))}
+          {isFounder && (
+            <button
+              type="button"
+              className={"nav " + (page === "Audit Log" ? "chosen" : "")}
+              aria-current={page === "Audit Log" ? "page" : undefined}
+              onClick={() => navigateToPage("Audit Log")}
+            >
+              <ShieldCheck size={17} />
+              <span>Audit Log</span>
+            </button>
+          )}
+        </nav>
         <div className="sidebottom">
           <div className="quote">
             <ShieldCheck size={18} />
@@ -883,11 +915,26 @@ function App() {
           </div>
         </div>
       </aside>
+      {mobile && (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="Close navigation menu"
+          onClick={() => setMobile(false)}
+        />
+      )}
 
       <main>
         <header>
-          <button className="hamb" onClick={() => setMobile(!mobile)}>
-            <Menu />
+          <button
+            type="button"
+            className="hamb"
+            aria-label="Toggle navigation menu"
+            aria-expanded={mobile}
+            aria-controls="technova-sidebar"
+            onClick={() => setMobile((open) => !open)}
+          >
+            {mobile ? <X /> : <Menu />}
           </button>
           <div className="crumb">
             TechNova <span>/</span> <b>{page}</b>
