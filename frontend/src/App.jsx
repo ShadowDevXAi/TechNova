@@ -25,41 +25,47 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { Html5QrcodeScanner } from "html5-qrcode";
 
+
 const API_BASE = (
-import.meta.env.VITE_API_BASE_URL ||
-"https://technova-5h0g.onrender.com"
-).replace(//$/, "");
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://technova-5h0g.onrender.com"
+).replace(/\/$/, "");
+
+
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://technova-5h0g.onrender.com"
+).replace(/\/$/, "");
 
 const api = async (path, token, opts = {}) => {
-const isForm = opts.body instanceof FormData;
+  const isForm = opts.body instanceof FormData;
 
-const r = await fetch("${API_BASE}/api${path}", {
-...opts,
-headers: {
-...(!isForm ? { "Content-Type": "application/json" } : {}),
-...(token ? { Authorization: "Bearer " + token } : {}),
-...(opts.headers || {}),
-},
-});
+  const r = await fetch(`${API_BASE}/api${path}`, {
+    ...opts,
+    headers: {
+      ...(!isForm ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: "Bearer " + token } : {}),
+      ...(opts.headers || {}),
+    },
+  });
 
-const data = await r.json();
-
-if (!r.ok) {
-throw new Error(data.detail || "Request failed");
-}
-
-return data;
-};
   let data = {};
+
   try {
     data = await r.json();
-  } catch {}
+  } catch {
+    // Handle empty or non-JSON responses.
+  }
 
   if (!r.ok) {
-    throw new Error(data.detail || "Request failed");
+    throw new Error(
+      data.detail || data.message || "Request failed: " + r.status
+    );
   }
+
   return data;
 };
+
 
 const links = [
   ["Overview", LayoutDashboard],
