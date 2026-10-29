@@ -4225,3 +4225,29 @@ footer {
     font-size: 5px !important;
   }
 }
+
+/* Personal digital ID: stable QR in its top-left corner. */
+.idcard.hasOwnQr { padding-top: 18px; }
+.id-qr-corner {
+  position: absolute; top: 16px; left: 16px; z-index: 3;
+  width: 88px; padding: 5px 5px 3px; background: #fff; color: #101827;
+  border: 1px solid #73e6ff; border-radius: 9px; display: flex;
+  flex-direction: column; align-items: center; gap: 2px;
+  box-shadow: 0 0 18px #39dfff30;
+}
+.id-qr-corner svg { display: block; width: 76px; height: 76px; }
+.id-qr-corner small { font-size: 6px; font-weight: 800; letter-spacing: 1.4px; }
+.idcard.hasOwnQr .cardbrand { padding-left: 94px; min-height: 91px; }
+.member-idlayout { grid-template-columns: minmax(0, 650px); justify-content: center; }
+.profile-team {
+  display: flex; flex-direction: column; gap: 6px; padding: 12px; margin: 14px 0;
+  border: 1px solid #243b52; border-radius: 8px; background: #0a1422;
+}
+.profile-team small { font-size: 10px; color: #8fa6c0; }
+.profile-team b { color: #eaf4ff; font-size: 13px; }
+.profile-team span { font-size: 10px; color: #7f93ad; }
+@media (max-width: 760px) {
+  .id-qr-corner { top: 13px; left: 13px; width: 76px; }
+  .id-qr-corner svg { width: 64px; height: 64px; }
+  .idcard.hasOwnQr .cardbrand { padding-left: 82px; min-height: 82px; }
+}
