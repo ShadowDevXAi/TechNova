@@ -114,6 +114,8 @@ function App() {
   });
   const [verifyToken, setVerifyToken] = useState("");
   const [verifyResult, setVerifyResult] = useState(null);
+  const [pendingReviewTasks, setPendingReviewTasks] = useState([]);
+  const [reviewQueueMemberId, setReviewQueueMemberId] = useState("");
   const [autoVerifyRoute, setAutoVerifyRoute] = useState(false);
   const [issuedCard, setIssuedCard] = useState(null);
   const [ownCard, setOwnCard] = useState(null);
@@ -178,11 +180,23 @@ function App() {
     let cancelled = false;
     const candidate = extractCardToken(verifyToken);
     api("/verify/" + encodeURIComponent(candidate), token)
-      .then((result) => {
-        if (!cancelled) { setVerifyResult(result); setAutoVerifyRoute(false); }
+      .then(async (result) => {
+        if (cancelled) return;
+        setVerifyResult(result);
+        setAutoVerifyRoute(false);
+        try {
+          await loadPendingReviewTasksFor(result);
+        } catch (err) {
+          if (!cancelled) fail(err);
+        }
       })
       .catch((err) => {
-        if (!cancelled) { setVerifyResult({ valid: false, status: err.message }); setAutoVerifyRoute(false); }
+        if (!cancelled) {
+          setVerifyResult({ valid: false, status: err.message });
+          setPendingReviewTasks([]);
+          setReviewQueueMemberId("");
+          setAutoVerifyRoute(false);
+        }
       });
     return () => { cancelled = true; };
   }, [autoVerifyRoute, token, user?.id, page, verifyToken]);
@@ -223,13 +237,18 @@ function App() {
               const u = new URL(candidate);
               candidate = u.pathname.split("/").filter(Boolean).pop() || "";
             }
+            setPendingReviewTasks([]);
+            setReviewQueueMemberId("");
             const result = await api(
               "/verify/" + encodeURIComponent(candidate),
               token
             );
             setVerifyResult(result);
+            await loadPendingReviewTasksFor(result);
           } catch (err) {
             setVerifyResult({ valid: false, status: err.message });
+            setPendingReviewTasks([]);
+            setReviewQueueMemberId("");
           }
           try {
             await scanner.clear();
@@ -288,6 +307,8 @@ function App() {
     setSelected(null);
     setOwnCard(null);
     setIssuedCard(null);
+    setPendingReviewTasks([]);
+    setReviewQueueMemberId("");
     setMembers([]);
     setTasks([]);
     setDashboard(null);
@@ -435,6 +456,20 @@ function App() {
     return candidate;
   }
 
+  async function loadPendingReviewTasksFor(result) {
+    if (!result?.valid || !result.member_id) {
+      setPendingReviewTasks([]);
+      setReviewQueueMemberId("");
+      return;
+    }
+    const rows = await api(
+      "/tasks/pending-confirmation?member_id=" + encodeURIComponent(result.member_id),
+      token
+    );
+    setPendingReviewTasks(rows);
+    setReviewQueueMemberId(result.member_id);
+  }
+
   async function verify(e) {
     e?.preventDefault();
     try {
@@ -442,10 +477,15 @@ function App() {
       if (!candidate) {
         throw new Error("Scan a QR code or paste its verification URL");
       }
+      setPendingReviewTasks([]);
+      setReviewQueueMemberId("");
       let v = await api("/verify/" + encodeURIComponent(candidate), token);
       setVerifyResult(v);
+      await loadPendingReviewTasksFor(v);
     } catch (e) {
       setVerifyResult({ valid: false, status: e.message });
+      setPendingReviewTasks([]);
+      setReviewQueueMemberId("");
     }
   }
 
@@ -459,6 +499,22 @@ function App() {
       );
       notify(result.message);
       setVerifyResult({ ...verifyResult, confirmed: true });
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function confirmTaskCompletion(task) {
+    try {
+      const cardToken = extractCardToken(verifyToken);
+      if (!cardToken) throw new Error("Scan the assignee's QR code first");
+      await api(`/tasks/${task.id}/confirm-completion`, token, {
+        method: "POST",
+        body: JSON.stringify({ card_token: cardToken }),
+      });
+      setPendingReviewTasks((rows) => rows.filter((row) => row.id !== task.id));
+      await refresh();
+      notify("Task completion confirmed");
     } catch (e) {
       fail(e);
     }
@@ -1238,17 +1294,28 @@ function App() {
                             </td>
                             <td>{t.due_date || "Not set"}</td>
                             <td>
-                              <select
-                                value={t.status}
-                                onChange={(e) =>
-                                  updateTask(t, { status: e.target.value })
-                                }
-                              >
-                                <option>Todo</option>
-                                <option>In progress</option>
-                                <option>Review</option>
-                                <option>Done</option>
-                              </select>
+                              {t.status === "Done" ? (
+                                <span className="pill done">Done ✓</span>
+                              ) : (
+                                <select
+                                  value={t.status}
+                                  onChange={(e) =>
+                                    updateTask(t, { status: e.target.value })
+                                  }
+                                >
+                                  <option>Todo</option>
+                                  <option>In progress</option>
+                                  <option>Review</option>
+                                </select>
+                              )}
+                              {t.status === "Review" && (
+                                <small className="sub">Awaiting QR confirmation</small>
+                              )}
+                              {t.status === "Done" && t.completion_confirmed_by_name && (
+                                <small className="sub">
+                                  Confirmed by {t.completion_confirmed_by_name}
+                                </small>
+                              )}
                             </td>
                             <td>
                               <button
@@ -1571,6 +1638,52 @@ function App() {
                     )}
                   </div>
                 )}
+                {verifyResult?.valid && reviewQueueMemberId === verifyResult.member_id && (
+                  <div className="panel tablepanel task-review-queue">
+                    <div className="panelhead">
+                      <b>Completion confirmations</b>
+                      <small>
+                        {verifyResult.name} · {verifyResult.member_id} · {verifyResult.team || "Unassigned"}
+                      </small>
+                    </div>
+                    {pendingReviewTasks.length ? (
+                      <div className="overflow">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>TASK</th>
+                              <th>PROJECT / TEAM</th>
+                              <th>SUBMISSION NOTE</th>
+                              <th>CONFIRM</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pendingReviewTasks.map((task) => (
+                              <tr key={task.id}>
+                                <td>
+                                  <b>{task.title}</b>
+                                  <small className="sub">{task.id.slice(-6)} · {task.assignee_name}</small>
+                                </td>
+                                <td>{task.project}<small className="sub">{task.assignee_team || verifyResult.team || "Unassigned"}</small></td>
+                                <td>{task.submission_note || "No note provided"}</td>
+                                <td>
+                                  <button className="primary" onClick={() => confirmTaskCompletion(task)}>
+                                    <Check size={14} /> Confirm completion
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="empty">No tasks are awaiting completion confirmation for this member.</div>
+                    )}
+                    <small className="sub queue-help">
+                      Confirm only after scanning this assignee's QR and checking the submitted work.
+                    </small>
+                  </div>
+                )}
                 <div className="privacy">
                   <ShieldCheck size={18} /> Verification checks a random token
                   hash and member status on the server. Public responses omit
@@ -1604,8 +1717,43 @@ function App() {
                       {members.filter((m) => m.team === t.name).length} members
                       assigned
                     </small>
+                    {isAdmin && (
+                      <div className="team-roster">
+                        {members.filter((m) => m.team === t.name).map((member) => (
+                          <div className="team-member" key={member.id}>
+                            <span>
+                              <b>{member.name}</b>
+                              <small>{member.member_id}</small>
+                            </span>
+                            <em>{member.role}</em>
+                          </div>
+                        ))}
+                        {!members.some((m) => m.team === t.name) && (
+                          <p className="team-empty">No members assigned yet.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
+                {isAdmin && (
+                  <div className="panel team unassigned-team">
+                    <FolderKanban />
+                    <h3>Unassigned</h3>
+                    <p>Members who have not been placed in a team.</p>
+                    <small>{members.filter((m) => !m.team || m.team === "Unassigned").length} members</small>
+                    <div className="team-roster">
+                      {members.filter((m) => !m.team || m.team === "Unassigned").map((member) => (
+                        <div className="team-member" key={member.id}>
+                          <span>
+                            <b>{member.name}</b>
+                            <small>{member.member_id}</small>
+                          </span>
+                          <em>{member.role}</em>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}

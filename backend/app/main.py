@@ -21,7 +21,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from .config import settings
 from .db import client, db, ensure_indexes
 from .security import hash_password, verify_password, create_access_token, decode_access_token, new_card_token, token_hash, utcnow
-from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TeamCreate
+from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TaskCompletionConfirm, TeamCreate
 
 bearer = HTTPBearer(auto_error=False)
 PRIVILEGED = {"Founder", "Core Management"}
@@ -36,7 +36,25 @@ def clean_user(doc: dict) -> dict:
     return {"id": str(doc["_id"]), "member_id": doc["member_id"], "name": doc["name"], "email": doc["email"], "role": doc["role"], "team": doc.get("team","Unassigned"), "status": doc["status"], "created_at": doc.get("created_at")}
 
 def clean_task(doc: dict) -> dict:
-    return {"id": str(doc["_id"]), "title": doc["title"], "description": doc.get("description",""), "project": doc.get("project","Club projects"), "assignee_id": str(doc["assignee_id"]), "assignee_name": doc.get("assignee_name",""), "priority": doc.get("priority","Medium"), "status": doc.get("status","Todo"), "due_date": doc.get("due_date"), "submission_note": doc.get("submission_note",""), "created_by": str(doc["created_by"]), "created_at": doc.get("created_at"), "updated_at": doc.get("updated_at")}
+    return {
+        "id": str(doc["_id"]),
+        "title": doc["title"],
+        "description": doc.get("description", ""),
+        "project": doc.get("project", "Club projects"),
+        "assignee_id": str(doc["assignee_id"]),
+        "assignee_name": doc.get("assignee_name", ""),
+        "priority": doc.get("priority", "Medium"),
+        "status": doc.get("status", "Todo"),
+        "due_date": doc.get("due_date"),
+        "submission_note": doc.get("submission_note", ""),
+        "submitted_at": doc.get("submitted_at"),
+        "completion_confirmed_at": doc.get("completion_confirmed_at"),
+        "completion_confirmed_by_name": doc.get("completion_confirmed_by_name"),
+        "completion_confirmed_by_role": doc.get("completion_confirmed_by_role"),
+        "created_by": str(doc["created_by"]),
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("updated_at"),
+    }
 
 async def next_member_id(role: str) -> str:
     # Atomic per-role sequence prevents concurrent registrations from reusing an ID.
@@ -327,6 +345,28 @@ async def list_tasks(user: dict = Depends(get_current_user)):
     docs=await db.tasks.find(query).sort("created_at",-1).limit(500).to_list(500)
     return [clean_task(x) for x in docs]
 
+
+@app.get("/api/tasks/pending-confirmation")
+async def pending_completion_tasks(member_id: str, actor: dict = Depends(allow("Founder", "Core Management"))):
+    """List tasks submitted for QR-gated completion by the scanned member."""
+    member = await db.users.find_one({"member_id": member_id, "status": "Active"})
+    if not member:
+        raise HTTPException(404, "Active member not found")
+    if actor.get("role") == "Core Management" and member.get("role") != "Member":
+        raise HTTPException(403, "Core Management can confirm Member task submissions only")
+    docs = await db.tasks.find({
+        "assignee_id": member["_id"],
+        "status": "Review",
+    }).sort("submitted_at", 1).limit(100).to_list(100)
+    result = []
+    for doc in docs:
+        task = clean_task(doc)
+        task["assignee_member_id"] = member["member_id"]
+        task["assignee_team"] = member.get("team", "Unassigned")
+        result.append(task)
+    return result
+
+
 def can_assign_task(actor: dict, target: dict) -> bool:
     # Founder can assign to Core Management and Members. Core Management can assign only to Members.
     if actor.get("role") == "Founder":
@@ -355,7 +395,20 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
     if not privileged and target["assignee_id"]!=actor["_id"]: raise HTTPException(403,"You can only update tasks assigned to you")
     changes=data.model_dump(exclude_unset=True,exclude_none=True)
     if not privileged and set(changes)-{"status","submission_note"}: raise HTTPException(403,"Members may only update task status and submission note")
-    if not privileged and changes.get("status") not in {None,"In progress","Review","Done"}: raise HTTPException(403,"Invalid member status transition")
+    if not privileged and changes.get("status") not in {None,"Todo","In progress","Review"}:
+        raise HTTPException(403, "Members must submit tasks for review; completion requires a staff QR confirmation")
+    if changes.get("status") == "Done":
+        raise HTTPException(403, "Tasks can only be marked Done by confirming completion after scanning the assignee's QR")
+    if changes.get("status") == "Review":
+        changes["submitted_at"] = utcnow()
+        changes["submitted_by"] = actor["_id"]
+        changes["completion_confirmed_at"] = None
+        changes["completion_confirmed_by"] = None
+        changes["completion_confirmed_by_name"] = None
+        changes["completion_confirmed_by_role"] = None
+    elif changes.get("status") == "In progress":
+        changes["submitted_at"] = None
+        changes["submitted_by"] = None
     if privileged and "assignee_id" in changes:
         assignee=await db.users.find_one({"_id":oid(changes["assignee_id"])})
         if not assignee or assignee["status"]!="Active": raise HTTPException(400,"Assignee must be active")
@@ -556,7 +609,7 @@ async def verify_card(token: str, request: Request, actor: dict = Depends(allow(
     if actor.get("role") == "Core Management" and member.get("role") != "Member":
         raise HTTPException(403, "Core Management can verify Member IDs only")
     await audit(actor, "card_verified", str(member["_id"]), {"member_id": member["member_id"]}, request)
-    return {"valid": True, "status": "Active", "name": member["name"], "member_id": member["member_id"], "role": member["role"], "club": "TechNova"}
+    return {"valid": True, "status": "Active", "name": member["name"], "member_id": member["member_id"], "role": member["role"], "team": member.get("team", "Unassigned"), "club": "TechNova"}
 
 @app.post("/api/verify/{token}/confirm")
 async def confirm_card_verification(token: str, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
@@ -573,6 +626,49 @@ async def confirm_card_verification(token: str, request: Request, actor: dict = 
         raise HTTPException(403, "Core Management can confirm Member IDs only")
     await audit(actor, "card_verification_confirmed", str(member["_id"]), {"member_id": member["member_id"]}, request)
     return {"confirmed": True, "message": "Identity verification confirmation recorded", "member_id": member["member_id"], "name": member["name"]}
+
+@app.post("/api/tasks/{task_id}/confirm-completion")
+async def confirm_task_completion(task_id: str, data: TaskCompletionConfirm, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    """Confirm a Review task only when the assigned person's active QR is scanned."""
+    task = await db.tasks.find_one({"_id": oid(task_id)})
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if task.get("status") != "Review":
+        raise HTTPException(409, "This task is not awaiting completion confirmation")
+
+    member = await db.users.find_one({"_id": task["assignee_id"]})
+    if not member or member.get("status") != "Active":
+        raise HTTPException(400, "The assigned member is not active")
+    if actor.get("role") == "Core Management" and member.get("role") != "Member":
+        raise HTTPException(403, "Core Management can confirm Member task submissions only")
+
+    card = await active_card_from_token(data.card_token)
+    if not card or card.get("member_id") != str(member["_id"]):
+        raise HTTPException(403, "Scan the active QR code belonging to this task's assignee")
+
+    now = utcnow()
+    result = await db.tasks.update_one(
+        {"_id": task["_id"], "status": "Review"},
+        {"$set": {
+            "status": "Done",
+            "completion_confirmed_at": now,
+            "completion_confirmed_by": actor["_id"],
+            "completion_confirmed_by_name": actor["name"],
+            "completion_confirmed_by_role": actor["role"],
+            "updated_at": now,
+        }},
+    )
+    if result.modified_count != 1:
+        raise HTTPException(409, "Task was already confirmed or changed; refresh the task board")
+    await audit(
+        actor,
+        "task_completion_confirmed",
+        task_id,
+        {"assignee_id": str(member["_id"]), "member_id": member["member_id"]},
+        request,
+    )
+    return clean_task(await db.tasks.find_one({"_id": task["_id"]}))
+
 
 @app.get("/api/audit")
 async def list_audit(limit: int = 50, user: dict = Depends(allow("Founder"))):
