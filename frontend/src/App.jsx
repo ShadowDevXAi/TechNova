@@ -1314,7 +1314,7 @@ function App() {
                                     } else {
                                       updateTask(t, { status: nextStatus });
                                     }
-                                  }
+                                  }}
                                 >
                                   <option>Todo</option>
                                   <option>In progress</option>
