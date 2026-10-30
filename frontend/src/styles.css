@@ -6230,3 +6230,28 @@ main {
   .leaderboard-my-card { padding: 14px; }
   .leaderboard-my-card > strong { font-size: 25px; }
 }
+
+
+/* Task lifecycle, recurring mission automation and member discipline */
+.daily-schedule-panel { margin-bottom: 18px; overflow: hidden; }
+.daily-schedule-list { display: flex; flex-direction: column; gap: 0; }
+.daily-schedule-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid rgba(118,151,188,.12); }
+.daily-schedule-row > div { flex: 1; min-width: 180px; }
+.daily-schedule-row > div b, .daily-schedule-row > div small { display: block; }
+.daily-schedule-row > div b { color: #e8f3ff; font-size: 11px; }
+.daily-schedule-row > div small { color: #8da2bd; margin-top: 4px; font-size: 9px; }
+.schedule-state { display: inline-flex; align-items: center; width: fit-content; padding: 4px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; white-space: nowrap; }
+.schedule-state.active { color: #91e7bd; background: rgba(51,173,119,.13); }
+.schedule-state.paused { color: #f1c48d; background: rgba(205,139,62,.13); }
+.task-admin-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
+.task-admin-actions button, .rowactions .textbtn { font-size: 9px; }
+.daily-schedule-panel .panelhead { padding-bottom: 10px; }
+@media (max-width: 760px) {
+  .daily-schedule-row { align-items: flex-start; }
+  .daily-schedule-row > div { flex-basis: 100%; }
+  .daily-schedule-row .schedule-state { margin-right: auto; }
+}
+
+.late-penalty-label { color: #f0ad95; font-weight: 800; }
+.task-admin-actions .danger, .rowactions .danger { color: #f2a2a2; }
+.task-admin-actions button { min-height: 26px; }

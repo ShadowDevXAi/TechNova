@@ -91,3 +91,22 @@ This is an expanded functional starter, not a guarantee of zero limitations or a
 - Credits are awarded once only when Founder or Core Management approves the Member's submitted task. Accepting a common task, starting work, or submitting for review earns no credits. Older Done tasks are not backfilled.
 - Member progression rank is calculated from lifetime approved credits: F 0+, E 25+, D 75+, C 150+, B 300+, A 500+, S 800+, SS 1,200+, SSS 1,800+.
 - The authenticated leaderboard lists the Top 10 active Members and the signed-in Member's own position. Top 3 Members with at least one earned credit are eligible for selected Core Management-led projects and Founder-led coding-competition consideration. This is a shortlist, not automatic Core Management access or a guaranteed competition seat; the Founder confirms participation.
+
+
+## Task lifecycle, daily missions, penalties and discipline
+- Individual and common tasks can be paused/resumed or soft-deleted by Founder/Core Management. Archive removes a task from active lists but retains task and audit history. Pausing a task freezes its deadline; resuming extends the due date by the pause duration.
+- Choose **Repeat automatically every day** when creating a task to save a daily template. The first task copy is created immediately; future copies start the next calendar day. Assigned daily templates re-create tasks for the same selected active assignees; common daily templates publish a fresh common mission each day. Schedules can be paused, resumed or stopped; already-created copies remain.
+- A backend maintenance worker checks every minute for daily schedule generation, expired temporary suspensions and missed deadlines. Daily generation is idempotent across multiple app instances. The worker runs inside the FastAPI service; it therefore depends on the Render service being awake. For guaranteed wall-clock execution while a free service is asleep, configure an external scheduled HTTP call to the Founder-only `POST /api/maintenance/run` endpoint through a secret-bearing scheduler or upgrade to an always-on worker. Do not expose the endpoint without authentication.
+- A task that remains unsubmitted after its due date receives one automatic deduction equal to 25% of its credit reward (rounded up, minimum 1 credit). A task submitted for review on or before its due date is not penalized while waiting for staff approval. Paused tasks and archived tasks are excluded. A late task can still be submitted and approved for its reward; the late deduction remains visible as a separate debit.
+- Founder/Core Management can temporarily suspend active Member accounts for 1–720 hours, record a reason, and optionally deduct 0–500 credits. The suspension automatically expires; an administrator can reinstate early. Active ID cards are revoked during suspension and the member can issue a new card after reinstatement.
+- All task archive/pause, schedule and member discipline actions are audit logged. Discipline deductions and deadline deductions are separate from earned credits and reduce the leaderboard's net total.
+- Penalties should be applied consistently under a published club policy, with a clear reason and an opportunity for the Member to contact management. Do not use automated penalties for subjective or unverified allegations.
+
+
+### Deadline policy detail
+- Deadlines are treated as the end of the due date in India Standard Time. The maintenance worker checks after the date has passed.
+- The automatic deduction is capped at the Member's available positive credit balance; the credit total never falls below zero. A late task can still receive its normal completion reward after review.
+- A submission made on time is exempt even if staff approval happens later. A task that is completed after the due date is still checked for a late submission penalty.
+- Temporarily suspending a Member also pauses their unfinished tasks. Those tasks resume and their deadlines are extended when the Member is reinstated or the suspension expires.
+
+- Repeating tasks receive a fresh same-day deadline for each generated copy. Unclaimed daily common missions are closed after their day ends, while accepted personal task copies remain on the member's task board.
