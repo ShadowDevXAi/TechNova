@@ -660,7 +660,7 @@ function App() {
   }
 
   async function archiveTask(task) {
-    if (!confirm('Archive "' + task.title + '"? It will disappear from active task lists, but its history is retained.')) return;
+    if (!confirm('Delete "' + task.title + '" from the task list? It will be removed from active lists, while its history and audit record are retained.')) return;
     try {
       const result = await api("/tasks/" + task.id, token, { method: "DELETE" });
       notify(result.message);
@@ -2272,7 +2272,7 @@ function App() {
                               </button>{" "}
                               {isAdmin && <div className="task-admin-actions">
                                 <button className="textbtn" onClick={() => toggleTaskPause(t)}>{t.task_state === "Suspended" ? "Resume" : "Pause"}</button>
-                                <button className="textbtn danger" onClick={() => archiveTask(t)}>Archive</button>
+                                <button className="textbtn danger" onClick={() => archiveTask(t)}>Delete</button>
                               </div>}
                               <label className="filebtn">
                                 Attach
