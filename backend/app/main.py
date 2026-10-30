@@ -363,6 +363,50 @@ async def run_daily_maintenance() -> dict:
             "missed_task_penalty_applied": True,
         }})
 
+    # Warn active members once when they reach three missed assigned tasks.
+    # The atomic user-field update prevents duplicate warnings across maintenance cycles.
+    warning_counts = await db.credit_penalties.aggregate([
+        {"$match": {"category": "missed_task", "task_id": {"$exists": True}}},
+        {"$group": {"_id": "$user_id", "missed_task_count": {"$sum": 1}}},
+        {"$match": {"missed_task_count": {"$gte": 3, "$lt": 5}}},
+    ]).to_list(length=5000)
+    warnings_sent = 0
+    for row in warning_counts:
+        member = await db.users.find_one({
+            "_id": row["_id"], "role": "Member", "status": "Active",
+        })
+        if not member:
+            continue
+        warned = await db.users.update_one(
+            {
+                "_id": member["_id"],
+                "role": "Member",
+                "status": "Active",
+                "$or": [
+                    {"missed_task_warning_level": {"$exists": False}},
+                    {"missed_task_warning_level": {"$lt": 3}},
+                ],
+            },
+            {"$set": {
+                "missed_task_warning_level": 3,
+                "missed_task_warning_sent_at": now,
+                "updated_at": now,
+            }},
+        )
+        if warned.modified_count != 1:
+            continue
+        warnings_sent += 1
+        await create_notification(
+            member,
+            "Warning: three task deadlines missed",
+            f'You have missed {row["missed_task_count"]} assigned task deadlines. This is an official warning: reaching 5 missed tasks triggers an automatic 24-hour club suspension. Complete your pending tasks on time and contact club management if you need support or believe a deadline was recorded incorrectly.',
+            "disciplinary",
+        )
+        await audit(None, "member_warned_for_three_missed_tasks", str(member["_id"]), {
+            "missed_task_count": row["missed_task_count"],
+            "suspension_threshold": 5,
+        })
+
     # Five distinct missed assigned tasks trigger a 24-hour temporary club
     # suspension. Count only this rule's penalties, so unrelated manual
     # discipline penalties and older legacy late-fee records do not count.
@@ -422,6 +466,7 @@ async def run_daily_maintenance() -> dict:
         "daily_tasks_generated": generated,
         "daily_missions_closed": closed_daily_missions.modified_count,
         "late_penalties_applied": penalties_applied,
+        "members_warned_for_missed_tasks": warnings_sent,
         "members_auto_suspended": auto_suspended,
         "checked_at": now.isoformat(),
     }
