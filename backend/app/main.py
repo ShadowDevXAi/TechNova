@@ -505,6 +505,11 @@ async def task_review_queue(actor: dict = Depends(allow("Founder", "Core Managem
         task = clean_task(doc)
         task["assignee_member_id"] = member.get("member_id", "")
         task["assignee_team"] = member.get("team", "Unassigned")
+        files = await db.attachments.find({"task_id": doc["_id"]}).sort("created_at", -1).limit(20).to_list(20)
+        task["attachments"] = [
+            {"id": str(item["_id"]), "filename": item["filename"], "size": item["size"]}
+            for item in files
+        ]
         task["attachments_count"] = await db.attachments.count_documents({"task_id": doc["_id"]})
         result.append(task)
     return result
@@ -1072,6 +1077,13 @@ async def confirm_task_completion(task_id: str, data: TaskCompletionConfirm, req
     )
     if result.modified_count != 1:
         raise HTTPException(409, "Task was already confirmed or changed; refresh the task board")
+    await create_notification(
+        member,
+        "Task completion approved",
+        f'{actor["name"]} approved your submission for "{task["title"]}".',
+        "task_approved",
+        task_id=task_id,
+    )
     await audit(
         actor,
         "task_completion_confirmed",
