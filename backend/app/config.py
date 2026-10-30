@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     bootstrap_founder_name: str = Field(min_length=2)
     bootstrap_founder_email: EmailStr
     bootstrap_founder_password: str = Field(min_length=12)
