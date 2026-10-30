@@ -11,6 +11,17 @@ async def ensure_indexes():
     await db.cards.create_index("member_id")
     await db.tasks.create_index([("assignee_id", 1), ("status", 1)])
     await db.tasks.create_index("created_at")
+    await db.tasks.create_index(
+        [("common_task_id", 1), ("assignee_id", 1)],
+        unique=True,
+        partialFilterExpression={"common_task_id": {"$exists": True}},
+    )
+    await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.common_tasks.create_index("created_at")
+    await db.common_task_responses.create_index(
+        [("common_task_id", 1), ("user_id", 1)],
+        unique=True,
+    )
     await db.teams.create_index("name", unique=True)
     await db.audit.create_index("created_at")
 
