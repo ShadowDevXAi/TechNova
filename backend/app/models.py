@@ -48,6 +48,10 @@ class TaskPatch(BaseModel):
     status: TaskStatus | None = None
     due_date: str | None = None
     submission_note: str | None = Field(default=None, max_length=2000)
+    submission_evidence_url: str | None = Field(default=None, max_length=1200)
+    project_url: str | None = Field(default=None, max_length=1200)
+    submission_attested: bool | None = None
+    review_feedback: str | None = Field(default=None, max_length=2000)
 
 class TaskBulkConfirm(BaseModel):
     task_ids: list[str] = Field(min_length=1, max_length=100)

@@ -88,6 +88,14 @@ function App() {
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [taskStatusFilter, setTaskStatusFilter] = useState("All");
   const [announcementForm, setAnnouncementForm] = useState({ title: "", message: "" });
+  const [submissionForm, setSubmissionForm] = useState({
+    taskId: "",
+    title: "",
+    submission_evidence_url: "",
+    project_url: "",
+    submission_note: "",
+    submission_attested: false,
+  });
   const [teams, setTeams] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [search, setSearch] = useState("");
@@ -405,6 +413,7 @@ function App() {
     setAssigneeSearch("");
     setTaskStatusFilter("All");
     setAnnouncementForm({ title: "", message: "" });
+    setSubmissionForm({ taskId: "", title: "", submission_evidence_url: "", project_url: "", submission_note: "", submission_attested: false });
     setDashboard(null);
     setPage("Overview");
     window.history.replaceState({}, "", "/");
@@ -639,6 +648,75 @@ function App() {
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     } catch (e) {
       fail(e);
+    }
+  }
+
+  function openTaskSubmission(task) {
+    setSubmissionForm({
+      taskId: task.id,
+      title: task.title,
+      submission_evidence_url: "",
+      project_url: task.project_url || "",
+      submission_note: "",
+      submission_attested: false,
+    });
+    setModal("taskSubmission");
+  }
+
+  async function submitTaskForReview(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api(`/tasks/${submissionForm.taskId}`, token, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "Review",
+          submission_evidence_url: submissionForm.submission_evidence_url.trim(),
+          project_url: submissionForm.project_url.trim() || null,
+          submission_note: submissionForm.submission_note.trim(),
+          submission_attested: submissionForm.submission_attested,
+        }),
+      });
+      setModal("");
+      setSubmissionForm({
+        taskId: "",
+        title: "",
+        submission_evidence_url: "",
+        project_url: "",
+        submission_note: "",
+        submission_attested: false,
+      });
+      notify("Evidence submitted — task is now in review");
+      await refresh();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function requestTaskChanges(task) {
+    const feedback = window.prompt(
+      "What must the member fix before approval?",
+      task.review_feedback || ""
+    );
+    if (feedback === null) return;
+    if (!feedback.trim()) {
+      fail(new Error("Enter a short reason before returning this task"));
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`/tasks/${task.id}`, token, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "In progress", review_feedback: feedback.trim() }),
+      });
+      notify("Task returned to the member for changes");
+      await refresh();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1632,7 +1710,25 @@ function App() {
                           <b>{task.title}</b>
                           <small>{task.assignee_name} · {task.assignee_member_id || "Member"} · {task.assignee_team || "Unassigned"}</small>
                           <span>{task.submission_note || "No completion note submitted."}</span>
-                          <small>{task.attachments_count || 0} attachment(s) · Submitted {task.submitted_at ? new Date(task.submitted_at).toLocaleString() : "recently"}</small>
+                          {task.submission_evidence_url ? (
+                            <span className="submission-evidence">
+                              <a href={task.submission_evidence_url} target="_blank" rel="noreferrer">Open screenshot evidence ↗</a>
+                              <a href={task.submission_evidence_url} target="_blank" rel="noreferrer" className="evidence-preview-link">
+                                <img
+                                  src={task.submission_evidence_url}
+                                  alt={task.title + " submission screenshot"}
+                                  loading="lazy"
+                                  onError={(event) => { event.currentTarget.style.display = "none"; }}
+                                />
+                              </a>
+                            </span>
+                          ) : (
+                            <small className="evidence-missing">No screenshot evidence attached — request a new submission.</small>
+                          )}
+                          {task.project_url && (
+                            <a href={task.project_url} target="_blank" rel="noreferrer">Open project / demo link ↗</a>
+                          )}
+                          <small>{task.attachments_count || 0} file attachment(s) · Submitted {task.submitted_at ? new Date(task.submitted_at).toLocaleString() : "recently"}</small>
                           {!!task.attachments?.length && (
                             <span className="review-attachments">
                               {task.attachments.map((file) => (
@@ -1646,7 +1742,15 @@ function App() {
                                 </button>
                               ))}
                             </span>
-                          ) }
+                          )}
+                          <button
+                            type="button"
+                            className="textbtn review-return-button"
+                            disabled={busy}
+                            onClick={(event) => { event.preventDefault(); event.stopPropagation(); requestTaskChanges(task); }}
+                          >
+                            Request changes
+                          </button>
                         </span>
                       </label>
                     ))}
@@ -1817,12 +1921,7 @@ function App() {
                                   onChange={(e) => {
                                     const nextStatus = e.target.value;
                                     if (nextStatus === "Review") {
-                                      const note = prompt(
-                                        "Add a short completion note before submitting for review",
-                                        t.submission_note || ""
-                                      );
-                                      if (note === null) return;
-                                      updateTask(t, { status: nextStatus, submission_note: note.trim() });
+                                      openTaskSubmission(t);
                                     } else {
                                       updateTask(t, { status: nextStatus });
                                     }
@@ -1841,7 +1940,10 @@ function App() {
                                 </span>
                               )}
                               {t.status === "Review" && (
-                                <small className="sub">Awaiting Founder/Core Management approval</small>
+                                <small className="sub">Awaiting Founder/Core Management evidence review</small>
+                              )}
+                              {t.review_feedback && t.status === "In progress" && (
+                                <small className="sub review-feedback">Changes requested: {t.review_feedback}</small>
                               )}
                               {t.status === "Done" && t.completion_confirmed_by_name && (
                                 <small className="sub">
@@ -2438,6 +2540,8 @@ function App() {
                 ? "MEMBER MANAGEMENT"
                 : modal === "task"
                 ? "PROJECT WORKSPACE"
+                : modal === "taskSubmission"
+                ? "TASK COMPLETION EVIDENCE"
                 : modal === "announcement"
                 ? "CLUB-WIDE COMMUNICATION"
                 : "TEAM SETTINGS"}
@@ -2447,6 +2551,8 @@ function App() {
                 ? "Create an account"
                 : modal === "task"
                 ? "Create a task"
+                : modal === "taskSubmission"
+                ? "Submit task for review"
                 : modal === "announcement"
                 ? "Broadcast an announcement"
                 : "Create a team"}
@@ -2454,6 +2560,8 @@ function App() {
             <p>
               {modal === "announcement"
                 ? "This message will appear in the inbox of every active Member and Faculty account."
+                : modal === "taskSubmission"
+                ? "Attach a screenshot link and explain what you completed. Founder/Core Management will inspect the evidence before marking the task Done."
                 : "Data is validated and saved by the API."}
             </p>
 
@@ -2681,6 +2789,74 @@ function App() {
                   <button className="primary" disabled={busy}>
                     Create task
                   </button>
+                </div>
+              </form>
+            )}
+
+            {modal === "taskSubmission" && (
+              <form onSubmit={submitTaskForReview} className="submission-form">
+                <div className="submission-task-heading">
+                  <small>SUBMITTING</small>
+                  <b>{submissionForm.title}</b>
+                </div>
+                <div className="submission-help">
+                  <b>Step 1 · Capture your work</b>
+                  <small>Take a screenshot of the completed result. Upload it to ImagePaste, then paste the share link below. For a permanent link, sign in to ImagePaste before uploading.</small>
+                  <a href="https://imagepaste.org/" target="_blank" rel="noreferrer">Open ImagePaste uploader ↗</a>
+                </div>
+                <label>
+                  Screenshot evidence link
+                  <input
+                    required
+                    type="url"
+                    value={submissionForm.submission_evidence_url}
+                    onChange={(event) => setSubmissionForm({ ...submissionForm, submission_evidence_url: event.target.value })}
+                    placeholder="https://imagepaste.org/..."
+                  />
+                </label>
+                {submissionForm.submission_evidence_url.startsWith("https://") && (
+                  <div className="submission-preview">
+                    <small>Screenshot preview</small>
+                    <img
+                      src={submissionForm.submission_evidence_url}
+                      alt="Submission evidence preview"
+                      onError={(event) => { event.currentTarget.style.display = "none"; }}
+                    />
+                  </div>
+                )}
+                <label>
+                  Project / demo / repository link <span className="optional-label">(optional)</span>
+                  <input
+                    type="url"
+                    value={submissionForm.project_url}
+                    onChange={(event) => setSubmissionForm({ ...submissionForm, project_url: event.target.value })}
+                    placeholder="https://github.com/... or https://your-demo..."
+                  />
+                </label>
+                <label>
+                  What did you complete?
+                  <textarea
+                    required
+                    minLength={10}
+                    maxLength={2000}
+                    rows={4}
+                    value={submissionForm.submission_note}
+                    onChange={(event) => setSubmissionForm({ ...submissionForm, submission_note: event.target.value })}
+                    placeholder="Describe the result, what you tested, and which task requirements are complete..."
+                  />
+                </label>
+                <label className="submission-attestation">
+                  <input
+                    type="checkbox"
+                    checked={submissionForm.submission_attested}
+                    onChange={(event) => setSubmissionForm({ ...submissionForm, submission_attested: event.target.checked })}
+                    required
+                  />
+                  <span>I confirm this screenshot and the links show my current work for this task.</span>
+                </label>
+                <div className="modalactions">
+                  <button type="button" className="secondary" onClick={() => setModal("")}>Cancel</button>
+                  <button className="primary" disabled={busy || !submissionForm.submission_attested}>Submit evidence for review</button>
                 </div>
               </form>
             )}
