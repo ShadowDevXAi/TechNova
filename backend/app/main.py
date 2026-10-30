@@ -203,6 +203,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials | None = De
     if user and user.get("status") == "Suspended" and user.get("suspension_temporary") and user.get("suspension_until") and user["suspension_until"] <= utcnow():
         await db.users.update_one({"_id": user["_id"], "status": "Suspended"}, {"$set": {"status": "Active", "suspension_until": None, "suspension_temporary": False, "suspension_expired_at": utcnow()}})
         user = await db.users.find_one({"_id": user["_id"]})
+        await resume_member_paused_tasks(user["_id"], utcnow())
     if not user or user.get("status") != "Active":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account is unavailable")
     return user
@@ -454,6 +455,7 @@ async def login(data: LoginIn, request: Request):
     if user["status"] == "Suspended" and user.get("suspension_temporary") and user.get("suspension_until") and user["suspension_until"] <= utcnow():
         await db.users.update_one({"_id": user["_id"]}, {"$set": {"status": "Active", "suspension_until": None, "suspension_temporary": False, "suspension_expired_at": utcnow()}})
         user = await db.users.find_one({"_id": user["_id"]})
+        await resume_member_paused_tasks(user["_id"], utcnow())
     if user["status"] != "Active":
         raise HTTPException(403,"Your account is pending approval or unavailable")
     token = create_access_token(str(user["_id"]),user["role"])
@@ -1230,7 +1232,7 @@ async def temporarily_suspend_member(member_id: str, data: MemberSuspendIn, requ
             "category": "disciplinary", "reason": data.reason.strip(),
             "actor_id": actor["_id"], "created_at": now,
         })
-    await create_notification(target, "Temporary account suspension", f"Your TechNova account is suspended until {until.isoformat()}. Reason: {data.reason.strip()}. Credit deduction: {data.credit_penalty}.", "disciplinary")
+    await create_notification(target, "Temporary account suspension", f"Your TechNova account is suspended until {until.isoformat()}. Reason: {data.reason.strip()}. Credit deduction: {actual_penalty}.", "disciplinary")
     await audit(actor, "member_temporarily_suspended", member_id, {
         "reason": data.reason.strip(), "duration_hours": data.duration_hours,
         "suspension_until": until.isoformat(), "credit_penalty": actual_penalty,
