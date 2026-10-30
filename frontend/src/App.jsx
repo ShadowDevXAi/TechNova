@@ -238,46 +238,49 @@ function App() {
     if (token) load(token);
   }, [token]);
 
+  // Keep live updates lightweight: refresh only the active operational data.
+  // Full workspace loading remains available through the manual refresh action.
   useEffect(() => {
     if (!token || !user) return undefined;
-    const isManager = ["Founder", "Core Management"].includes(user.role);
     let cancelled = false;
+    let inFlight = false;
+
     const syncWorkspace = async () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible" || inFlight) return;
+      inFlight = true;
       try {
-        const [nextTasks, nextCommonTasks, nextLeaderboard, nextCredits, nextMembers, nextTeams, nextSchedules, nextNotifications, nextReviews, nextDashboard, nextAudit] = await Promise.all([
+        const requests = [
           api("/tasks", token),
-          api("/common-tasks", token),
-          api("/leaderboard", token),
-          api("/credits/ledger", token),
-          api("/members", token),
-          api("/teams", token),
-          isManager ? api("/task-schedules", token) : Promise.resolve([]),
           api("/notifications", token),
-          isManager ? api("/tasks/review-queue", token) : Promise.resolve([]),
           api("/dashboard", token),
-          page === "Audit Log" ? api("/audit?limit=100", token) : Promise.resolve(null),
-        ]);
+        ];
+        if (["Founder", "Core Management"].includes(user.role)) {
+          requests.push(api("/tasks/review-queue", token));
+        }
+        const [nextTasks, nextNotifications, nextDashboard, nextReviews] =
+          await Promise.all(requests);
         if (cancelled) return;
         setTasks(nextTasks);
-        setCommonTasks(nextCommonTasks);
-        setLeaderboard(nextLeaderboard);
-        setCreditLedger(nextCredits);
-        setMembers(nextMembers);
-        setTeams(nextTeams);
-        setDailySchedules(nextSchedules);
         setNotifications(nextNotifications);
-        setReviewQueue(nextReviews);
         setDashboard(nextDashboard);
-        if (nextAudit) setAudit(nextAudit);
-        setSelectedReviewIds((current) =>
-          current.filter((id) => nextReviews.some((task) => task.id === id))
-        );
+        if (nextReviews) {
+          setReviewQueue(nextReviews);
+          setSelectedReviewIds((current) =>
+            current.filter((id) => nextReviews.some((task) => task.id === id))
+          );
+        }
+        if (page === "Audit Log") {
+          const nextAudit = await api("/audit?limit=100", token);
+          if (!cancelled) setAudit(nextAudit);
+        }
       } catch {
-        // Preserve the last good workspace snapshot during temporary network issues.
+        // Keep the last successful snapshot during short network interruptions.
+      } finally {
+        inFlight = false;
       }
     };
-    const timer = window.setInterval(syncWorkspace, 15000);
+
+    const timer = window.setInterval(syncWorkspace, 30000);
     const onVisible = () => {
       if (document.visibilityState === "visible") syncWorkspace();
     };
