@@ -6184,3 +6184,49 @@ main {
   display: grid;
   place-items: center;
 }
+
+
+/* TechNova credits, difficulty ranks and member leaderboard */
+.difficulty-badge, .member-rank-pill {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  width: fit-content; border: 1px solid rgba(115,157,205,.28); border-radius: 999px;
+  padding: 4px 8px; color: #cfe7ff; background: rgba(39,93,151,.16);
+  font-size: 9px; font-weight: 800; letter-spacing: .04em; white-space: nowrap;
+}
+.difficulty-badge.rank-f, .member-rank-pill.rank-f { color: #aebbd0; }
+.difficulty-badge.rank-e, .member-rank-pill.rank-e { color: #b4d8e8; }
+.difficulty-badge.rank-d, .member-rank-pill.rank-d { color: #8ee1d0; }
+.difficulty-badge.rank-c, .member-rank-pill.rank-c { color: #9bd8ff; }
+.difficulty-badge.rank-b, .member-rank-pill.rank-b { color: #b4a8ff; }
+.difficulty-badge.rank-a, .member-rank-pill.rank-a { color: #f3cb85; }
+.difficulty-badge.rank-s, .member-rank-pill.rank-s { color: #ffc17c; border-color: rgba(255,193,124,.45); }
+.difficulty-badge.rank-ss, .member-rank-pill.rank-ss { color: #ff9ac8; border-color: rgba(255,154,200,.42); }
+.difficulty-badge.rank-sss, .member-rank-pill.rank-sss { color: #ffe18c; border-color: rgba(255,225,140,.52); box-shadow: 0 0 14px rgba(255,205,100,.12); }
+.task-tech-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 7px; color: #91a4bd; font-size: 9px; }
+.task-tech-meta .difficulty-badge { padding: 2px 7px; }
+.leaderboard-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.leaderboard-my-card { display: flex; flex-direction: column; gap: 7px; padding: 18px; }
+.leaderboard-my-card > small { color: #8197b2; font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+.leaderboard-my-card > strong { color: #f1f7ff; font-size: 30px; line-height: 1.1; }
+.leaderboard-my-card > span { color: #9bb0c9; font-size: 10px; line-height: 1.5; }
+.leaderboard-perk-card > strong { color: #f2d18c; font-size: 22px; }
+.leaderboard-perks { margin-bottom: 16px; padding: 18px; }
+.leaderboard-perks > p, .leaderboard-footnote { color: #9aadc5; font-size: 11px; line-height: 1.7; }
+.leaderboard-top-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.leaderboard-top-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; padding: 13px; border: 1px solid rgba(111,153,203,.2); border-radius: 12px; background: rgba(24,45,73,.34); }
+.leaderboard-top-card > div { min-width: 0; }
+.leaderboard-top-card > div b, .leaderboard-top-card > div small { display: block; overflow-wrap: anywhere; }
+.leaderboard-top-card > div b { color: #e8f3ff; font-size: 12px; }
+.leaderboard-top-card > div small { margin-top: 4px; color: #91a4bd; font-size: 9px; }
+.leader-position { display: inline-flex; align-items: center; justify-content: center; min-width: 31px; padding: 4px 7px; border-radius: 8px; color: #f7d99c; background: rgba(209,157,77,.13); font-size: 11px; font-weight: 900; }
+.leader-credit-value, .leaderboard-top-card > strong { color: #f5d38b; font-size: 13px; }
+.leader-eligible, .leader-pending { display: inline-flex; width: fit-content; padding: 4px 7px; border-radius: 7px; font-size: 9px; font-weight: 700; }
+.leader-eligible { color: #9ce5c5; background: rgba(61,177,126,.12); }
+.leader-pending { color: #b6c4d7; background: rgba(117,143,174,.1); }
+.leaderboard-table-panel { margin-bottom: 12px; }
+.leaderboard-footnote { margin-top: 10px; }
+@media (max-width: 760px) {
+  .leaderboard-summary-grid, .leaderboard-top-three { grid-template-columns: 1fr; }
+  .leaderboard-my-card { padding: 14px; }
+  .leaderboard-my-card > strong { font-size: 25px; }
+}

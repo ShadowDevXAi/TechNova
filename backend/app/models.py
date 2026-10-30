@@ -5,6 +5,8 @@ Role = Literal["Founder", "Core Management", "Faculty", "Member"]
 MemberStatus = Literal["Pending", "Active", "Suspended"]
 TaskStatus = Literal["Todo", "In progress", "Review", "Done"]
 Priority = Literal["Low", "Medium", "High"]
+TaskDifficulty = Literal["F", "E", "D", "C", "B", "A", "S", "SS", "SSS"]
+ProgrammingLanguage = Literal["General", "C", "C++", "C#", "Java", "Python", "JavaScript", "TypeScript", "HTML/CSS", "React", "FastAPI", "SQL / MongoDB", "Godot / GDScript", "Other"]
 
 class RegisterIn(BaseModel):
     name: str = Field(min_length=2, max_length=100)
@@ -37,6 +39,8 @@ class TaskCreate(BaseModel):
     assignee_ids: list[str] = Field(default_factory=list, max_length=100)
     assignment_mode: Literal["individual", "selected_members", "open_to_all"] = "individual"
     priority: Priority = "Medium"
+    difficulty_rank: TaskDifficulty = "F"
+    programming_language: ProgrammingLanguage = "General"
     due_date: str | None = None
     project: str = Field(default="Club projects", max_length=100)
 

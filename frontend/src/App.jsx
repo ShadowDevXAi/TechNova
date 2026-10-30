@@ -21,6 +21,7 @@ import {
   UserCheck,
   LockKeyhole,
   AlertTriangle,
+  Trophy,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Html5QrcodeScanner } from "html5-qrcode";
@@ -96,6 +97,7 @@ const links = [
   ["Overview", LayoutDashboard],
   ["Members", Users],
   ["Tasks & Projects", ClipboardList],
+  ["Leaderboard", Trophy],
   ["Notifications", Bell],
   ["Digital ID Cards", CreditCard],
   ["Verification", ShieldCheck],
@@ -110,6 +112,7 @@ function App() {
   const [members, setMembers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [commonTasks, setCommonTasks] = useState([]);
+  const [leaderboard, setLeaderboard] = useState({ top_10: [], top_three: [], my_entry: null });
   const [notifications, setNotifications] = useState([]);
   const [reviewQueue, setReviewQueue] = useState([]);
   const [selectedReviewIds, setSelectedReviewIds] = useState([]);
@@ -159,6 +162,8 @@ function App() {
     assignee_id: "",
     assignee_ids: [],
     priority: "Medium",
+    difficulty_rank: "F",
+    programming_language: "General",
     due_date: "",
     project: "Club projects",
   });
@@ -191,12 +196,13 @@ function App() {
     try {
       const me = await api("/auth/me", t);
       setUser(me);
-      const [d, ms, ts, tm, common, inbox, reviews] = await Promise.all([
+      const [d, ms, ts, tm, common, board, inbox, reviews] = await Promise.all([
         api("/dashboard", t),
         api("/members", t),
         api("/tasks", t),
         api("/teams", t),
         api("/common-tasks", t),
+        api("/leaderboard", t),
         api("/notifications", t),
         ["Founder", "Core Management"].includes(me.role)
           ? api("/tasks/review-queue", t)
@@ -207,6 +213,7 @@ function App() {
       setTasks(ts);
       setTeams(tm);
       setCommonTasks(common);
+      setLeaderboard(board);
       setNotifications(inbox);
       setReviewQueue(reviews);
       setSelectedReviewIds((current) => current.filter((id) => reviews.some((task) => task.id === id)));
@@ -231,9 +238,10 @@ function App() {
     const syncWorkspace = async () => {
       if (document.visibilityState !== "visible") return;
       try {
-        const [nextTasks, nextCommonTasks, nextNotifications, nextReviews, nextDashboard] = await Promise.all([
+        const [nextTasks, nextCommonTasks, nextLeaderboard, nextNotifications, nextReviews, nextDashboard] = await Promise.all([
           api("/tasks", token),
           api("/common-tasks", token),
+          api("/leaderboard", token),
           api("/notifications", token),
           isManager ? api("/tasks/review-queue", token) : Promise.resolve([]),
           api("/dashboard", token),
@@ -241,6 +249,7 @@ function App() {
         if (cancelled) return;
         setTasks(nextTasks);
         setCommonTasks(nextCommonTasks);
+        setLeaderboard(nextLeaderboard);
         setNotifications(nextNotifications);
         setReviewQueue(nextReviews);
         setDashboard(nextDashboard);
@@ -435,6 +444,7 @@ function App() {
     setMembers([]);
     setTasks([]);
     setCommonTasks([]);
+    setLeaderboard({ top_10: [], top_three: [], my_entry: null });
     setNotifications([]);
     setReviewQueue([]);
     setSelectedReviewIds([]);
@@ -554,6 +564,8 @@ function App() {
         assignee_id: "",
         assignee_ids: [],
         priority: "Medium",
+        difficulty_rank: "F",
+        programming_language: "General",
         due_date: "",
         project: "Club projects",
       });
@@ -1206,7 +1218,7 @@ function App() {
           </div>
         </div>
         <label className="navlabel">WORKSPACE</label>
-        {links.slice(0, 4).map(([n, I]) => (
+        {links.slice(0, 5).map(([n, I]) => (
           <button
             className={"nav " + (page === n ? "chosen" : "")}
             key={n}
@@ -1220,7 +1232,7 @@ function App() {
           </button>
         ))}
         <label className="navlabel">MANAGE</label>
-        {links.slice(4).filter(([n]) => n !== "Verification" || isAdmin).map(([n, I]) => (
+        {links.slice(5).filter(([n]) => n !== "Verification" || isAdmin).map(([n, I]) => (
           <button
             className={"nav " + (page === n ? "chosen" : "")}
             key={n}
@@ -1413,6 +1425,78 @@ function App() {
                   </div>
                 )}
               </div>
+            </>
+          )}
+
+          {page === "Leaderboard" && (
+            <>
+              <div className="title">
+                <div>
+                  <label>TECHNOVA MEMBER PROGRESSION</label>
+                  <h1>Leaderboard</h1>
+                  <p>Credits come from tasks that Founder or Core Management has approved. Rankings refresh with the workspace.</p>
+                </div>
+              </div>
+              <div className="leaderboard-summary-grid">
+                <div className="panel leaderboard-my-card">
+                  <small>YOUR CURRENT POSITION</small>
+                  <strong>{leaderboard.my_entry?.position ? "#" + leaderboard.my_entry.position : "—"}</strong>
+                  <span>{leaderboard.my_entry ? leaderboard.my_entry.rank + " rank · " + leaderboard.my_entry.credits + " credits" : user.role === "Member" ? "No approved task credits yet" : "Leaderboard ranks active Members"}</span>
+                </div>
+                <div className="panel leaderboard-my-card">
+                  <small>APPROVED TASKS</small>
+                  <strong>{leaderboard.my_entry?.completed_tasks ?? 0}</strong>
+                  <span>Only approved completions count</span>
+                </div>
+                <div className="panel leaderboard-my-card leaderboard-perk-card">
+                  <small>TOP 3 RECOGNITION</small>
+                  <strong>{leaderboard.my_entry?.top_three_eligible ? "Eligible" : "Top 3"}</strong>
+                  <span>{leaderboard.my_entry?.top_three_eligible ? "You are currently in the Top 3 shortlist." : "Top 3 active Members with earned credits are shortlisted."}</span>
+                </div>
+              </div>
+              <div className="panel leaderboard-perks">
+                <div className="panelhead">
+                  <b>Top 3 opportunities</b>
+                  <span className="common-task-count">Founder-reviewed</span>
+                </div>
+                <p>The current Top 3 credit holders become eligible to join selected Core Management-led club projects and be considered to accompany the Founder at coding competitions. This is a recognition shortlist, not an automatic role promotion or guaranteed competition seat; the Founder confirms each opportunity.</p>
+                <div className="leaderboard-top-three">
+                  {(leaderboard.top_three || []).map((entry) => (
+                    <div className="leaderboard-top-card" key={entry.member_id}>
+                      <span className="leader-position">#{entry.position}</span>
+                      <div><b>{entry.name}</b><small>{entry.member_id} · {entry.rank} rank</small></div>
+                      <strong>{entry.credits} CR</strong>
+                      {entry.top_three_eligible ? <span className="leader-eligible">Project / competition eligible</span> : <span className="leader-pending">Complete an approved task to qualify</span>}
+                    </div>
+                  ))}
+                  {!leaderboard.top_three?.length && <div className="empty">No active Members on the board yet.</div>}
+                </div>
+              </div>
+              <div className="panel tablepanel leaderboard-table-panel">
+                <div className="panelhead">
+                  <b>Top 10 Members</b>
+                  <small>{leaderboard.active_member_count || 0} active Members · ranked by credits, then approved tasks</small>
+                </div>
+                <div className="overflow">
+                  <table>
+                    <thead><tr><th>POSITION</th><th>MEMBER</th><th>MEMBER RANK</th><th>CREDITS</th><th>APPROVED TASKS</th><th>RECOGNITION</th></tr></thead>
+                    <tbody>
+                      {(leaderboard.top_10 || []).map((entry) => (
+                        <tr key={entry.member_id}>
+                          <td><span className="leader-position">#{entry.position}</span></td>
+                          <td><b>{entry.name}</b><small className="sub">{entry.member_id} · {entry.team || "Unassigned"}</small></td>
+                          <td><span className={"member-rank-pill rank-" + entry.rank.toLowerCase()}>{entry.rank}</span></td>
+                          <td><b className="leader-credit-value">{entry.credits.toLocaleString()} CR</b></td>
+                          <td>{entry.completed_tasks}</td>
+                          <td>{entry.top_three_eligible ? <span className="leader-eligible">Top 3 shortlist</span> : "—"}</td>
+                        </tr>
+                      ))}
+                      {!leaderboard.top_10?.length && <tr><td colSpan="6" className="empty">No approved task credits recorded yet.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p className="leaderboard-footnote">Task difficulty rewards: F 5 · E 10 · D 20 · C 35 · B 55 · A 85 · S 125 · SS 175 · SSS 250 credits. Member ranks rise with lifetime approved credits; old completed tasks are not backdated.</p>
             </>
           )}
 
@@ -1806,7 +1890,8 @@ function App() {
                     <article className="common-task-card" key={item.id}>
                       <div className="common-task-meta">
                         <span className="pill">{item.priority}</span>
-                        <small>{item.project}</small>
+                        <span className={"difficulty-badge rank-" + (item.difficulty_rank || "F").toLowerCase()}>{item.difficulty_rank || "F"} · {item.credits_reward || 5} CR</span>
+                        <small>{item.project} · {item.programming_language || "General"}</small>
                       </div>
                       <h3>{item.title}</h3>
                       <p>{item.description || "No additional description provided."}</p>
@@ -1929,6 +2014,11 @@ function App() {
                               <b>{t.title}</b>
                               <small className="sub">
                                 {t.id.slice(-6)} · {t.project}
+                              </small>
+                              <small className="task-tech-meta">
+                                <span className={"difficulty-badge rank-" + (t.difficulty_rank || "F").toLowerCase()}>{t.difficulty_rank || "F"} rank</span>
+                                <span>{t.programming_language || "General"}</span>
+                                <span>{t.status === "Done" ? "+" + (t.credits_awarded || 0) + " earned" : "+" + (t.credits_reward || 5) + " credits"}</span>
                               </small>
                               {t.description && (
                                 <small className="sub">{t.description}</small>
@@ -2782,6 +2872,36 @@ function App() {
                     }
                   />
                 </label>
+                <div className="twocol">
+                  <label>
+                    Task difficulty · credit reward
+                    <select
+                      value={taskForm.difficulty_rank}
+                      onChange={(e) => setTaskForm({ ...taskForm, difficulty_rank: e.target.value })}
+                    >
+                      <option value="F">F · Starter · 5 credits</option>
+                      <option value="E">E · Easy · 10 credits</option>
+                      <option value="D">D · Basic · 20 credits</option>
+                      <option value="C">C · Intermediate · 35 credits</option>
+                      <option value="B">B · Skilled · 55 credits</option>
+                      <option value="A">A · Advanced · 85 credits</option>
+                      <option value="S">S · Expert · 125 credits</option>
+                      <option value="SS">SS · Elite · 175 credits</option>
+                      <option value="SSS">SSS · Legendary · 250 credits</option>
+                    </select>
+                  </label>
+                  <label>
+                    Coding language / technology
+                    <select
+                      value={taskForm.programming_language}
+                      onChange={(e) => setTaskForm({ ...taskForm, programming_language: e.target.value })}
+                    >
+                      {["General", "C", "C++", "C#", "Java", "Python", "JavaScript", "TypeScript", "HTML/CSS", "React", "FastAPI", "SQL / MongoDB", "Godot / GDScript", "Other"].map((language) => (
+                        <option key={language} value={language}>{language}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
                 <div className="twocol">
                   <label>
                     Priority

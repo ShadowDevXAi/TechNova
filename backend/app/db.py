@@ -11,6 +11,7 @@ async def ensure_indexes():
     await db.cards.create_index("member_id")
     await db.tasks.create_index([("assignee_id", 1), ("status", 1)])
     await db.tasks.create_index("created_at")
+    await db.tasks.create_index([("status", 1), ("assignee_id", 1), ("credits_awarded", 1)])
     await db.tasks.create_index(
         [("common_task_id", 1), ("assignee_id", 1)],
         unique=True,
