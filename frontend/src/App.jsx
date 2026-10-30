@@ -26,7 +26,28 @@ import { QRCodeSVG } from "qrcode.react";
 import { Html5QrcodeScanner } from "html5-qrcode";
 
 
-const TECHNOVA_LOGO_URL = "https://imagepaste.org/v/c4n7u2ru.png";
+// ImagePaste /v/ URLs are share pages. Use the /i/ direct-file URL in HTML image sources.
+const TECHNOVA_LOGO_SHARE_URL = "https://imagepaste.org/v/c4n7u2ru.png";
+const TECHNOVA_LOGO_IMAGE_URL = "https://imagepaste.org/i/c4n7u2ru.png";
+
+function TechNovaLogo({ className = "" }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return <span className={("technova-logo-fallback " + className).trim()}>TN</span>;
+  }
+
+  return (
+    <img
+      className={("technova-logo-image " + className).trim()}
+      src={TECHNOVA_LOGO_IMAGE_URL}
+      alt="TechNova logo"
+      loading="eager"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -957,7 +978,7 @@ function App() {
     return (
       <div className="authscreen">
         <div className="authbrand">
-          <div className="logo"><img src={TECHNOVA_LOGO_URL} alt="TechNova logo" /></div>
+          <div className="logo"><TechNovaLogo /></div>
           <div>
             <b>
               Tech<span>Nova</span>
@@ -1158,7 +1179,7 @@ function App() {
         aria-hidden={window.innerWidth <= 760 && !mobile}
       >
         <div className="brand">
-          <div className="logo"><img src={TECHNOVA_LOGO_URL} alt="TechNova logo" /></div>
+          <div className="logo"><TechNovaLogo /></div>
           <div>
             <b>
               Tech<span>Nova</span>
@@ -1170,7 +1191,7 @@ function App() {
           </button>
         </div>
         <div className="workspace">
-          <span>TN</span>
+          <span className="workspace-logo"><TechNovaLogo /></span>
           <div>
             <b>TechNova Club</b>
             <small>{user.role} workspace</small>
@@ -1321,7 +1342,7 @@ function App() {
                   </button>
                 )}
                 <div className="planet">
-                  <div>TN</div>
+                  <div className="planet-logo-frame"><TechNovaLogo /></div>
                   <b>TECHNOVA</b>
                   <small>CREATE · CODE · INNOVATE</small>
                 </div>
@@ -2051,7 +2072,7 @@ function App() {
                     </div>
                   )}
                   <div className="cardbrand">
-                    <div className="miniTN"><img src={TECHNOVA_LOGO_URL} alt="TechNova logo" /></div>
+                    <div className="miniTN"><TechNovaLogo /></div>
                     <div>
                       <b>
                         Tech<span>Nova</span>
