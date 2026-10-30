@@ -33,19 +33,27 @@ const TECHNOVA_LOGO_IMAGE_URL = "https://imagepaste.org/i/c4n7u2ru.png";
 function TechNovaLogo({ className = "" }) {
   const [failed, setFailed] = useState(false);
 
-  if (failed) {
-    return <span className={("technova-logo-fallback " + className).trim()}>TN</span>;
-  }
-
   return (
-    <img
-      className={("technova-logo-image " + className).trim()}
-      src={TECHNOVA_LOGO_IMAGE_URL}
-      alt="TechNova logo"
-      loading="eager"
-      decoding="async"
-      onError={() => setFailed(true)}
-    />
+    <a
+      className={("technova-logo-link " + className).trim()}
+      href={TECHNOVA_LOGO_SHARE_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Open the TechNova logo image"
+    >
+      {failed ? (
+        <span className="technova-logo-fallback">TN</span>
+      ) : (
+        <img
+          className="technova-logo-image"
+          src={TECHNOVA_LOGO_IMAGE_URL}
+          alt="TechNova logo"
+          loading="eager"
+          decoding="async"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </a>
   );
 }
 
