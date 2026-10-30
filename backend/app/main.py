@@ -267,8 +267,8 @@ async def run_daily_maintenance() -> dict:
         await resume_member_paused_tasks(expired_member["_id"], now)
     # Close yesterday's unclaimed daily common missions so Members cannot accept stale opportunities.
     closed_daily_missions = await db.common_tasks.update_many({
-        "recurrence": "daily", "status": "Open", "due_date": {"$lt": today_key},
-        "deleted_at": {"$exists": False},
+        "recurrence": "daily", "status": {"$in": ["Open", "Suspended"]},
+        "due_date": {"$lt": today_key}, "deleted_at": {"$exists": False},
     }, {"$set": {"status": "Closed", "task_state": "Closed", "closed_at": now}})
     generated = 0
     schedules = await db.daily_task_schedules.find({
@@ -336,10 +336,7 @@ async def run_daily_maintenance() -> dict:
             if submitted_date <= task.get("due_date", ""):
                 continue
         task_key = "late:" + str(task["_id"])
-        points = min(max(1, math.ceil(int(task.get("credits_reward", 5)) * 0.25)), await member_credit_balance(task["assignee_id"]))
-        if points <= 0:
-            await db.tasks.update_one({"_id": task["_id"]}, {"$set": {"late_penalty_applied_at": now, "late_penalty_points": 0}})
-            continue
+        points = max(1, math.ceil(max(1, int(task.get("credits_reward", 5))) * 0.25))
         try:
             await db.credit_penalties.insert_one({
                 "_id": ObjectId(), "reference_key": task_key,
@@ -456,6 +453,12 @@ async def login(data: LoginIn, request: Request):
         await db.users.update_one({"_id": user["_id"]}, {"$set": {"status": "Active", "suspension_until": None, "suspension_temporary": False, "suspension_expired_at": utcnow()}})
         user = await db.users.find_one({"_id": user["_id"]})
         await resume_member_paused_tasks(user["_id"], utcnow())
+    if user["status"] == "Suspended":
+        if user.get("suspension_temporary") and user.get("suspension_until"):
+            until_text = user["suspension_until"].astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p IST")
+            reason_text = user.get("suspension_reason") or "Club rule review"
+            raise HTTPException(403, f"Your account is temporarily suspended until {until_text}. Reason: {reason_text}")
+        raise HTTPException(403, "Your account is suspended. Contact the Founder for reinstatement.")
     if user["status"] != "Active":
         raise HTTPException(403,"Your account is pending approval or unavailable")
     token = create_access_token(str(user["_id"]),user["role"])
@@ -569,6 +572,57 @@ async def dashboard(user: dict = Depends(get_current_user)):
         return {"members_total":total,"members_active":active,"members_pending":pending,"tasks_total":tasks,"tasks_open":open_tasks,"tasks_done":done,"recent_tasks":[clean_task(x) for x in recent]}
     own_tasks = await db.tasks.find({"assignee_id":user["_id"], "deleted_at": {"$exists": False}}).sort("created_at",-1).limit(10).to_list(10)
     return {"members_total":1,"members_active":1,"members_pending":0,"tasks_total":len(own_tasks),"tasks_open":sum(x["status"]!="Done" for x in own_tasks),"tasks_done":sum(x["status"]=="Done" for x in own_tasks),"recent_tasks":[clean_task(x) for x in own_tasks]}
+
+@app.get("/api/credits/ledger")
+async def credit_ledger(user: dict = Depends(get_current_user)):
+    """Return the signed-in user's own credit balance and a recent, auditable ledger."""
+    earned_pipeline = await db.tasks.aggregate([
+        {"$match": {"assignee_id": user["_id"], "status": "Done", "credits_awarded": {"$gt": 0}}},
+        {"$group": {"_id": None, "total": {"$sum": "$credits_awarded"}}},
+    ]).to_list(length=1)
+    penalty_pipeline = await db.credit_penalties.aggregate([
+        {"$match": {"user_id": user["_id"]}},
+        {"$group": {"_id": None, "total": {"$sum": "$points"}}},
+    ]).to_list(length=1)
+    earned_total = int(earned_pipeline[0]["total"]) if earned_pipeline else 0
+    penalized_total = int(penalty_pipeline[0]["total"]) if penalty_pipeline else 0
+
+    earned_docs = await db.tasks.find({
+        "assignee_id": user["_id"], "status": "Done", "credits_awarded": {"$gt": 0},
+    }).sort("credits_awarded_at", -1).limit(50).to_list(50)
+    penalty_docs = await db.credit_penalties.find({
+        "user_id": user["_id"],
+    }).sort("created_at", -1).limit(50).to_list(50)
+    related_task_ids = [row.get("task_id") for row in penalty_docs if row.get("task_id")]
+    related_tasks = await db.tasks.find({"_id": {"$in": related_task_ids}}).to_list(50) if related_task_ids else []
+    task_titles = {row["_id"]: row.get("title", "Task") for row in related_tasks}
+
+    entries = []
+    for task in earned_docs:
+        entries.append({
+            "id": str(task["_id"]), "type": "earned", "title": task.get("title", "Completed task"),
+            "points": int(task.get("credits_awarded", 0)), "reason": "Staff-approved task completion",
+            "created_at": task.get("credits_awarded_at") or task.get("completion_confirmed_at") or task.get("updated_at"),
+        })
+    for penalty in penalty_docs:
+        entries.append({
+            "id": str(penalty["_id"]), "type": "penalty",
+            "title": task_titles.get(penalty.get("task_id"), "Club rule penalty"),
+            "points": -int(penalty.get("points", 0)), "reason": penalty.get("reason", "Credit adjustment"),
+            "category": penalty.get("category", "disciplinary"), "created_at": penalty.get("created_at"),
+        })
+    entries.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+    entries = [{
+        **row,
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+    } for row in entries[:50]]
+    return {
+        "balance": max(0, earned_total - penalized_total),
+        "earned_total": earned_total,
+        "penalized_total": penalized_total,
+        "entries": entries,
+    }
+
 
 @app.get("/api/leaderboard")
 async def leaderboard(user: dict = Depends(get_current_user)):
@@ -1138,6 +1192,10 @@ async def set_task_state(task_id: str, data: TaskStateIn, request: Request, acto
     task = await db.tasks.find_one({"_id": oid(task_id), "deleted_at": {"$exists": False}})
     if not task:
         raise HTTPException(404, "Task not found")
+    if actor.get("role") == "Core Management":
+        assignee = await db.users.find_one({"_id": task["assignee_id"]})
+        if not assignee or assignee.get("role") != "Member":
+            raise HTTPException(403, "Core Management can pause or resume Member tasks only")
     reason = (data.reason or "").strip()
     if data.state == "Suspended" and len(reason) < 5:
         raise HTTPException(422, "Give a reason of at least 5 characters for pausing a task")
@@ -1164,6 +1222,10 @@ async def soft_delete_task(task_id: str, request: Request, actor: dict = Depends
     task = await db.tasks.find_one({"_id": oid(task_id), "deleted_at": {"$exists": False}})
     if not task:
         raise HTTPException(404, "Task not found or already deleted")
+    if actor.get("role") == "Core Management":
+        assignee = await db.users.find_one({"_id": task["assignee_id"]})
+        if not assignee or assignee.get("role") != "Member":
+            raise HTTPException(403, "Core Management can archive Member tasks only")
     now = utcnow()
     await db.tasks.update_one({"_id": task["_id"]}, {"$set": {"deleted_at": now, "deleted_by": actor["_id"], "task_state": "Deleted", "updated_at": now}})
     await audit(actor, "task_soft_deleted", task_id, {"title": task.get("title", "")}, request)
@@ -1176,6 +1238,14 @@ async def set_common_task_state(common_task_id: str, data: TaskStateIn, request:
     if not task:
         raise HTTPException(404, "Common task not found")
     reason = (data.reason or "").strip()
+    if data.state == "Active" and task.get("recurrence") == "daily" and task.get("due_date"):
+        local_today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+        if task["due_date"] < local_today:
+            await db.common_tasks.update_one(
+                {"_id": task["_id"]},
+                {"$set": {"status": "Closed", "task_state": "Closed", "closed_at": utcnow()}},
+            )
+            raise HTTPException(409, "This daily mission has expired. The next scheduled occurrence will be created automatically.")
     if data.state == "Suspended" and len(reason) < 5:
         raise HTTPException(422, "Give a reason of at least 5 characters for pausing a task")
     await db.common_tasks.update_one({"_id": task["_id"]}, {"$set": {
@@ -1422,20 +1492,15 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
     await audit(actor, "task_updated", task_id, {"fields": list(changes)}, request)
     return clean_task(await db.tasks.find_one({"_id": target["_id"]}))
 
-@app.delete("/api/tasks/{task_id}")
-async def delete_task(task_id: str, request: Request, actor: dict = Depends(allow("Founder","Core Management"))):
-    res=await db.tasks.delete_one({"_id":oid(task_id)})
-    if not res.deleted_count: raise HTTPException(404,"Task not found")
-    await audit(actor,"task_deleted",task_id,{},request)
-    return {"message":"Task deleted"}
-
 @app.post("/api/tasks/{task_id}/attachments", status_code=201)
 async def upload_task_attachment(task_id: str, request: Request, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    task = await db.tasks.find_one({"_id": oid(task_id)})
+    task = await db.tasks.find_one({"_id": oid(task_id), "deleted_at": {"$exists": False}})
     if not task:
         raise HTTPException(404, "Task not found")
     if user["role"] not in PRIVILEGED and task["assignee_id"] != user["_id"]:
         raise HTTPException(403, "You cannot upload to this task")
+    if user["role"] not in PRIVILEGED and task.get("task_state", "Active") != "Active":
+        raise HTTPException(409, "This task is paused by management; uploads are temporarily disabled.")
     allowed = {"image/png", "image/jpeg", "image/webp", "application/pdf", "text/plain", "application/zip"}
     if file.content_type not in allowed:
         raise HTTPException(415, "Allowed files: PNG, JPEG, WEBP, PDF, TXT, ZIP")

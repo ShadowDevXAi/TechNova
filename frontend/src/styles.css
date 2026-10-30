@@ -6255,3 +6255,12 @@ main {
 .late-penalty-label { color: #f0ad95; font-weight: 800; }
 .task-admin-actions .danger, .rowactions .danger { color: #f2a2a2; }
 .task-admin-actions button { min-height: 26px; }
+
+
+/* Transparent credit ledger */
+.credit-ledger-summary { grid-template-columns: minmax(0, 1fr); margin-top: 0; }
+.credit-ledger-summary .leaderboard-my-card { max-width: 420px; }
+.credit-ledger-panel { margin-bottom: 16px; }
+.credit-positive { color: #91e4b8; white-space: nowrap; }
+.credit-negative { color: #ffadad; white-space: nowrap; }
+.late-penalty-label { color: #ffb5a8; font-weight: 800; }

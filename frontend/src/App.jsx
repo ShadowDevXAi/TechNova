@@ -114,6 +114,7 @@ function App() {
   const [commonTasks, setCommonTasks] = useState([]);
   const [dailySchedules, setDailySchedules] = useState([]);
   const [leaderboard, setLeaderboard] = useState({ top_10: [], top_three: [], my_entry: null });
+  const [creditLedger, setCreditLedger] = useState({ balance: 0, earned_total: 0, penalized_total: 0, entries: [] });
   const [notifications, setNotifications] = useState([]);
   const [reviewQueue, setReviewQueue] = useState([]);
   const [selectedReviewIds, setSelectedReviewIds] = useState([]);
@@ -198,13 +199,14 @@ function App() {
     try {
       const me = await api("/auth/me", t);
       setUser(me);
-      const [d, ms, ts, tm, common, board, schedules, inbox, reviews] = await Promise.all([
+      const [d, ms, ts, tm, common, board, ledger, schedules, inbox, reviews] = await Promise.all([
         api("/dashboard", t),
         api("/members", t),
         api("/tasks", t),
         api("/teams", t),
         api("/common-tasks", t),
         api("/leaderboard", t),
+        api("/credits/ledger", t),
         ["Founder", "Core Management"].includes(me.role) ? api("/task-schedules", t) : Promise.resolve([]),
         api("/notifications", t),
         ["Founder", "Core Management"].includes(me.role)
@@ -218,6 +220,7 @@ function App() {
       setCommonTasks(common);
       setDailySchedules(schedules);
       setLeaderboard(board);
+      setCreditLedger(ledger);
       setNotifications(inbox);
       setReviewQueue(reviews);
       setSelectedReviewIds((current) => current.filter((id) => reviews.some((task) => task.id === id)));
@@ -242,10 +245,11 @@ function App() {
     const syncWorkspace = async () => {
       if (document.visibilityState !== "visible") return;
       try {
-        const [nextTasks, nextCommonTasks, nextLeaderboard, nextMembers, nextTeams, nextSchedules, nextNotifications, nextReviews, nextDashboard, nextAudit] = await Promise.all([
+        const [nextTasks, nextCommonTasks, nextLeaderboard, nextCredits, nextMembers, nextTeams, nextSchedules, nextNotifications, nextReviews, nextDashboard, nextAudit] = await Promise.all([
           api("/tasks", token),
           api("/common-tasks", token),
           api("/leaderboard", token),
+          api("/credits/ledger", token),
           api("/members", token),
           api("/teams", token),
           isManager ? api("/task-schedules", token) : Promise.resolve([]),
@@ -258,6 +262,7 @@ function App() {
         setTasks(nextTasks);
         setCommonTasks(nextCommonTasks);
         setLeaderboard(nextLeaderboard);
+        setCreditLedger(nextCredits);
         setMembers(nextMembers);
         setTeams(nextTeams);
         setDailySchedules(nextSchedules);
@@ -458,6 +463,7 @@ function App() {
     setCommonTasks([]);
     setDailySchedules([]);
     setLeaderboard({ top_10: [], top_three: [], my_entry: null });
+    setCreditLedger({ balance: 0, earned_total: 0, penalized_total: 0, entries: [] });
     setNotifications([]);
     setReviewQueue([]);
     setSelectedReviewIds([]);
@@ -1568,6 +1574,35 @@ function App() {
                   <small>TOP 3 RECOGNITION</small>
                   <strong>{leaderboard.my_entry?.top_three_eligible ? "Eligible" : "Top 3"}</strong>
                   <span>{leaderboard.my_entry?.top_three_eligible ? "You are currently in the Top 3 shortlist." : "Top 3 active Members with earned credits are shortlisted."}</span>
+                </div>
+              </div>
+              <div className="leaderboard-summary-grid credit-ledger-summary">
+                <div className="panel leaderboard-my-card">
+                  <small>AVAILABLE CREDITS</small>
+                  <strong>{creditLedger.balance.toLocaleString()} CR</strong>
+                  <span>Earned {creditLedger.earned_total.toLocaleString()} · Deductions {creditLedger.penalized_total.toLocaleString()}</span>
+                </div>
+              </div>
+              <div className="panel tablepanel credit-ledger-panel">
+                <div className="panelhead">
+                  <b>My credit history</b>
+                  <small>Recent task awards and rule/deadline deductions</small>
+                </div>
+                <div className="overflow">
+                  <table>
+                    <thead><tr><th>ACTIVITY</th><th>REASON</th><th>DATE</th><th>CHANGE</th></tr></thead>
+                    <tbody>
+                      {(creditLedger.entries || []).map((entry) => (
+                        <tr key={entry.id}>
+                          <td><b>{entry.title}</b><small className="sub">{entry.type === "earned" ? "Approved task" : (entry.category || "Disciplinary penalty").replaceAll("_", " ")}</small></td>
+                          <td>{entry.reason}</td>
+                          <td>{entry.created_at ? new Date(entry.created_at).toLocaleString() : "—"}</td>
+                          <td><b className={entry.points >= 0 ? "credit-positive" : "credit-negative"}>{entry.points > 0 ? "+" : ""}{entry.points} CR</b></td>
+                        </tr>
+                      ))}
+                      {!creditLedger.entries?.length && <tr><td colSpan="4" className="empty">No credit activity yet. Approved task rewards will appear here.</td></tr>}
+                    </tbody>
+                  </table>
                 </div>
               </div>
               <div className="panel leaderboard-perks">
