@@ -645,7 +645,7 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
         await audit(actor, "common_task_created", str(result.inserted_id), {
             "notified_members": len(active_members),
         }, request)
-        return clean_common_task(common_doc, None, 0)
+        return clean_common_task(common_doc, None, [], [])
 
     raw_ids = data.assignee_ids or ([data.assignee_id] if data.assignee_id else [])
     if data.assignment_mode == "individual" and data.assignee_id:
