@@ -16,6 +16,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 import re
 import math
+import json
+import random
+import urllib.request
+import urllib.error
 from zoneinfo import ZoneInfo
 from datetime import timedelta
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -84,6 +88,8 @@ def clean_task(doc: dict) -> dict:
         "created_by": str(doc["created_by"]),
         "created_at": doc.get("created_at"),
         "updated_at": doc.get("updated_at"),
+        "auto_generated": bool(doc.get("auto_generated", False)),
+        "generation_source": doc.get("generation_source", ""),
     }
 
 async def next_member_id(role: str) -> str:
@@ -249,6 +255,183 @@ async def resume_member_paused_tasks(member_id: ObjectId, now: datetime) -> None
         await db.tasks.update_one({"_id": task["_id"], "task_state": "Suspended"}, {"$set": changes})
 
 
+# Curated fallback pool: used whenever Gemini is not configured or unavailable.
+AUTO_TASK_BANK = [
+    {"title":"C Program: Student Marks Calculator","description":"Read marks for three subjects, calculate the total and percentage, and print pass/fail using a clear condition. Validate that marks are between 0 and 100.","programming_language":"C","complexity":1,"estimated_minutes":25},
+    {"title":"C Program: Even or Odd Checker","description":"Read an integer and determine whether it is even or odd. Handle zero and negative values correctly.","programming_language":"C","complexity":1,"estimated_minutes":15},
+    {"title":"C Program: Multiplication Table","description":"Read an integer and print its multiplication table from 1 to 10 using a loop.","programming_language":"C","complexity":1,"estimated_minutes":20},
+    {"title":"C Program: Simple Calculator","description":"Build a menu-driven calculator for addition, subtraction, multiplication and division. Prevent division by zero.","programming_language":"C","complexity":2,"estimated_minutes":40},
+    {"title":"C++: Student Record Structure","description":"Create a Student structure or class with name, roll number and marks. Read and display records for at least three students.","programming_language":"C++","complexity":3,"estimated_minutes":60},
+    {"title":"Python: Word Frequency Counter","description":"Accept a sentence or text and count how many times each word occurs. Ignore letter case and display the most frequent word.","programming_language":"Python","complexity":3,"estimated_minutes":45},
+    {"title":"Python: Expense Tracker","description":"Create a command-line expense tracker that stores descriptions and amounts, lists entries and calculates the total expense. Validate numeric input.","programming_language":"Python","complexity":4,"estimated_minutes":90},
+    {"title":"HTML/CSS: Responsive Profile Card","description":"Build a responsive profile card with an avatar, name, role, short bio and contact links. Use semantic HTML and a mobile-friendly layout.","programming_language":"HTML/CSS","complexity":2,"estimated_minutes":60},
+    {"title":"JavaScript: Interactive To-do List","description":"Create a to-do list that can add, complete and delete tasks. Keep the interface usable on mobile and prevent empty task entries.","programming_language":"JavaScript","complexity":4,"estimated_minutes":90},
+    {"title":"JavaScript: Form Validation","description":"Build a registration form and validate required fields, email format and password length. Show clear inline error messages without reloading the page.","programming_language":"JavaScript","complexity":4,"estimated_minutes":75},
+    {"title":"React: Task Dashboard","description":"Build a small React dashboard that adds, filters and completes tasks. Use component state and show an empty state when there are no tasks.","programming_language":"React","complexity":5,"estimated_minutes":150},
+    {"title":"MongoDB: CRUD Practice API","description":"Create a small FastAPI service with MongoDB operations to create, list, update and delete simple project records. Validate input and handle missing records.","programming_language":"FastAPI / MongoDB","complexity":6,"estimated_minutes":210},
+    {"title":"Godot: Player Movement Prototype","description":"Create a 2D Godot scene with a player that moves in four directions, collides with walls and has a camera that follows the player.","programming_language":"Godot / GDScript","complexity":5,"estimated_minutes":150},
+    {"title":"C++: Inventory Manager","description":"Create a console inventory manager that adds products, updates stock, searches by ID and reports low-stock items. Use functions and suitable data structures.","programming_language":"C++","complexity":6,"estimated_minutes":210},
+    {"title":"Full-stack: Club Task API Design","description":"Design and implement authenticated task endpoints with role checks, input validation, status transitions and tests for unauthorized access.","programming_language":"Python / FastAPI","complexity":7,"estimated_minutes":300},
+]
+
+AUTO_TASK_RANKS = {
+    1: ("F", 5), 2: ("E", 10), 3: ("D", 20),
+    4: ("C", 35), 5: ("B", 55), 6: ("A", 85),
+    7: ("S", 125), 8: ("SS", 175), 9: ("SSS", 250),
+}
+
+
+def automatic_task_rank(task: dict) -> tuple[str, int]:
+    try:
+        complexity = int(task.get("complexity", 1))
+    except (TypeError, ValueError):
+        complexity = 1
+    complexity = max(1, min(9, complexity))
+    return AUTO_TASK_RANKS[complexity]
+
+
+def _gemini_task_templates_sync(api_key: str, model: str, count: int) -> list[dict]:
+    prompt = (
+        "Create " + str(max(5, min(15, count))) + " original, practical programming tasks for a beginner-to-advanced college coding club. "
+        "Return ONLY a JSON object with a tasks array. Every task must contain title, description, programming_language, "
+        "complexity (integer 1-9), and estimated_minutes (integer 15-480). "
+        "Complexity guide: 1 tiny beginner exercise; 2-3 basic logic/loops/functions; 4-5 intermediate multi-step program or UI; "
+        "6-7 advanced integration, APIs, data structures or testing; 8-9 genuinely difficult architecture/algorithm work. "
+        "Do not inflate complexity. Descriptions must be self-contained, achievable, original and have measurable requirements. "
+        "Avoid unsafe, harmful, credential-stealing or privacy-invasive tasks."
+    )
+    body = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.8},
+    }).encode("utf-8")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    request = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(request, timeout=25) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    text = payload["candidates"][0]["content"]["parts"][0]["text"]
+    parsed = json.loads(text)
+    tasks = parsed.get("tasks", []) if isinstance(parsed, dict) else []
+    valid = []
+    for item in tasks:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()[:120]
+        description = str(item.get("description", "")).strip()[:3000]
+        language = str(item.get("programming_language", "General")).strip()[:60]
+        if len(title) < 5 or len(description) < 20 or not language:
+            continue
+        try:
+            complexity = max(1, min(9, int(item.get("complexity", 1))))
+            minutes = max(15, min(480, int(item.get("estimated_minutes", 60))))
+        except (TypeError, ValueError):
+            continue
+        valid.append({
+            "title": title, "description": description,
+            "programming_language": language, "complexity": complexity,
+            "estimated_minutes": minutes,
+        })
+    return valid
+
+
+async def automatic_task_templates(count: int) -> tuple[list[dict], str]:
+    if settings.gemini_api_key:
+        try:
+            generated = await asyncio.to_thread(
+                _gemini_task_templates_sync,
+                settings.gemini_api_key,
+                settings.gemini_model,
+                count,
+            )
+            if generated:
+                return generated, "Gemini AI"
+        except Exception as exc:
+            print(f"Gemini task generation unavailable; using task bank: {exc}")
+    return list(AUTO_TASK_BANK), "Built-in task bank"
+
+
+async def generate_automatic_daily_tasks() -> dict:
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+    members = await db.users.find({"role": "Member", "status": "Active"}).limit(1000).to_list(1000)
+    if not members:
+        return {"generated": 0, "source": "none", "date": today}
+    missing = []
+    for member in members:
+        key = f"{today}:{member['_id']}"
+        exists = await db.tasks.find_one({"auto_generation_key": key}, {"_id": 1})
+        if not exists:
+            missing.append(member)
+    if not missing:
+        return {"generated": 0, "source": "already_generated", "date": today}
+
+    templates, source = await automatic_task_templates(max(5, min(15, len(missing))))
+    if not templates:
+        templates, source = list(AUTO_TASK_BANK), "Built-in task bank"
+    random.shuffle(templates)
+    founder = await db.users.find_one({"role": "Founder", "status": "Active"})
+    if not founder:
+        print("Automatic daily tasks skipped: active Founder account not found.")
+        return {"generated": 0, "source": source, "date": today}
+
+    now = utcnow()
+    generated = 0
+    random.shuffle(missing)
+    for index, member in enumerate(missing):
+        template = random.choice(templates)
+        rank, reward = automatic_task_rank(template)
+        generation_key = f"{today}:{member['_id']}"
+        task_doc = {
+            "_id": ObjectId(),
+            "title": template["title"],
+            "description": template["description"],
+            "project": "Daily Coding Challenge",
+            "assignee_id": member["_id"],
+            "assignee_name": member["name"],
+            "priority": "High" if rank in {"S", "SS", "SSS"} else ("Medium" if rank in {"C", "B", "A"} else "Low"),
+            "difficulty_rank": rank,
+            "programming_language": template.get("programming_language", "General"),
+            "credits_reward": reward,
+            "credits_awarded": 0,
+            "late_penalty_points": 0,
+            "task_state": "Active",
+            "recurrence": "once",
+            "status": "Todo",
+            "due_date": today,
+            "submission_note": "",
+            "submission_evidence_url": "",
+            "submission_attested": False,
+            "created_by": founder["_id"],
+            "created_by_name": "TechNova Auto Task Engine",
+            "created_at": now,
+            "updated_at": now,
+            "auto_generated": True,
+            "generation_source": source,
+            "auto_generation_key": generation_key,
+            "auto_complexity": template.get("complexity", 1),
+            "estimated_minutes": template.get("estimated_minutes", 60),
+        }
+        try:
+            result = await db.tasks.insert_one(task_doc)
+        except DuplicateKeyError:
+            continue
+        generated += 1
+        await create_notification(
+            member,
+            "Your daily coding challenge is ready",
+            f'{task_doc["title"]} · Rank {rank} · {reward} credits · Due today. Open Tasks & Projects to view the full requirements.',
+            "task_assigned",
+            task_id=str(result.inserted_id),
+        )
+
+    if generated:
+        await audit(founder, "automatic_daily_tasks_generated", today, {
+            "generated": generated, "source": source,
+            "ranked_tasks": True, "random_assignment": True,
+        })
+    return {"generated": generated, "source": source, "date": today}
+
+
+
+
 async def run_daily_maintenance() -> dict:
     now = utcnow()
     local_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
@@ -320,6 +503,8 @@ async def run_daily_maintenance() -> dict:
             except DuplicateKeyError:
                 pass
         await db.daily_task_schedules.update_one({"_id": schedule_id}, {"$set": {"last_generated_date": today_key}})
+
+    automatic_daily = await generate_automatic_daily_tasks()
 
     # A missed task is an assigned personal task (including accepted common tasks
     # and generated daily missions) that remains unfinished after its due date.
@@ -464,6 +649,8 @@ async def run_daily_maintenance() -> dict:
     return {
         "suspensions_expired": resumed.modified_count,
         "daily_tasks_generated": generated,
+        "automatic_daily_tasks_generated": automatic_daily["generated"],
+        "automatic_task_source": automatic_daily["source"],
         "daily_missions_closed": closed_daily_missions.modified_count,
         "late_penalties_applied": penalties_applied,
         "members_warned_for_missed_tasks": warnings_sent,
@@ -539,6 +726,11 @@ async def health():
 @app.post("/api/maintenance/run")
 async def run_maintenance_now(actor: dict = Depends(allow("Founder"))):
     return {"message": "Maintenance cycle completed", **(await run_daily_maintenance())}
+
+@app.post("/api/auto-tasks/generate")
+async def generate_auto_tasks_now(actor: dict = Depends(allow("Founder"))):
+    result = await generate_automatic_daily_tasks()
+    return {"message": "Automatic task generation checked", **result}
 
 @app.post("/api/auth/register", status_code=201)
 @limiter.limit("8/hour")
