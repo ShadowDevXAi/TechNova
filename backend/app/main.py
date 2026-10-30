@@ -1865,6 +1865,34 @@ async def confirm_task_completion(task_id: str, data: TaskCompletionConfirm, req
 
 @app.get("/api/audit")
 async def list_audit(limit: int = 50, user: dict = Depends(allow("Founder"))):
-    limit=max(1,min(limit,200))
-    docs=await db.audit.find().sort("created_at",-1).limit(limit).to_list(limit)
-    return [{"id":str(x["_id"]),"actor_role":x.get("actor_role"),"action":x["action"],"target":x.get("target"),"created_at":x.get("created_at"),"details":x.get("details",{})} for x in docs]
+    limit = max(1, min(limit, 200))
+    docs = await db.audit.find().sort("created_at", -1).limit(limit).to_list(limit)
+
+    # Resolve audit targets that refer to members so the Founder sees names,
+    # not internal Mongo IDs or club member IDs, in the Target column.
+    target_values = list({str(x.get("target")) for x in docs if x.get("target")})
+    target_object_ids = [
+        ObjectId(value) for value in target_values if ObjectId.is_valid(value)
+    ]
+    member_query = []
+    if target_object_ids:
+        member_query.append({"_id": {"$in": target_object_ids}})
+    if target_values:
+        member_query.append({"member_id": {"$in": target_values}})
+    target_names = {}
+    if member_query:
+        members_by_target = await db.users.find({"$or": member_query}).to_list(length=500)
+        for member in members_by_target:
+            name = member.get("name") or member.get("member_id") or "Member"
+            target_names[str(member["_id"])] = name
+            if member.get("member_id"):
+                target_names[member["member_id"]] = name
+
+    return [{
+        "id": str(x["_id"]),
+        "actor_role": x.get("actor_role"),
+        "action": x["action"],
+        "target": target_names.get(str(x.get("target")), x.get("target")),
+        "created_at": x.get("created_at"),
+        "details": x.get("details", {}),
+    } for x in docs]
