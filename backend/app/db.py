@@ -11,6 +11,7 @@ async def ensure_indexes():
     await db.cards.create_index("member_id")
     await db.tasks.create_index([("assignee_id", 1), ("status", 1)])
     await db.tasks.create_index("created_at")
+    await db.tasks.create_index("auto_generation_key", unique=True, sparse=True)
     await db.tasks.create_index([("status", 1), ("assignee_id", 1), ("credits_awarded", 1)])
     await db.tasks.create_index([("daily_schedule_id", 1), ("occurrence_date", 1), ("assignee_id", 1)], unique=True, partialFilterExpression={"daily_schedule_id": {"$exists": True}})
     await db.common_tasks.create_index([("daily_schedule_id", 1), ("occurrence_date", 1)], unique=True, partialFilterExpression={"daily_schedule_id": {"$exists": True}})
