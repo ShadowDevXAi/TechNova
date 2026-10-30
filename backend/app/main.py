@@ -228,7 +228,8 @@ async def member_credit_balance(member_id: ObjectId) -> int:
     ]).to_list(length=1)
     earned = int(earned_rows[0].get("earned", 0)) if earned_rows else 0
     penalties = int(penalty_rows[0].get("penalties", 0)) if penalty_rows else 0
-    return max(0, earned - penalties)
+    # Negative balances are intentional: penalties are not silently capped at zero.
+    return earned - penalties
 
 
 async def resume_member_paused_tasks(member_id: ObjectId, now: datetime) -> None:
@@ -320,42 +321,110 @@ async def run_daily_maintenance() -> dict:
                 pass
         await db.daily_task_schedules.update_one({"_id": schedule_id}, {"$set": {"last_generated_date": today_key}})
 
+    # A missed task is an assigned personal task (including accepted common tasks
+    # and generated daily missions) that remains unfinished after its due date.
     overdue = await db.tasks.find({
         "due_date": {"$lt": today_key},
-        "status": {"$in": ["Todo", "In progress", "Review", "Done"]},
+        "status": {"$in": ["Todo", "In progress", "Review"]},
         "task_state": {"$ne": "Suspended"},
         "deleted_at": {"$exists": False},
-    }).limit(1000).to_list(1000)
+    }).limit(5000).to_list(5000)
     penalties_applied = 0
     for task in overdue:
-        if task.get("status") == "Done" and not task.get("submitted_at"):
-            continue
-        if task.get("status") in {"Review", "Done"} and task.get("submitted_at"):
+        # A submission sent before the deadline is not a miss, even if staff
+        # has not reviewed it yet. A late submission remains a missed deadline.
+        if task.get("status") == "Review" and task.get("submitted_at"):
             submitted = task["submitted_at"]
             submitted_date = submitted.astimezone(ZoneInfo("Asia/Kolkata")).date().isoformat() if submitted.tzinfo else submitted.date().isoformat()
             if submitted_date <= task.get("due_date", ""):
                 continue
-        task_key = "late:" + str(task["_id"])
-        points = max(1, math.ceil(max(1, int(task.get("credits_reward", 5))) * 0.25))
+        task_key = "missed-task:" + str(task["_id"])
+        # Deduct the full credit value assigned to the task's difficulty rank.
+        points = task_credit_value(task)
         try:
             await db.credit_penalties.insert_one({
                 "_id": ObjectId(), "reference_key": task_key,
                 "user_id": task["assignee_id"], "task_id": task["_id"],
-                "points": points, "category": "missed_deadline",
-                "reason": "Task was not submitted for review by its due date.",
+                "points": points, "category": "missed_task",
+                "reason": f'Missed task deadline · rank {task.get("difficulty_rank", "F")}.',
                 "actor_id": None, "created_at": now,
             })
             penalties_applied += 1
             await create_notification(
                 {"_id": task["assignee_id"], "name": task.get("assignee_name", "Member"), "email": ""},
                 "Task deadline missed · credit penalty",
-                f'{task.get("title", "Task")} was submitted or completed after its due date. {points} credits were deducted. This penalty is applied only once.',
+                f'{task.get("title", "Task")} was not submitted by its due date. {points} credits (rank {task.get("difficulty_rank", "F")}) were deducted. This penalty is applied only once.',
                 "credit_penalty", task_id=str(task["_id"]),
             )
         except DuplicateKeyError:
             pass
-        await db.tasks.update_one({"_id": task["_id"]}, {"$set": {"late_penalty_applied_at": now, "late_penalty_points": points}})
-    return {"suspensions_expired": resumed.modified_count, "daily_tasks_generated": generated, "daily_missions_closed": closed_daily_missions.modified_count, "late_penalties_applied": penalties_applied, "checked_at": now.isoformat()}
+        await db.tasks.update_one({"_id": task["_id"]}, {"$set": {
+            "late_penalty_applied_at": now, "late_penalty_points": points,
+            "missed_task_penalty_applied": True,
+        }})
+
+    # Five distinct missed assigned tasks trigger a 24-hour temporary club
+    # suspension. Count only this rule's penalties, so unrelated manual
+    # discipline penalties and older legacy late-fee records do not count.
+    missed_counts = await db.credit_penalties.aggregate([
+        {"$match": {"category": "missed_task", "task_id": {"$exists": True}}},
+        {"$group": {"_id": "$user_id", "missed_task_count": {"$sum": 1}}},
+        {"$match": {"missed_task_count": {"$gte": 5}}},
+    ]).to_list(length=5000)
+    auto_suspended = 0
+    for row in missed_counts:
+        member = await db.users.find_one({
+            "_id": row["_id"], "role": "Member", "status": "Active",
+        })
+        if not member:
+            continue
+        until = now + timedelta(hours=24)
+        reason = f'Automatic suspension: {row["missed_task_count"]} assigned tasks were not completed by their deadlines.'
+        changed = await db.users.update_one(
+            {"_id": member["_id"], "role": "Member", "status": "Active"},
+            {"$set": {
+                "status": "Suspended", "suspended_at": now,
+                "suspension_until": until, "suspension_temporary": True,
+                "suspension_reason": reason, "suspended_by": None,
+                "automatic_discipline": True, "updated_at": now,
+            }},
+        )
+        if changed.modified_count != 1:
+            continue
+        auto_suspended += 1
+        await db.cards.update_many(
+            {"member_id": str(member["_id"]), "status": "Active"},
+            {"$set": {"status": "Revoked", "revoked_at": now}},
+        )
+        await db.tasks.update_many({
+            "assignee_id": member["_id"],
+            "status": {"$in": ["Todo", "In progress", "Review"]},
+            "task_state": {"$ne": "Suspended"},
+            "deleted_at": {"$exists": False},
+        }, {"$set": {
+            "task_state": "Suspended",
+            "task_state_reason": "Member temporary suspension after five missed tasks",
+            "paused_at": now,
+            "suspension_pause_by_member": True,
+        }})
+        await create_notification(
+            member, "Automatic 24-hour club suspension",
+            f'You missed {row["missed_task_count"]} assigned tasks. Your account is temporarily suspended until {until.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p IST")}. Rank-based task penalties have been deducted from your credits; your balance may become negative. Contact club management if you believe this is incorrect.',
+            "disciplinary",
+        )
+        await audit(None, "member_auto_suspended_for_missed_tasks", str(member["_id"]), {
+            "missed_task_count": row["missed_task_count"],
+            "duration_hours": 24, "suspension_until": until.isoformat(),
+        })
+
+    return {
+        "suspensions_expired": resumed.modified_count,
+        "daily_tasks_generated": generated,
+        "daily_missions_closed": closed_daily_missions.modified_count,
+        "late_penalties_applied": penalties_applied,
+        "members_auto_suspended": auto_suspended,
+        "checked_at": now.isoformat(),
+    }
 
 
 async def maintenance_worker():
@@ -617,7 +686,7 @@ async def credit_ledger(user: dict = Depends(get_current_user)):
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
     } for row in entries[:50]]
     return {
-        "balance": max(0, earned_total - penalized_total),
+        "balance": earned_total - penalized_total,
         "earned_total": earned_total,
         "penalized_total": penalized_total,
         "entries": entries,
@@ -655,7 +724,7 @@ async def leaderboard(user: dict = Depends(get_current_user)):
             "member_id": member.get("member_id", ""),
             "name": member.get("name", "Member"),
             "team": member.get("team", "Unassigned"),
-            "credits": max(0, score["credits"] - penalties.get(member["_id"], 0)),
+            "credits": score["credits"] - penalties.get(member["_id"], 0),
             "credits_earned": score["credits"],
             "credits_penalized": penalties.get(member["_id"], 0),
             "completed_tasks": score["completed_tasks"],
