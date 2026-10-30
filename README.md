@@ -83,3 +83,11 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 
 ## Current scope and honest limitations
 This is an expanded functional starter, not a guarantee of zero limitations or a certified production release. It does not yet include email verification, polished front/back ID PDF generation, cloud object storage, virus scanning, notifications, a full project/milestone module, or a full automated end-to-end test suite. Review the authorization model and deploy only after tests, backups, HTTPS, and secret management are in place.
+
+
+## Member credits, ranks and leaderboard
+- Every task has an independent difficulty rank (F, E, D, C, B, A, S, SS, or SSS), a programming-language / technology tag, and a credit reward. The existing Low / Medium / High priority remains a separate urgency field.
+- Credit rewards: F 5, E 10, D 20, C 35, B 55, A 85, S 125, SS 175, SSS 250.
+- Credits are awarded once only when Founder or Core Management approves the Member's submitted task. Accepting a common task, starting work, or submitting for review earns no credits. Older Done tasks are not backfilled.
+- Member progression rank is calculated from lifetime approved credits: F 0+, E 25+, D 75+, C 150+, B 300+, A 500+, S 800+, SS 1,200+, SSS 1,800+.
+- The authenticated leaderboard lists the Top 10 active Members and the signed-in Member's own position. Top 3 Members with at least one earned credit are eligible for selected Core Management-led projects and Founder-led coding-competition consideration. This is a shortlist, not automatic Core Management access or a guaranteed competition seat; the Founder confirms participation.

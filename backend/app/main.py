@@ -28,6 +28,19 @@ bearer = HTTPBearer(auto_error=False)
 PRIVILEGED = {"Founder", "Core Management"}
 ALL_ROLES = {"Founder", "Core Management", "Faculty", "Member"}
 
+# Credits are awarded only when staff approves a Review submission.
+TASK_CREDIT_VALUES = {"F": 5, "E": 10, "D": 20, "C": 35, "B": 55, "A": 85, "S": 125, "SS": 175, "SSS": 250}
+MEMBER_RANK_THRESHOLDS = [
+    ("SSS", 1800), ("SS", 1200), ("S", 800), ("A", 500),
+    ("B", 300), ("C", 150), ("D", 75), ("E", 25), ("F", 0),
+]
+
+def task_credit_value(task: dict) -> int:
+    return TASK_CREDIT_VALUES.get(task.get("difficulty_rank", "F"), TASK_CREDIT_VALUES["F"])
+
+def member_rank(credits: int) -> str:
+    return next(rank for rank, threshold in MEMBER_RANK_THRESHOLDS if credits >= threshold)
+
 def oid(value: str) -> ObjectId:
     if not ObjectId.is_valid(value):
         raise HTTPException(400, "Invalid record ID")
@@ -46,6 +59,10 @@ def clean_task(doc: dict) -> dict:
         "assignee_id": str(doc["assignee_id"]),
         "assignee_name": doc.get("assignee_name", ""),
         "priority": doc.get("priority", "Medium"),
+        "difficulty_rank": doc.get("difficulty_rank", "F"),
+        "programming_language": doc.get("programming_language", "General"),
+        "credits_reward": doc.get("credits_reward", TASK_CREDIT_VALUES["F"]),
+        "credits_awarded": doc.get("credits_awarded", 0),
         "status": doc.get("status", "Todo"),
         "due_date": doc.get("due_date"),
         "submission_note": doc.get("submission_note", ""),
@@ -105,6 +122,9 @@ def clean_common_task(
         "description": doc.get("description", ""),
         "project": doc.get("project", "Club projects"),
         "priority": doc.get("priority", "Medium"),
+        "difficulty_rank": doc.get("difficulty_rank", "F"),
+        "programming_language": doc.get("programming_language", "General"),
+        "credits_reward": doc.get("credits_reward", TASK_CREDIT_VALUES["F"]),
         "due_date": doc.get("due_date"),
         "created_by_name": doc.get("created_by_name", "TechNova Management"),
         "created_at": doc.get("created_at"),
@@ -364,6 +384,53 @@ async def dashboard(user: dict = Depends(get_current_user)):
     own_tasks = await db.tasks.find({"assignee_id":user["_id"]}).sort("created_at",-1).limit(10).to_list(10)
     return {"members_total":1,"members_active":1,"members_pending":0,"tasks_total":len(own_tasks),"tasks_open":sum(x["status"]!="Done" for x in own_tasks),"tasks_done":sum(x["status"]=="Done" for x in own_tasks),"recent_tasks":[clean_task(x) for x in own_tasks]}
 
+@app.get("/api/leaderboard")
+async def leaderboard(user: dict = Depends(get_current_user)):
+    """Top 10 active Members by approved task credits, plus the signed-in Member's position."""
+    active_members = await db.users.find({
+        "role": "Member", "status": "Active",
+    }).sort("name", 1).limit(5000).to_list(5000)
+    credit_rows = await db.tasks.aggregate([
+        {"$match": {"status": "Done", "credits_awarded": {"$gt": 0}}},
+        {"$group": {
+            "_id": "$assignee_id",
+            "credits": {"$sum": "$credits_awarded"},
+            "completed_tasks": {"$sum": 1},
+        }},
+    ]).to_list(length=5000)
+    totals = {row["_id"]: {
+        "credits": int(row.get("credits", 0)),
+        "completed_tasks": int(row.get("completed_tasks", 0)),
+    } for row in credit_rows}
+
+    entries = []
+    for member in active_members:
+        score = totals.get(member["_id"], {"credits": 0, "completed_tasks": 0})
+        entries.append({
+            "id": str(member["_id"]),
+            "member_id": member.get("member_id", ""),
+            "name": member.get("name", "Member"),
+            "team": member.get("team", "Unassigned"),
+            "credits": score["credits"],
+            "completed_tasks": score["completed_tasks"],
+        })
+    entries.sort(key=lambda row: (-row["credits"], -row["completed_tasks"], row["name"].casefold()))
+    for position, entry in enumerate(entries, start=1):
+        entry["position"] = position
+        entry["rank"] = member_rank(entry["credits"])
+        entry["top_three_eligible"] = position <= 3 and entry["credits"] > 0
+
+    mine = next((entry for entry in entries if entry["id"] == str(user["_id"])), None)
+    public_entries = [{key: value for key, value in entry.items() if key != "id"} for entry in entries]
+    return {
+        "top_10": public_entries[:10],
+        "top_three": public_entries[:3],
+        "my_entry": ({key: value for key, value in mine.items() if key != "id"} if mine else None),
+        "active_member_count": len(entries),
+        "credits_rule": "Credits are granted once, after Founder/Core Management approves a submitted task.",
+    }
+
+
 @app.get("/api/members")
 async def list_members(q: str = "", user: dict = Depends(get_current_user)):
     if user["role"] not in PRIVILEGED:
@@ -606,6 +673,8 @@ async def bulk_confirm_task_completion(
                 "completion_confirmed_by": actor["_id"],
                 "completion_confirmed_by_name": actor["name"],
                 "completion_confirmed_by_role": actor["role"],
+                "credits_awarded": task_credit_value(task),
+                "credits_awarded_at": now,
                 "updated_at": now,
             }},
         )
@@ -670,6 +739,9 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
         "description": data.description.strip(),
         "project": data.project.strip() or "Club projects",
         "priority": data.priority,
+        "difficulty_rank": data.difficulty_rank,
+        "programming_language": data.programming_language,
+        "credits_reward": TASK_CREDIT_VALUES[data.difficulty_rank],
         "due_date": data.due_date,
         "created_by": actor["_id"],
         "created_by_name": actor["name"],
@@ -791,6 +863,9 @@ async def respond_to_common_task(common_task_id: str, body: dict, request: Reque
             "assignee_id": user["_id"],
             "assignee_name": user["name"],
             "priority": common.get("priority", "Medium"),
+            "difficulty_rank": common.get("difficulty_rank", "F"),
+            "programming_language": common.get("programming_language", "General"),
+            "credits_reward": common.get("credits_reward", TASK_CREDIT_VALUES["F"]),
             "status": "In progress",
             "due_date": common.get("due_date"),
             "submission_note": "",
@@ -1201,6 +1276,8 @@ async def confirm_task_completion(task_id: str, data: TaskCompletionConfirm, req
             "completion_confirmed_by": actor["_id"],
             "completion_confirmed_by_name": actor["name"],
             "completion_confirmed_by_role": actor["role"],
+            "credits_awarded": task_credit_value(task),
+            "credits_awarded_at": now,
             "updated_at": now,
         }},
     )
