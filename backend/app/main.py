@@ -49,6 +49,10 @@ def clean_task(doc: dict) -> dict:
         "status": doc.get("status", "Todo"),
         "due_date": doc.get("due_date"),
         "submission_note": doc.get("submission_note", ""),
+        "submission_evidence_url": doc.get("submission_evidence_url", ""),
+        "project_url": doc.get("project_url", ""),
+        "submission_attested": bool(doc.get("submission_attested", False)),
+        "review_feedback": doc.get("review_feedback", ""),
         "submitted_at": doc.get("submitted_at"),
         "completion_confirmed_at": doc.get("completion_confirmed_at"),
         "completion_confirmed_by_name": doc.get("completion_confirmed_by_name"),
@@ -585,6 +589,11 @@ async def bulk_confirm_task_completion(
             raise HTTPException(409, "A task assignee no longer exists")
         if actor.get("role") == "Core Management" and member.get("role") != "Member":
             raise HTTPException(403, "Core Management can approve Member submissions only")
+        if not task.get("submission_evidence_url") or not task.get("submission_attested"):
+            raise HTTPException(
+                409,
+                f'Task "{task.get("title", "Untitled")}" has no screenshot proof or member attestation. Return it for resubmission before approval.',
+            )
 
     now = utcnow()
     approved = []
@@ -782,7 +791,7 @@ async def respond_to_common_task(common_task_id: str, body: dict, request: Reque
             "assignee_id": user["_id"],
             "assignee_name": user["name"],
             "priority": common.get("priority", "Medium"),
-            "status": "Todo",
+            "status": "In progress",
             "due_date": common.get("due_date"),
             "submission_note": "",
             "created_by": common["created_by"],
@@ -828,18 +837,29 @@ async def respond_to_common_task(common_task_id: str, body: dict, request: Reque
 
 @app.patch("/api/tasks/{task_id}")
 async def update_task(task_id: str, data: TaskPatch, request: Request, actor: dict = Depends(get_current_user)):
-    target=await db.tasks.find_one({"_id":oid(task_id)})
-    if not target: raise HTTPException(404,"Task not found")
-    privileged=actor["role"] in PRIVILEGED
+    target = await db.tasks.find_one({"_id": oid(task_id)})
+    if not target:
+        raise HTTPException(404, "Task not found")
+    privileged = actor["role"] in PRIVILEGED
     if actor.get("role") == "Faculty":
         raise HTTPException(403, "Faculty accounts have read-only access")
-    if not privileged and target["assignee_id"]!=actor["_id"]: raise HTTPException(403,"You can only update tasks assigned to you")
-    changes=data.model_dump(exclude_unset=True,exclude_none=True)
-    if not privileged and set(changes)-{"status","submission_note"}: raise HTTPException(403,"Members may only update task status and submission note")
-    if not privileged and changes.get("status") not in {None,"Todo","In progress","Review"}:
+    if not privileged and target["assignee_id"] != actor["_id"]:
+        raise HTTPException(403, "You can only update tasks assigned to you")
+
+    changes = data.model_dump(exclude_unset=True, exclude_none=True)
+    member_fields = {"status", "submission_note", "submission_evidence_url", "project_url", "submission_attested"}
+    if not privileged and set(changes) - member_fields:
+        raise HTTPException(403, "Members may only update their task status and submit evidence")
+    if not privileged and changes.get("status") not in {None, "Todo", "In progress", "Review"}:
         raise HTTPException(403, "Members must submit tasks for review; completion requires a staff approval")
     if privileged and changes.get("status") == "Review":
         raise HTTPException(403, "Only the assigned Member can submit a task for review")
+
+    if not privileged and any(
+        field in changes for field in ("submission_note", "submission_evidence_url", "project_url", "submission_attested")
+    ) and changes.get("status") != "Review":
+        raise HTTPException(403, "Evidence details can only be saved together with a review submission")
+
     if not privileged and "status" in changes:
         allowed_transitions = {
             "Todo": {"In progress"},
@@ -848,28 +868,62 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
         }
         if changes["status"] != target.get("status") and changes["status"] not in allowed_transitions.get(target.get("status"), set()):
             raise HTTPException(409, f'Invalid task transition: {target.get("status")} → {changes["status"]}')
+
     if changes.get("status") == "Done":
-        raise HTTPException(403, "Tasks can only be marked Done by confirming completion after scanning the assignee's QR")
+        raise HTTPException(403, "Only Founder or Core Management can approve a submitted task")
+
+    for field in ("submission_evidence_url", "project_url"):
+        value = changes.get(field)
+        if value and (not value.startswith("https://") or any(ch.isspace() for ch in value)):
+            raise HTTPException(422, f"{field.replace('_', ' ').capitalize()} must be a valid HTTPS link")
+
     if changes.get("status") == "Review":
+        evidence_url = changes.get("submission_evidence_url") or target.get("submission_evidence_url")
+        note = changes.get("submission_note", target.get("submission_note", "")).strip()
+        if not evidence_url:
+            raise HTTPException(422, "Add a screenshot evidence link before submitting for review")
+        if not evidence_url.startswith("https://") or any(ch.isspace() for ch in evidence_url):
+            raise HTTPException(422, "Screenshot evidence must be a valid HTTPS link")
+        if len(note) < 10:
+            raise HTTPException(422, "Write at least 10 characters describing what you completed")
+        if changes.get("submission_attested") is not True:
+            raise HTTPException(422, "Confirm that the screenshot and submitted work represent your current task")
+        changes["submission_note"] = note
         changes["submitted_at"] = utcnow()
         changes["submitted_by"] = actor["_id"]
         changes["completion_confirmed_at"] = None
         changes["completion_confirmed_by"] = None
         changes["completion_confirmed_by_name"] = None
         changes["completion_confirmed_by_role"] = None
-    elif changes.get("status") == "In progress":
+        changes["review_feedback"] = ""
+    elif changes.get("status") == "In progress" and target.get("status") == "Review":
         changes["submitted_at"] = None
         changes["submitted_by"] = None
+        changes["submission_evidence_url"] = ""
+        changes["project_url"] = ""
+        changes["submission_attested"] = False
+        if privileged:
+            feedback = changes.get("review_feedback", "").strip()
+            if not feedback:
+                raise HTTPException(422, "Provide feedback explaining what the member must fix")
+            changes["review_feedback"] = feedback
+        else:
+            changes["review_feedback"] = target.get("review_feedback", "")
+
     reassigned_to = None
     if privileged and "assignee_id" in changes:
-        assignee=await db.users.find_one({"_id":oid(changes["assignee_id"])})
-        if not assignee or assignee["status"]!="Active": raise HTTPException(400,"Assignee must be active")
+        assignee = await db.users.find_one({"_id": oid(changes["assignee_id"])})
+        if not assignee or assignee["status"] != "Active":
+            raise HTTPException(400, "Assignee must be active")
         if not can_assign_task(actor, assignee):
             raise HTTPException(403, "You cannot assign tasks to this role")
-        changes["assignee_id"]=assignee["_id"]; changes["assignee_name"]=assignee["name"]
+        changes["assignee_id"] = assignee["_id"]
+        changes["assignee_name"] = assignee["name"]
         reassigned_to = assignee
-    changes["updated_at"]=utcnow()
-    await db.tasks.update_one({"_id":target["_id"]},{"$set":changes})
+
+    changes["updated_at"] = utcnow()
+    await db.tasks.update_one({"_id": target["_id"]}, {"$set": changes})
+
     if reassigned_to:
         await create_notification(
             reassigned_to,
@@ -878,6 +932,19 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
             "task_assigned",
             task_id=task_id,
         )
+
+    if changes.get("status") == "In progress" and target.get("status") == "Review":
+        assignee = await db.users.find_one({"_id": target["assignee_id"]})
+        if assignee:
+            message = changes.get("review_feedback") or "Please update your submission evidence and send it for review again."
+            await create_notification(
+                assignee,
+                "Task needs changes",
+                f'{actor["name"]} returned "{target["title"]}" for changes: {message}',
+                "task_changes_requested",
+                task_id=task_id,
+            )
+
     if changes.get("status") == "Review":
         staff_roles = ["Founder"] if actor.get("role") == "Core Management" else ["Founder", "Core Management"]
         reviewers = await db.users.find({
@@ -889,12 +956,13 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
             await create_notification(
                 reviewer,
                 "Task submission awaiting review",
-                f'{actor["name"]} submitted "{target["title"]}" for completion approval.',
+                f'{actor["name"]} submitted "{target["title"]}" with screenshot evidence for review.',
                 "task_review",
                 task_id=task_id,
             )
-    await audit(actor,"task_updated",task_id,{"fields":list(changes)},request)
-    return clean_task(await db.tasks.find_one({"_id":target["_id"]}))
+
+    await audit(actor, "task_updated", task_id, {"fields": list(changes)}, request)
+    return clean_task(await db.tasks.find_one({"_id": target["_id"]}))
 
 @app.delete("/api/tasks/{task_id}")
 async def delete_task(task_id: str, request: Request, actor: dict = Depends(allow("Founder","Core Management"))):
@@ -1111,6 +1179,8 @@ async def confirm_task_completion(task_id: str, data: TaskCompletionConfirm, req
         raise HTTPException(404, "Task not found")
     if task.get("status") != "Review":
         raise HTTPException(409, "This task is not awaiting completion confirmation")
+    if not task.get("submission_evidence_url") or not task.get("submission_attested"):
+        raise HTTPException(409, "This submission has no screenshot evidence or member attestation")
 
     member = await db.users.find_one({"_id": task["assignee_id"]})
     if not member or member.get("status") != "Active":
