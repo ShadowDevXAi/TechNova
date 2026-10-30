@@ -110,3 +110,13 @@ This is an expanded functional starter, not a guarantee of zero limitations or a
 - Temporarily suspending a Member also pauses their unfinished tasks. Those tasks resume and their deadlines are extended when the Member is reinstated or the suspension expires.
 
 - Repeating tasks receive a fresh same-day deadline for each generated copy. Unclaimed daily common missions are closed after their day ends, while accepted personal task copies remain on the member's task board.
+
+
+## Task operations, daily automation and discipline rules
+- Tasks and common missions can be paused/resumed by authorized management. Pausing freezes the task deadline; resuming extends the due date by the pause duration. Archived tasks are soft-deleted so their task history and audit trail remain in MongoDB.
+- Daily tasks are configured by selecting **Repeat automatically every day** when creating a task. The first occurrence is created immediately; subsequent copies are generated each day by the backend maintenance worker using Asia/Kolkata dates. Pausing or stopping a schedule affects future copies; already-generated tasks remain.
+- The backend maintenance worker runs every 60 seconds while the API service is running. It closes expired daily common missions, generates scheduled copies, expires temporary suspensions and applies overdue penalties. Render sleep/restarts can delay a maintenance cycle until the service starts again.
+- A task not submitted for review by its due date receives a one-time 25% credit penalty (minimum 1 credit). The penalty is recorded even when the Member currently has zero credits, so it offsets later earnings. A task submitted on or before its due date is not penalized merely because staff approves it later.
+- Founder/Core Management can temporarily suspend a Member for a reason, for 1–720 hours, and apply a credit deduction. The account is automatically reactivated after the expiry time; assigned active tasks are paused during the suspension and their due dates are extended on reinstatement. This is a management decision recorded in the audit log, not an automatic penalty for every missed deadline.
+- Members can view their current credit balance and recent award/deduction ledger on the Leaderboard page. The leaderboard and workspace refresh every 15 seconds while the browser tab is visible.
+- Hard deletion is intentionally avoided for task records; archive operations retain records for accountability and recovery.
