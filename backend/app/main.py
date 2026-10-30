@@ -264,6 +264,11 @@ async def run_daily_maintenance() -> dict:
     }})
     for expired_member in expired_members:
         await resume_member_paused_tasks(expired_member["_id"], now)
+    # Close yesterday's unclaimed daily common missions so Members cannot accept stale opportunities.
+    closed_daily_missions = await db.common_tasks.update_many({
+        "recurrence": "daily", "status": "Open", "due_date": {"$lt": today_key},
+        "deleted_at": {"$exists": False},
+    }, {"$set": {"status": "Closed", "task_state": "Closed", "closed_at": now}})
     generated = 0
     schedules = await db.daily_task_schedules.find({
         "active": True, "deleted_at": {"$exists": False},
@@ -276,7 +281,8 @@ async def run_daily_maintenance() -> dict:
             common_doc = {
                 **template, "_id": ObjectId(), "status": "Open", "task_state": "Active",
                 "recurrence": "daily", "daily_schedule_id": schedule_id,
-                "occurrence_date": today_key, "created_at": now, "updated_at": now,
+                "occurrence_date": today_key, "due_date": today_key,
+                "created_at": now, "updated_at": now,
             }
             try:
                 await db.common_tasks.insert_one(common_doc)
@@ -300,7 +306,8 @@ async def run_daily_maintenance() -> dict:
                 **template, "_id": ObjectId(), "assignee_id": target["_id"],
                 "assignee_name": target["name"], "status": "Todo", "task_state": "Active",
                 "recurrence": "daily", "daily_schedule_id": schedule_id,
-                "occurrence_date": today_key, "submission_note": "",
+                "occurrence_date": today_key, "due_date": today_key,
+                "submission_note": "",
                 "submission_evidence_url": "", "submission_attested": False,
                 "created_at": now, "updated_at": now,
             }
@@ -350,7 +357,7 @@ async def run_daily_maintenance() -> dict:
         except DuplicateKeyError:
             pass
         await db.tasks.update_one({"_id": task["_id"]}, {"$set": {"late_penalty_applied_at": now, "late_penalty_points": points}})
-    return {"suspensions_expired": resumed.modified_count, "daily_tasks_generated": generated, "late_penalties_applied": penalties_applied, "checked_at": now.isoformat()}
+    return {"suspensions_expired": resumed.modified_count, "daily_tasks_generated": generated, "daily_missions_closed": closed_daily_missions.modified_count, "late_penalties_applied": penalties_applied, "checked_at": now.isoformat()}
 
 
 async def maintenance_worker():
@@ -930,7 +937,7 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
         "credits_reward": TASK_CREDIT_VALUES[data.difficulty_rank],
         "task_state": "Active",
         "recurrence": data.recurrence,
-        "due_date": data.due_date,
+        "due_date": data.due_date or (datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat() if data.recurrence == "daily" else None),
         "created_by": actor["_id"],
         "created_by_name": actor["name"],
         "created_at": now,

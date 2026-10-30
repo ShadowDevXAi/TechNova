@@ -108,3 +108,5 @@ This is an expanded functional starter, not a guarantee of zero limitations or a
 - The automatic deduction is capped at the Member's available positive credit balance; the credit total never falls below zero. A late task can still receive its normal completion reward after review.
 - A submission made on time is exempt even if staff approval happens later. A task that is completed after the due date is still checked for a late submission penalty.
 - Temporarily suspending a Member also pauses their unfinished tasks. Those tasks resume and their deadlines are extended when the Member is reinstated or the suspension expires.
+
+- Repeating tasks receive a fresh same-day deadline for each generated copy. Unclaimed daily common missions are closed after their day ends, while accepted personal task copies remain on the member's task board.
