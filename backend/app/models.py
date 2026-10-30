@@ -49,6 +49,10 @@ class TaskPatch(BaseModel):
     due_date: str | None = None
     submission_note: str | None = Field(default=None, max_length=2000)
 
+class TaskBulkConfirm(BaseModel):
+    task_ids: list[str] = Field(min_length=1, max_length=100)
+
+
 class TaskCompletionConfirm(BaseModel):
     card_token: str = Field(min_length=30, max_length=200)
 

@@ -22,7 +22,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from .config import settings
 from .db import client, db, ensure_indexes
 from .security import hash_password, verify_password, create_access_token, decode_access_token, new_card_token, token_hash, utcnow
-from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TaskCompletionConfirm, TeamCreate
+from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TaskBulkConfirm, TaskCompletionConfirm, TeamCreate
 
 bearer = HTTPBearer(auto_error=False)
 PRIVILEGED = {"Founder", "Core Management"}
@@ -87,7 +87,14 @@ def clean_notification(doc: dict) -> dict:
     }
 
 
-def clean_common_task(doc: dict, response_status: str | None = None, accepted_count: int = 0) -> dict:
+def clean_common_task(
+    doc: dict,
+    response_status: str | None = None,
+    accepted_members: list[str] | None = None,
+    completed_members: list[str] | None = None,
+) -> dict:
+    accepted_members = accepted_members or []
+    completed_members = completed_members or []
     return {
         "id": str(doc["_id"]),
         "title": doc["title"],
@@ -98,7 +105,10 @@ def clean_common_task(doc: dict, response_status: str | None = None, accepted_co
         "created_by_name": doc.get("created_by_name", "TechNova Management"),
         "created_at": doc.get("created_at"),
         "response_status": response_status,
-        "accepted_count": accepted_count,
+        "accepted_count": len(accepted_members),
+        "accepted_members": accepted_members,
+        "completed_count": len(completed_members),
+        "completed_members": completed_members,
     }
 
 
@@ -451,16 +461,121 @@ async def list_common_tasks(user: dict = Depends(get_current_user)):
             "common_task_id": doc["_id"],
             "user_id": user["_id"],
         })
-        accepted_count = await db.common_task_responses.count_documents({
+        accepted_rows = await db.common_task_responses.find({
             "common_task_id": doc["_id"],
             "response": "accepted",
-        })
+        }).sort("created_at", 1).limit(500).to_list(500)
+        completed_rows = await db.tasks.find({
+            "common_task_id": doc["_id"],
+            "status": "Done",
+        }).sort("updated_at", 1).limit(500).to_list(500)
+        accepted_names = [row.get("user_name", "Member") for row in accepted_rows]
+        completed_names = [row.get("assignee_name", "Member") for row in completed_rows]
         result.append(clean_common_task(
             doc,
             response.get("response") if response else None,
-            accepted_count,
+            accepted_names,
+            completed_names,
         ))
     return result
+
+
+@app.get("/api/tasks/review-queue")
+async def task_review_queue(actor: dict = Depends(allow("Founder", "Core Management"))):
+    query = {"status": "Review"}
+    if actor.get("role") == "Core Management":
+        eligible = await db.users.find({
+            "role": "Member",
+            "status": "Active",
+        }).to_list(1000)
+        eligible_ids = [member["_id"] for member in eligible]
+        if not eligible_ids:
+            return []
+        query["assignee_id"] = {"$in": eligible_ids}
+
+    docs = await db.tasks.find(query).sort("submitted_at", 1).limit(500).to_list(500)
+    if not docs:
+        return []
+    member_ids = list({doc["assignee_id"] for doc in docs})
+    members = await db.users.find({"_id": {"$in": member_ids}}).to_list(500)
+    member_by_id = {member["_id"]: member for member in members}
+    result = []
+    for doc in docs:
+        member = member_by_id.get(doc["assignee_id"], {})
+        task = clean_task(doc)
+        task["assignee_member_id"] = member.get("member_id", "")
+        task["assignee_team"] = member.get("team", "Unassigned")
+        task["attachments_count"] = await db.attachments.count_documents({"task_id": doc["_id"]})
+        result.append(task)
+    return result
+
+
+@app.post("/api/tasks/bulk-confirm")
+async def bulk_confirm_task_completion(
+    data: TaskBulkConfirm,
+    request: Request,
+    actor: dict = Depends(allow("Founder", "Core Management")),
+):
+    unique_ids = list(dict.fromkeys(data.task_ids))
+    if len(unique_ids) != len(data.task_ids):
+        raise HTTPException(422, "Remove duplicate task selections before approval")
+    try:
+        object_ids = [oid(value) for value in unique_ids]
+    except HTTPException:
+        raise HTTPException(422, "One or more task IDs are invalid")
+
+    tasks = await db.tasks.find({
+        "_id": {"$in": object_ids},
+        "status": "Review",
+    }).to_list(100)
+    if len(tasks) != len(object_ids):
+        raise HTTPException(409, "Some selected tasks are no longer awaiting review. Refresh the queue and try again.")
+
+    assignee_ids = list({task["assignee_id"] for task in tasks})
+    members = await db.users.find({"_id": {"$in": assignee_ids}}).to_list(100)
+    member_by_id = {member["_id"]: member for member in members}
+    for task in tasks:
+        member = member_by_id.get(task["assignee_id"])
+        if not member:
+            raise HTTPException(409, "A task assignee no longer exists")
+        if actor.get("role") == "Core Management" and member.get("role") != "Member":
+            raise HTTPException(403, "Core Management can approve Member submissions only")
+
+    now = utcnow()
+    approved = []
+    for task in tasks:
+        result = await db.tasks.update_one(
+            {"_id": task["_id"], "status": "Review"},
+            {"$set": {
+                "status": "Done",
+                "completion_confirmed_at": now,
+                "completion_confirmed_by": actor["_id"],
+                "completion_confirmed_by_name": actor["name"],
+                "completion_confirmed_by_role": actor["role"],
+                "updated_at": now,
+            }},
+        )
+        if result.modified_count:
+            member = member_by_id[task["assignee_id"]]
+            approved.append(str(task["_id"]))
+            await create_notification(
+                member,
+                "Task completion approved",
+                f'{actor["name"]} approved your submission for "{task["title"]}".',
+                "task_approved",
+                task_id=str(task["_id"]),
+            )
+
+    await audit(actor, "tasks_bulk_completion_confirmed", ",".join(approved), {
+        "requested_count": len(object_ids),
+        "approved_count": len(approved),
+        "task_ids": approved,
+    }, request)
+    return {
+        "approved_count": len(approved),
+        "message": f"{len(approved)} task submission(s) approved",
+        "task_ids": approved,
+    }
 
 
 @app.get("/api/tasks/pending-confirmation")
@@ -699,6 +814,21 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
             "task_assigned",
             task_id=task_id,
         )
+    if changes.get("status") == "Review":
+        staff_roles = ["Founder"] if actor.get("role") == "Core Management" else ["Founder", "Core Management"]
+        reviewers = await db.users.find({
+            "role": {"$in": staff_roles},
+            "status": "Active",
+            "_id": {"$ne": actor["_id"]},
+        }).to_list(200)
+        for reviewer in reviewers:
+            await create_notification(
+                reviewer,
+                "Task submission awaiting review",
+                f'{actor["name"]} submitted "{target["title"]}" for completion approval.',
+                "task_review",
+                task_id=task_id,
+            )
     await audit(actor,"task_updated",task_id,{"fields":list(changes)},request)
     return clean_task(await db.tasks.find_one({"_id":target["_id"]}))
 
