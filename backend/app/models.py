@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
-Role = Literal["Founder", "Core Management", "Member"]
+Role = Literal["Founder", "Core Management", "Faculty", "Member"]
 MemberStatus = Literal["Pending", "Active", "Suspended"]
 TaskStatus = Literal["Todo", "In progress", "Review", "Done"]
 Priority = Literal["Low", "Medium", "High"]
@@ -51,6 +51,11 @@ class TaskPatch(BaseModel):
 
 class TaskBulkConfirm(BaseModel):
     task_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class AnnouncementCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=120)
+    message: str = Field(min_length=3, max_length=3000)
 
 
 class TaskCompletionConfirm(BaseModel):

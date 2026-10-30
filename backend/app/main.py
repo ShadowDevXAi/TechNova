@@ -22,11 +22,11 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from .config import settings
 from .db import client, db, ensure_indexes
 from .security import hash_password, verify_password, create_access_token, decode_access_token, new_card_token, token_hash, utcnow
-from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TaskBulkConfirm, TaskCompletionConfirm, TeamCreate
+from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TaskBulkConfirm, TaskCompletionConfirm, TeamCreate, AnnouncementCreate
 
 bearer = HTTPBearer(auto_error=False)
 PRIVILEGED = {"Founder", "Core Management"}
-ALL_ROLES = {"Founder", "Core Management", "Member"}
+ALL_ROLES = {"Founder", "Core Management", "Faculty", "Member"}
 
 def oid(value: str) -> ObjectId:
     if not ObjectId.is_valid(value):
@@ -60,7 +60,7 @@ def clean_task(doc: dict) -> dict:
 
 async def next_member_id(role: str) -> str:
     # Atomic per-role sequence prevents concurrent registrations from reusing an ID.
-    prefix = {"Founder": "TN", "Core Management": "TN-CM", "Member": "TN-M"}[role]
+    prefix = {"Founder": "TN", "Core Management": "TN-CM", "Faculty": "TN-FAC", "Member": "TN-M"}[role]
     counter = await db.counters.find_one_and_update(
         {"_id": f"member:{role}"},
         {"$inc": {"value": 1}},
@@ -183,7 +183,7 @@ async def lifespan(app: FastAPI):
     await client.admin.command("ping")
     await ensure_indexes()
     # Initialize counters once from existing records so upgrades do not collide with old IDs.
-    for role, key in [("Member", "member:Member"), ("Core Management", "member:Core Management")]:
+    for role, key in [("Member", "member:Member"), ("Core Management", "member:Core Management"), ("Faculty", "member:Faculty")]:
         existing = await db.users.count_documents({"role": role})
         await db.counters.update_one({"_id": key}, {"$setOnInsert": {"value": existing}}, upsert=True)
     founder_email = settings.bootstrap_founder_email.lower()
@@ -452,6 +452,46 @@ async def mark_notification_read(notification_id: str, user: dict = Depends(get_
     return {"message": "Notification marked as read"}
 
 
+@app.post("/api/announcements", status_code=201)
+async def broadcast_announcement(
+    data: AnnouncementCreate,
+    request: Request,
+    actor: dict = Depends(allow("Founder", "Core Management")),
+):
+    recipients = await db.users.find({
+        "role": {"$in": ["Member", "Faculty"]},
+        "status": "Active",
+    }).to_list(5000)
+    if not recipients:
+        raise HTTPException(409, "There are no active Members or Faculty accounts to notify")
+
+    semaphore = asyncio.Semaphore(8)
+
+    async def deliver(recipient: dict) -> None:
+        async with semaphore:
+            await create_notification(
+                recipient,
+                data.title.strip(),
+                data.message.strip(),
+                "announcement",
+            )
+
+    await asyncio.gather(*(deliver(recipient) for recipient in recipients))
+    member_count = sum(recipient.get("role") == "Member" for recipient in recipients)
+    faculty_count = sum(recipient.get("role") == "Faculty" for recipient in recipients)
+    await audit(actor, "announcement_broadcast", data.title.strip(), {
+        "recipient_count": len(recipients),
+        "member_count": member_count,
+        "faculty_count": faculty_count,
+    }, request)
+    return {
+        "message": f"Announcement sent to {len(recipients)} people",
+        "recipient_count": len(recipients),
+        "member_count": member_count,
+        "faculty_count": faculty_count,
+    }
+
+
 @app.get("/api/common-tasks")
 async def list_common_tasks(user: dict = Depends(get_current_user)):
     docs = await db.common_tasks.find({"status": "Open"}).sort("created_at", -1).limit(200).to_list(200)
@@ -636,19 +676,26 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
         result = await db.common_tasks.insert_one(common_doc)
         common_doc["_id"] = result.inserted_id
         active_members = await db.users.find({
-            "role": "Member",
+            "role": {"$in": ["Member", "Faculty"]},
             "status": "Active",
-        }).to_list(500)
-        for member in active_members:
+        }).to_list(5000)
+        for recipient in active_members:
+            recipient_message = (
+                f'{actor["name"]} posted "{common_doc["title"]}". Open Tasks & Projects to accept or decline it.'
+                if recipient.get("role") == "Member"
+                else f'{actor["name"]} published the common task "{common_doc["title"]}" for Members to volunteer.'
+            )
             await create_notification(
-                member,
+                recipient,
                 "New common task available",
-                f'{actor["name"]} posted "{common_doc["title"]}". Open Tasks & Projects to accept or decline it.',
+                recipient_message,
                 "common_task",
                 common_task_id=str(result.inserted_id),
             )
         await audit(actor, "common_task_created", str(result.inserted_id), {
-            "notified_members": len(active_members),
+            "notified_members_and_faculty": len(active_members),
+            "members": sum(x.get("role") == "Member" for x in active_members),
+            "faculty": sum(x.get("role") == "Faculty" for x in active_members),
         }, request)
         return clean_common_task(common_doc, None, [], [])
 
@@ -784,11 +831,23 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
     target=await db.tasks.find_one({"_id":oid(task_id)})
     if not target: raise HTTPException(404,"Task not found")
     privileged=actor["role"] in PRIVILEGED
+    if actor.get("role") == "Faculty":
+        raise HTTPException(403, "Faculty accounts have read-only access")
     if not privileged and target["assignee_id"]!=actor["_id"]: raise HTTPException(403,"You can only update tasks assigned to you")
     changes=data.model_dump(exclude_unset=True,exclude_none=True)
     if not privileged and set(changes)-{"status","submission_note"}: raise HTTPException(403,"Members may only update task status and submission note")
     if not privileged and changes.get("status") not in {None,"Todo","In progress","Review"}:
-        raise HTTPException(403, "Members must submit tasks for review; completion requires a staff QR confirmation")
+        raise HTTPException(403, "Members must submit tasks for review; completion requires a staff approval")
+    if privileged and changes.get("status") == "Review":
+        raise HTTPException(403, "Only the assigned Member can submit a task for review")
+    if not privileged and "status" in changes:
+        allowed_transitions = {
+            "Todo": {"In progress"},
+            "In progress": {"Review"},
+            "Review": {"In progress"},
+        }
+        if changes["status"] != target.get("status") and changes["status"] not in allowed_transitions.get(target.get("status"), set()):
+            raise HTTPException(409, f'Invalid task transition: {target.get("status")} → {changes["status"]}')
     if changes.get("status") == "Done":
         raise HTTPException(403, "Tasks can only be marked Done by confirming completion after scanning the assignee's QR")
     if changes.get("status") == "Review":

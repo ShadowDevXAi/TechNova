@@ -84,6 +84,8 @@ function App() {
   const [selectedReviewIds, setSelectedReviewIds] = useState([]);
   const [reviewSearch, setReviewSearch] = useState("");
   const [assigneeSearch, setAssigneeSearch] = useState("");
+  const [taskStatusFilter, setTaskStatusFilter] = useState("All");
+  const [announcementForm, setAnnouncementForm] = useState({ title: "", message: "" });
   const [teams, setTeams] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [search, setSearch] = useState("");
@@ -184,16 +186,43 @@ function App() {
   }, [token]);
 
   useEffect(() => {
-    if (!token) return undefined;
-    const timer = window.setInterval(async () => {
+    if (!token || !user) return undefined;
+    const isManager = ["Founder", "Core Management"].includes(user.role);
+    let cancelled = false;
+    const syncWorkspace = async () => {
+      if (document.visibilityState !== "visible") return;
       try {
-        setNotifications(await api("/notifications", token));
+        const [nextTasks, nextCommonTasks, nextNotifications, nextReviews, nextDashboard] = await Promise.all([
+          api("/tasks", token),
+          api("/common-tasks", token),
+          api("/notifications", token),
+          isManager ? api("/tasks/review-queue", token) : Promise.resolve([]),
+          api("/dashboard", token),
+        ]);
+        if (cancelled) return;
+        setTasks(nextTasks);
+        setCommonTasks(nextCommonTasks);
+        setNotifications(nextNotifications);
+        setReviewQueue(nextReviews);
+        setDashboard(nextDashboard);
+        setSelectedReviewIds((current) =>
+          current.filter((id) => nextReviews.some((task) => task.id === id))
+        );
       } catch {
-        // Keep the current inbox visible during a temporary network interruption.
+        // Preserve the last good workspace snapshot during temporary network issues.
       }
-    }, 45000);
-    return () => window.clearInterval(timer);
-  }, [token]);
+    };
+    const timer = window.setInterval(syncWorkspace, 15000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") syncWorkspace();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [token, user?.role]);
 
   // Keep navigation usable on short screens and on mobile devices.
   useEffect(() => {
@@ -372,6 +401,8 @@ function App() {
     setSelectedReviewIds([]);
     setReviewSearch("");
     setAssigneeSearch("");
+    setTaskStatusFilter("All");
+    setAnnouncementForm({ title: "", message: "" });
     setDashboard(null);
     setPage("Overview");
     window.history.replaceState({}, "", "/");
@@ -431,6 +462,29 @@ function App() {
       await refresh();
     } catch (e) {
       fail(e);
+    }
+  }
+
+  async function createAnnouncement(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const result = await api("/announcements", token, {
+        method: "POST",
+        body: JSON.stringify(announcementForm),
+      });
+      setModal("");
+      setAnnouncementForm({ title: "", message: "" });
+      notify(
+        "Announcement sent to " + result.recipient_count +
+        " people (" + result.member_count + " Members, " +
+        result.faculty_count + " Faculty)"
+      );
+      await refresh();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -792,6 +846,19 @@ function App() {
       .toLowerCase()
       .includes(reviewSearch.toLowerCase())
   );
+  const filteredTaskRows = tasks.filter((task) => {
+    const matchesSearch = (task.title + " " + task.assignee_name + " " + task.project)
+      .toLowerCase()
+      .includes(search.toLowerCase());
+    return matchesSearch && (taskStatusFilter === "All" || task.status === taskStatusFilter);
+  });
+  const taskStatusCounts = {
+    All: tasks.length,
+    Todo: tasks.filter((task) => task.status === "Todo").length,
+    "In progress": tasks.filter((task) => task.status === "In progress").length,
+    Review: tasks.filter((task) => task.status === "Review").length,
+    Done: tasks.filter((task) => task.status === "Done").length,
+  };
   const unreadNotifications = notifications.filter((item) => !item.read).length;
 
   if (!token || !user) {
@@ -1234,11 +1301,18 @@ function App() {
                 <div>
                   <label>YOUR WORKSPACE INBOX</label>
                   <h1>Notifications</h1>
-                  <p>New task assignments and updates from your TechNova team.</p>
+                  <p>Task updates, club announcements, and important messages from management.</p>
                 </div>
-                <button className="secondary" onClick={refresh}>
-                  <RefreshCw size={14} /> Refresh inbox
-                </button>
+                <div className="titleactions">
+                  <button className="secondary" onClick={refresh}>
+                    <RefreshCw size={14} /> Refresh inbox
+                  </button>
+                  {isAdmin && (
+                    <button className="primary" onClick={() => setModal("announcement")}>
+                      <Plus size={14} /> Broadcast to Members + Faculty
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="panel notification-list">
                 {notifications.map((item) => (
@@ -1411,6 +1485,7 @@ function App() {
                                   }
                                 >
                                   <option>Member</option>
+                                  <option>Faculty</option>
                                   <option>Core Management</option>
                                 </select>
                               )}
@@ -1565,7 +1640,7 @@ function App() {
                 <div className="panelhead">
                   <div>
                     <b>Common tasks · Open to everyone</b>
-                    <small>Every active Member can accept or decline. Accepted tasks become personal tasks.</small>
+                    <small>Every active Member can accept or decline. Faculty can view the opportunity; accepted tasks become personal tasks.</small>
                   </div>
                   <span className="common-task-count">{commonTasks.length} open</span>
                 </div>
@@ -1614,6 +1689,31 @@ function App() {
                   )}
                 </div>
               </div>
+              <div className="task-status-toolbar">
+                <div className="task-status-heading">
+                  <b>Task status</b>
+                  <small>Live refresh every 15 seconds</small>
+                </div>
+                <div className="task-status-tabs" role="group" aria-label="Filter tasks by status">
+                  {[
+                    ["All", "All tasks"],
+                    ["Todo", "To do"],
+                    ["In progress", "In progress"],
+                    ["Review", "In review"],
+                    ["Done", "Completed"],
+                  ].map(([value, label]) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={"task-filter-chip " + (taskStatusFilter === value ? "active" : "")}
+                      aria-pressed={taskStatusFilter === value}
+                      onClick={() => setTaskStatusFilter(value)}
+                    >
+                      {label}<span>{taskStatusCounts[value]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="stats compact four">
                 {[
                   ["All tasks", tasks.length],
@@ -1654,13 +1754,7 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {tasks
-                        .filter((t) =>
-                          (t.title + " " + t.assignee_name)
-                            .toLowerCase()
-                            .includes(search.toLowerCase())
-                        )
-                        .map((t) => (
+                      {filteredTaskRows.map((t) => (
                           <tr key={t.id}>
                             <td>
                               <b>{t.title}</b>
@@ -1679,32 +1773,36 @@ function App() {
                             </td>
                             <td>{t.due_date || "Not set"}</td>
                             <td>
-                              {t.status === "Done" ? (
-                                <span className="pill done">Done ✓</span>
-                              ) : (
+                              {user.role === "Member" && t.assignee_id === user.id && t.status !== "Done" ? (
                                 <select
+                                  className={"task-status-select status-" + t.status.toLowerCase().replaceAll(" ", "-")}
                                   value={t.status}
+                                  aria-label={"Update " + t.title + " status"}
                                   onChange={(e) => {
                                     const nextStatus = e.target.value;
                                     if (nextStatus === "Review") {
                                       const note = prompt(
-                                        "Optional: add a completion note for the reviewer",
+                                        "Add a short completion note before submitting for review",
                                         t.submission_note || ""
                                       );
                                       if (note === null) return;
-                                      updateTask(t, {
-                                        status: nextStatus,
-                                        submission_note: note.trim(),
-                                      });
+                                      updateTask(t, { status: nextStatus, submission_note: note.trim() });
                                     } else {
                                       updateTask(t, { status: nextStatus });
                                     }
                                   }}
                                 >
-                                  <option>Todo</option>
-                                  <option>In progress</option>
-                                  <option>Review</option>
+                                  {t.status === "Todo" && <option value="Todo">To do</option>}
+                                  {t.status === "Todo" && <option value="In progress">In progress</option>}
+                                  {t.status === "In progress" && <option value="In progress">In progress</option>}
+                                  {t.status === "In progress" && <option value="Review">Submit for review</option>}
+                                  {t.status === "Review" && <option value="Review">In review</option>}
+                                  {t.status === "Review" && <option value="In progress">Return to work</option>}
                                 </select>
+                              ) : (
+                                <span className={"pill task-status-pill status-" + t.status.toLowerCase().replaceAll(" ", "-")}>
+                                  {t.status === "Done" ? "Done ✓" : t.status === "Review" ? "In review" : t.status === "Todo" ? "To do" : t.status}
+                                </span>
                               )}
                               {t.status === "Review" && (
                                 <small className="sub">Awaiting Founder/Core Management approval</small>
@@ -1776,7 +1874,7 @@ function App() {
                 </button>
               </div>
               {isAdmin && <div className="card-role-tabs">
-                {["Founder", "Core Management", "Member"].map((role) => (
+                {["Founder", "Core Management", "Faculty", "Member"].map((role) => (
                   <button
                     key={role}
                     className={cardRoleFilter === role ? "active" : ""}
@@ -2304,16 +2402,24 @@ function App() {
                 ? "MEMBER MANAGEMENT"
                 : modal === "task"
                 ? "PROJECT WORKSPACE"
+                : modal === "announcement"
+                ? "CLUB-WIDE COMMUNICATION"
                 : "TEAM SETTINGS"}
             </label>
             <h2>
               {modal === "member"
-                ? "Create a member account"
+                ? "Create an account"
                 : modal === "task"
                 ? "Create a task"
+                : modal === "announcement"
+                ? "Broadcast an announcement"
                 : "Create a team"}
             </h2>
-            <p>Data is validated and saved by the API.</p>
+            <p>
+              {modal === "announcement"
+                ? "This message will appear in the inbox of every active Member and Faculty account."
+                : "Data is validated and saved by the API."}
+            </p>
 
             {modal === "member" && (
               <form onSubmit={createMember}>
@@ -2360,8 +2466,12 @@ function App() {
                     }
                   >
                     <option>Member</option>
+                    <option>Faculty</option>
                     <option>Core Management</option>
                   </select>
+                  {memberForm.role === "Faculty" && (
+                    <small className="field-help">Faculty can receive announcements and view club updates, but cannot be assigned student tasks or approve submissions.</small>
+                  )}
                 </label>
                 <label>
                   Team
@@ -2535,6 +2645,42 @@ function App() {
                   <button className="primary" disabled={busy}>
                     Create task
                   </button>
+                </div>
+              </form>
+            )}
+
+            {modal === "announcement" && (
+              <form onSubmit={createAnnouncement}>
+                <label>
+                  Announcement title
+                  <input
+                    required
+                    minLength="3"
+                    maxLength="120"
+                    value={announcementForm.title}
+                    onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
+                    placeholder="e.g. TechNova weekly meeting"
+                  />
+                </label>
+                <label>
+                  Message
+                  <textarea
+                    required
+                    minLength="3"
+                    maxLength="3000"
+                    rows={5}
+                    value={announcementForm.message}
+                    onChange={(e) => setAnnouncementForm({ ...announcementForm, message: e.target.value })}
+                    placeholder="Write the announcement, meeting details, deadline or instructions..."
+                  />
+                </label>
+                <div className="announcement-audience">
+                  <b>Audience: all active Members + Faculty</b>
+                  <small>In-app notifications are immediate. Email delivery is also enabled when SMTP is configured on the backend.</small>
+                </div>
+                <div className="modalactions">
+                  <button type="button" className="secondary" onClick={() => setModal("")}>Cancel</button>
+                  <button className="primary" disabled={busy}>Send announcement</button>
                 </div>
               </form>
             )}
