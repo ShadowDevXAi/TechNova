@@ -6001,3 +6001,60 @@ main {
   .task-filter-chip { justify-content: space-between; }
   .task-status-select { min-width: 112px; max-width: 130px; }
 }
+
+
+/* TechNova supplied brand asset and high-volume task progress lists */
+.logo img,
+.miniTN img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: none;
+  padding: 3px;
+  border-radius: inherit;
+}
+.common-task-member-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 5px;
+  max-height: 104px;
+  margin-top: 7px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 4px 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(112,229,255,.38) rgba(8,14,25,.2);
+  overscroll-behavior: contain;
+}
+.common-task-member-list > small {
+  max-height: none !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+.member-name-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(112,229,255,.15);
+  border-radius: 999px;
+  color: #cfe4f6;
+  background: rgba(30,57,82,.42);
+  font-size: 9px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.member-name-chip.accepted { border-color: rgba(66,211,166,.22); }
+.member-name-chip.completed {
+  color: #b6f1d8;
+  border-color: rgba(66,211,166,.3);
+  background: rgba(35,145,105,.1);
+}
+.review-approve-all { white-space: nowrap; }
+.review-queue-controls { row-gap: 9px; }
+@media (max-width: 760px) {
+  .review-approve-all { flex: 1 1 100%; }
+  .common-task-member-list { max-height: 90px; }
+}

@@ -26,6 +26,8 @@ import { QRCodeSVG } from "qrcode.react";
 import { Html5QrcodeScanner } from "html5-qrcode";
 
 
+const TECHNOVA_LOGO_URL = "https://imagepaste.org/v/c4n7u2ru.png";
+
 const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
   "https://technova-5h0g.onrender.com"
@@ -532,24 +534,36 @@ function App() {
     }
   }
 
-  async function approveSelectedTasks() {
-    const chosen = reviewQueue.filter((task) => selectedReviewIds.includes(task.id));
+  async function approveSelectedTasks(taskIds = selectedReviewIds, scopeLabel = "selected submissions") {
+    const requestedIds = [...new Set(taskIds)];
+    const chosen = reviewQueue.filter((task) => requestedIds.includes(task.id));
     if (!chosen.length) return;
     const confirmed = window.confirm(
-      "Approve " + chosen.length + " submitted task(s)? Check the submission notes and attached work before approving."
+      "Approve " + chosen.length + " " + scopeLabel + "? Review the submitted notes and attachments first. Founder/Core Management approval will be recorded."
     );
     if (!confirmed) return;
     setBusy(true);
+    let approvedCount = 0;
     try {
-      const result = await api("/tasks/bulk-confirm", token, {
-        method: "POST",
-        body: JSON.stringify({ task_ids: chosen.map((task) => task.id) }),
-      });
+      // The API accepts up to 100 task IDs per request; process larger queues in safe batches.
+      for (let start = 0; start < chosen.length; start += 100) {
+        const batch = chosen.slice(start, start + 100);
+        const result = await api("/tasks/bulk-confirm", token, {
+          method: "POST",
+          body: JSON.stringify({ task_ids: batch.map((task) => task.id) }),
+        });
+        approvedCount += result.approved_count || batch.length;
+      }
       setSelectedReviewIds([]);
-      notify(result.message || "Task submissions approved");
+      notify(approvedCount + " task submission(s) approved");
       await refresh();
     } catch (e) {
-      fail(e);
+      await refresh();
+      fail(new Error(
+        approvedCount
+          ? approvedCount + " submission(s) were approved. Refresh the queue and retry the remaining items. " + (e.message || "")
+          : e.message || "Could not approve submissions"
+      ));
     } finally {
       setBusy(false);
     }
@@ -865,7 +879,7 @@ function App() {
     return (
       <div className="authscreen">
         <div className="authbrand">
-          <div className="logo">TN</div>
+          <div className="logo"><img src={TECHNOVA_LOGO_URL} alt="TechNova logo" /></div>
           <div>
             <b>
               Tech<span>Nova</span>
@@ -1066,7 +1080,7 @@ function App() {
         aria-hidden={window.innerWidth <= 760 && !mobile}
       >
         <div className="brand">
-          <div className="logo">TN</div>
+          <div className="logo"><img src={TECHNOVA_LOGO_URL} alt="TechNova logo" /></div>
           <div>
             <b>
               Tech<span>Nova</span>
@@ -1557,7 +1571,7 @@ function App() {
                   <div className="panelhead">
                     <div>
                       <b>Quick completion approvals</b>
-                      <small>{reviewQueue.length} submission(s) waiting · approve several at once after checking their work</small>
+                      <small>{reviewQueue.length} submission(s) waiting · batch approval available for large queues</small>
                     </div>
                     <span className="common-task-count">{reviewQueue.length} pending</span>
                   </div>
@@ -1591,6 +1605,15 @@ function App() {
                       disabled={busy || !selectedReviewIds.length}
                     >
                       <Check size={14} /> Approve selected ({selectedReviewIds.length})
+                    </button>
+                    <button
+                      type="button"
+                      className="primary review-approve-all"
+                      onClick={() => approveSelectedTasks(filteredReviewQueue.map((task) => task.id), "matching submissions")}
+                      disabled={busy || !filteredReviewQueue.length}
+                      title="Approve every task currently shown by this search"
+                    >
+                      <Check size={14} /> Approve all matching ({filteredReviewQueue.length})
                     </button>
                   </div>
                   <div className="review-queue-list">
@@ -1633,7 +1656,7 @@ function App() {
                       </div>
                     )}
                   </div>
-                  <p className="review-queue-note">Only Founder and Core Management can approve. This quick review does not require scanning every member’s QR code; inspect submitted notes and attachments first. Individual QR verification remains available when needed.</p>
+                  <p className="review-queue-note">Only Founder and Core Management can approve. Search or filter the queue, inspect submitted notes and attachments, then approve selected items or all matching items in one confirmation. Large queues are processed in batches; QR scanning remains optional for identity checks when needed.</p>
                 </div>
               )}
 
@@ -1657,12 +1680,24 @@ function App() {
                       <small className="common-task-due">Due: {item.due_date || "No due date"}</small>
                       <div className="common-task-progress">
                         <div>
-                          <b>{item.accepted_count} accepted</b>
-                          <small>{item.accepted_members?.length ? item.accepted_members.join(", ") : "No one has accepted yet."}</small>
+                          <b>Accepted · {item.accepted_count ?? item.accepted_members?.length ?? 0}</b>
+                          <div className="common-task-member-list" aria-label="Members who accepted this task">
+                            {item.accepted_members?.length
+                              ? item.accepted_members.map((name, index) => (
+                                  <span className="member-name-chip accepted" key={name + "-" + index}>{name}</span>
+                                ))
+                              : <small>No one has accepted yet.</small>}
+                          </div>
                         </div>
                         <div>
-                          <b>{item.completed_count || 0} completed</b>
-                          <small>{item.completed_members?.length ? item.completed_members.join(", ") : "No one has completed this task yet."}</small>
+                          <b>Completed · {item.completed_count ?? item.completed_members?.length ?? 0}</b>
+                          <div className="common-task-member-list" aria-label="Members who completed this task">
+                            {item.completed_members?.length
+                              ? item.completed_members.map((name, index) => (
+                                  <span className="member-name-chip completed" key={name + "-" + index}>{name}</span>
+                                ))
+                              : <small>No one has completed this task yet.</small>}
+                          </div>
                         </div>
                       </div>
                       {user.role === "Member" && !item.response_status && (
@@ -1914,7 +1949,7 @@ function App() {
                     </div>
                   )}
                   <div className="cardbrand">
-                    <div className="miniTN">TN</div>
+                    <div className="miniTN"><img src={TECHNOVA_LOGO_URL} alt="TechNova logo" /></div>
                     <div>
                       <b>
                         Tech<span>Nova</span>
