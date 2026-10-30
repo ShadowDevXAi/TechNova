@@ -2195,6 +2195,7 @@ function App() {
                                 <span>{t.status === "Done" ? "+" + (t.credits_awarded || 0) + " earned" : "+" + (t.credits_reward || 5) + " credits"}</span>
                                 {t.late_penalty_points > 0 && <span className="late-penalty-label">−{t.late_penalty_points} late penalty</span>}
                                 {t.recurrence === "daily" && <span className="schedule-state active">Daily</span>}
+                                {t.auto_generated && <span className="schedule-state active">Auto-generated</span>}
                               </small>
                               {t.description && (
                                 <small className="sub">{t.description}</small>
