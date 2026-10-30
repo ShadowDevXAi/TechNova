@@ -112,6 +112,7 @@ function App() {
   const [members, setMembers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [commonTasks, setCommonTasks] = useState([]);
+  const [dailySchedules, setDailySchedules] = useState([]);
   const [leaderboard, setLeaderboard] = useState({ top_10: [], top_three: [], my_entry: null });
   const [notifications, setNotifications] = useState([]);
   const [reviewQueue, setReviewQueue] = useState([]);
@@ -162,6 +163,7 @@ function App() {
     assignee_id: "",
     assignee_ids: [],
     priority: "Medium",
+    recurrence: "once",
     difficulty_rank: "F",
     programming_language: "General",
     due_date: "",
@@ -196,13 +198,14 @@ function App() {
     try {
       const me = await api("/auth/me", t);
       setUser(me);
-      const [d, ms, ts, tm, common, board, inbox, reviews] = await Promise.all([
+      const [d, ms, ts, tm, common, board, schedules, inbox, reviews] = await Promise.all([
         api("/dashboard", t),
         api("/members", t),
         api("/tasks", t),
         api("/teams", t),
         api("/common-tasks", t),
         api("/leaderboard", t),
+        ["Founder", "Core Management"].includes(me.role) ? api("/task-schedules", t) : Promise.resolve([]),
         api("/notifications", t),
         ["Founder", "Core Management"].includes(me.role)
           ? api("/tasks/review-queue", t)
@@ -213,6 +216,7 @@ function App() {
       setTasks(ts);
       setTeams(tm);
       setCommonTasks(common);
+      setDailySchedules(schedules);
       setLeaderboard(board);
       setNotifications(inbox);
       setReviewQueue(reviews);
@@ -238,21 +242,29 @@ function App() {
     const syncWorkspace = async () => {
       if (document.visibilityState !== "visible") return;
       try {
-        const [nextTasks, nextCommonTasks, nextLeaderboard, nextNotifications, nextReviews, nextDashboard] = await Promise.all([
+        const [nextTasks, nextCommonTasks, nextLeaderboard, nextMembers, nextTeams, nextSchedules, nextNotifications, nextReviews, nextDashboard, nextAudit] = await Promise.all([
           api("/tasks", token),
           api("/common-tasks", token),
           api("/leaderboard", token),
+          api("/members", token),
+          api("/teams", token),
+          isManager ? api("/task-schedules", token) : Promise.resolve([]),
           api("/notifications", token),
           isManager ? api("/tasks/review-queue", token) : Promise.resolve([]),
           api("/dashboard", token),
+          page === "Audit Log" ? api("/audit?limit=100", token) : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setTasks(nextTasks);
         setCommonTasks(nextCommonTasks);
         setLeaderboard(nextLeaderboard);
+        setMembers(nextMembers);
+        setTeams(nextTeams);
+        setDailySchedules(nextSchedules);
         setNotifications(nextNotifications);
         setReviewQueue(nextReviews);
         setDashboard(nextDashboard);
+        if (nextAudit) setAudit(nextAudit);
         setSelectedReviewIds((current) =>
           current.filter((id) => nextReviews.some((task) => task.id === id))
         );
@@ -270,7 +282,7 @@ function App() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [token, user?.role]);
+  }, [token, user?.role, page]);
 
   // Keep navigation usable on short screens and on mobile devices.
   useEffect(() => {
@@ -444,6 +456,7 @@ function App() {
     setMembers([]);
     setTasks([]);
     setCommonTasks([]);
+    setDailySchedules([]);
     setLeaderboard({ top_10: [], top_three: [], my_entry: null });
     setNotifications([]);
     setReviewQueue([]);
@@ -564,13 +577,16 @@ function App() {
         assignee_id: "",
         assignee_ids: [],
         priority: "Medium",
+        recurrence: "once",
         difficulty_rank: "F",
         programming_language: "General",
         due_date: "",
         project: "Club projects",
       });
       notify(
-        mode === "open_to_all"
+        taskForm.recurrence === "daily"
+          ? "Task created. Daily copies will start tomorrow automatically."
+          : mode === "open_to_all"
           ? "Common task published to Members and Faculty"
           : mode === "selected_members"
           ? "Task assigned to " + selectedCount + " members; notifications sent"
@@ -617,6 +633,106 @@ function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+
+  async function toggleTaskPause(task) {
+    const nextState = task.task_state === "Suspended" ? "Active" : "Suspended";
+    const reason = nextState === "Suspended" ? prompt("Why are you pausing this task?") : "";
+    if (nextState === "Suspended" && (!reason || reason.trim().length < 5)) return;
+    try {
+      await api("/tasks/" + task.id + "/state", token, {
+        method: "POST",
+        body: JSON.stringify({ state: nextState, reason: reason || "" }),
+      });
+      notify(nextState === "Suspended" ? "Task paused; its deadline is frozen." : "Task resumed; deadline extended by pause duration.");
+      await refresh();
+    } catch (e) { fail(e); }
+  }
+
+  async function archiveTask(task) {
+    if (!confirm('Archive "' + task.title + '"? It will disappear from active task lists, but its history is retained.')) return;
+    try {
+      const result = await api("/tasks/" + task.id, token, { method: "DELETE" });
+      notify(result.message);
+      await refresh();
+    } catch (e) { fail(e); }
+  }
+
+  async function manageCommonTask(item, action) {
+    if (action === "delete" && !confirm('Archive common mission "' + item.title + '"? Existing accepted task copies are kept.')) return;
+    let reason = "";
+    if (action === "pause") {
+      reason = prompt("Why are you pausing this common mission?") || "";
+      if (reason.trim().length < 5) return;
+    }
+    try {
+      if (action === "delete") {
+        const result = await api("/common-tasks/" + item.id, token, { method: "DELETE" });
+        notify(result.message);
+      } else {
+        const state = action === "pause" ? "Suspended" : "Active";
+        await api("/common-tasks/" + item.id + "/state", token, {
+          method: "POST", body: JSON.stringify({ state, reason }),
+        });
+        notify(action === "pause" ? "Common mission paused." : "Common mission reopened.");
+      }
+      await refresh();
+    } catch (e) { fail(e); }
+  }
+
+  async function toggleDailySchedule(schedule) {
+    try {
+      const result = await api("/task-schedules/" + schedule.id + "/toggle", token, { method: "POST" });
+      notify(result.message);
+      await refresh();
+    } catch (e) { fail(e); }
+  }
+
+  async function deleteDailySchedule(schedule) {
+    if (!confirm('Stop creating "' + schedule.title + '" every day? Already generated tasks will remain.')) return;
+    try {
+      const result = await api("/task-schedules/" + schedule.id, token, { method: "DELETE" });
+      notify(result.message);
+      await refresh();
+    } catch (e) { fail(e); }
+  }
+
+  async function disciplineMember(member) {
+    const reason = prompt("Rule violation / reason (at least 5 characters):");
+    if (!reason || reason.trim().length < 5) return;
+    const hoursValue = prompt("Temporary suspension duration in hours (1–720):", "24");
+    if (hoursValue === null) return;
+    const duration_hours = Number(hoursValue);
+    if (!Number.isInteger(duration_hours) || duration_hours < 1 || duration_hours > 720) {
+      fail(new Error("Enter a suspension duration from 1 to 720 hours."));
+      return;
+    }
+    const penaltyValue = prompt("Credit penalty (0–500 credits):", "0");
+    if (penaltyValue === null) return;
+    const credit_penalty = Number(penaltyValue);
+    if (!Number.isInteger(credit_penalty) || credit_penalty < 0 || credit_penalty > 500) {
+      fail(new Error("Enter a whole-number credit penalty from 0 to 500."));
+      return;
+    }
+    if (!confirm("Apply a " + duration_hours + " hour suspension and deduct " + credit_penalty + " credits from " + member.name + "?")) return;
+    try {
+      const result = await api("/members/" + member.id + "/suspend", token, {
+        method: "POST",
+        body: JSON.stringify({ reason: reason.trim(), duration_hours, credit_penalty }),
+      });
+      notify(result.message + " · Ends " + new Date(result.suspension_until).toLocaleString());
+      await refresh();
+    } catch (e) { fail(e); }
+  }
+
+  async function reinstateMember(member) {
+    if (!confirm("Reinstate " + member.name + " now?")) return;
+    try {
+      await api("/members/" + member.id + "/reinstate", token, { method: "POST" });
+      notify("Member reinstated. A new digital ID may be issued.");
+      await refresh();
+    } catch (e) { fail(e); }
   }
 
   async function respondToCommonTask(task, response) {
@@ -1627,6 +1743,7 @@ function App() {
                               <div>
                                 <b>{m.name}</b>
                                 <small>{m.email}</small>
+                                {m.suspension_reason && m.status === "Suspended" && <small className="sub">{m.suspension_reason}</small>}
                               </div>
                             </div>
                           </td>
@@ -1660,9 +1777,10 @@ function App() {
                             ) : m.team}
                           </td>
                           <td>
-                            <span className={"pill " + m.status.toLowerCase()}>
+                            <span className={"pill " + m.status.toLowerCase()} title={m.suspension_reason || ""}>
                               {m.status}
                             </span>
+                            {m.status === "Suspended" && m.suspension_until && <small className="sub">Until {new Date(m.suspension_until).toLocaleString()}</small>}
                           </td>
                           <td>
                             <div className="rowactions">
@@ -1695,23 +1813,14 @@ function App() {
                                   <option>Core Management</option>
                                 </select>
                               )}
-                              {isFounder && m.role !== "Founder" && (
-                                <button
-                                  className="textbtn danger"
-                                  onClick={() => {
-                                    if (
-                                      confirm(
-                                        "Suspend this member and revoke their active cards?"
-                                      )
-                                    )
-                                      api(`/members/${m.id}`, token, {
-                                        method: "DELETE",
-                                      })
-                                        .then(refresh)
-                                        .catch(fail);
-                                  }}
-                                >
-                                  Suspend
+                              {isAdmin && m.role === "Member" && m.status === "Active" && (
+                                <button className="textbtn danger" onClick={() => disciplineMember(m)}>
+                                  Temporary suspend
+                                </button>
+                              )}
+                              {isAdmin && m.role === "Member" && m.status === "Suspended" && (
+                                <button className="textbtn" onClick={() => reinstateMember(m)}>
+                                  Reinstate
                                 </button>
                               )}
                             </div>
@@ -1877,6 +1986,25 @@ function App() {
                 </div>
               )}
 
+              {isAdmin && (
+                <div className="panel daily-schedule-panel">
+                  <div className="panelhead">
+                    <div><b>Daily mission automation</b><small>Daily templates generate new task copies automatically. Pausing a schedule stops future copies only.</small></div>
+                    <span className="common-task-count">{dailySchedules.filter((schedule) => schedule.active).length} active</span>
+                  </div>
+                  <div className="daily-schedule-list">
+                    {dailySchedules.map((schedule) => (
+                      <div className="daily-schedule-row" key={schedule.id}>
+                        <div><b>{schedule.title}</b><small>{schedule.assignment_mode === "open_to_all" ? "Common mission" : "Assigned task"} · Starts {schedule.start_date} · Last created {schedule.last_generated_date || "pending"}</small></div>
+                        <span className={"schedule-state " + (schedule.active ? "active" : "paused")}>{schedule.active ? "Repeating" : "Paused"}</span>
+                        <button className="textbtn" onClick={() => toggleDailySchedule(schedule)}>{schedule.active ? "Pause" : "Resume"}</button>
+                        <button className="textbtn danger" onClick={() => deleteDailySchedule(schedule)}>Stop</button>
+                      </div>
+                    ))}
+                    {!dailySchedules.length && <div className="empty">No daily missions configured. Choose “Repeat automatically every day” when creating a task.</div>}
+                  </div>
+                </div>
+              )}
               <div className="panel common-task-board">
                 <div className="panelhead">
                   <div>
@@ -1890,6 +2018,8 @@ function App() {
                     <article className="common-task-card" key={item.id}>
                       <div className="common-task-meta">
                         <span className="pill">{item.priority}</span>
+                        {item.task_state === "Suspended" && <span className="schedule-state paused">Paused</span>}
+                        {item.recurrence === "daily" && <span className="schedule-state active">Daily mission</span>}
                         <span className={"difficulty-badge rank-" + (item.difficulty_rank || "F").toLowerCase()}>{item.difficulty_rank || "F"} · {item.credits_reward || 5} CR</span>
                         <small>{item.project} · {item.programming_language || "General"}</small>
                       </div>
@@ -1918,7 +2048,7 @@ function App() {
                           </div>
                         </div>
                       </div>
-                      {user.role === "Member" && !item.response_status && (
+                      {user.role === "Member" && item.task_state !== "Suspended" && !item.response_status && (
                         <div className="common-task-actions">
                           <button className="primary" onClick={() => respondToCommonTask(item, "accepted")}>
                             <Check size={14} /> Accept task
@@ -1934,7 +2064,13 @@ function App() {
                         </div>
                       )}
                       {isAdmin && (
-                        <small className="common-task-creator">Posted by {item.created_by_name}</small>
+                        <>
+                          <small className="common-task-creator">Posted by {item.created_by_name}</small>
+                          <div className="common-task-actions">
+                            <button className="secondary" onClick={() => manageCommonTask(item, item.task_state === "Suspended" ? "resume" : "pause")}>{item.task_state === "Suspended" ? "Resume mission" : "Pause mission"}</button>
+                            <button className="textbtn danger" onClick={() => manageCommonTask(item, "delete")}>Archive</button>
+                          </div>
+                        </>
                       )}
                     </article>
                   ))}
@@ -1993,7 +2129,7 @@ function App() {
               <div className="panel tablepanel">
                 <div className="panelhead">
                   <b>Task board</b>
-                  <small>Saved in MongoDB</small>
+                  <small>Saved in MongoDB · refreshes automatically every 15 seconds</small>
                 </div>
                 <div className="overflow">
                   <table>
@@ -2019,6 +2155,8 @@ function App() {
                                 <span className={"difficulty-badge rank-" + (t.difficulty_rank || "F").toLowerCase()}>{t.difficulty_rank || "F"} rank</span>
                                 <span>{t.programming_language || "General"}</span>
                                 <span>{t.status === "Done" ? "+" + (t.credits_awarded || 0) + " earned" : "+" + (t.credits_reward || 5) + " credits"}</span>
+                                {t.late_penalty_points > 0 && <span className="late-penalty-label">−{t.late_penalty_points} late penalty</span>}
+                                {t.recurrence === "daily" && <span className="schedule-state active">Daily</span>}
                               </small>
                               {t.description && (
                                 <small className="sub">{t.description}</small>
@@ -2032,7 +2170,7 @@ function App() {
                             </td>
                             <td>{t.due_date || "Not set"}</td>
                             <td>
-                              {user.role === "Member" && t.assignee_id === user.id && t.status !== "Done" ? (
+                              {t.task_state === "Suspended" ? <span className="schedule-state paused">Paused by management</span> : user.role === "Member" && t.assignee_id === user.id && t.status !== "Done" ? (
                                 <select
                                   className={"task-status-select status-" + t.status.toLowerCase().replaceAll(" ", "-")}
                                   value={t.status}
@@ -2094,6 +2232,10 @@ function App() {
                               >
                                 Comment
                               </button>{" "}
+                              {isAdmin && <div className="task-admin-actions">
+                                <button className="textbtn" onClick={() => toggleTaskPause(t)}>{t.task_state === "Suspended" ? "Resume" : "Pause"}</button>
+                                <button className="textbtn danger" onClick={() => archiveTask(t)}>Archive</button>
+                              </div>}
                               <label className="filebtn">
                                 Attach
                                 <input
@@ -2903,6 +3045,13 @@ function App() {
                   </label>
                 </div>
                 <div className="twocol">
+                  <label>
+                    Task schedule
+                    <select value={taskForm.recurrence} onChange={(e) => setTaskForm({ ...taskForm, recurrence: e.target.value })}>
+                      <option value="once">One-time task</option>
+                      <option value="daily">Repeat automatically every day</option>
+                    </select>
+                  </label>
                   <label>
                     Priority
                     <select

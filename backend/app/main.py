@@ -15,6 +15,9 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 import re
+import math
+from zoneinfo import ZoneInfo
+from datetime import timedelta
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pymongo.errors import DuplicateKeyError
 from pymongo import ReturnDocument
@@ -22,7 +25,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from .config import settings
 from .db import client, db, ensure_indexes
 from .security import hash_password, verify_password, create_access_token, decode_access_token, new_card_token, token_hash, utcnow
-from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TaskBulkConfirm, TaskCompletionConfirm, TeamCreate, AnnouncementCreate
+from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TaskBulkConfirm, TaskCompletionConfirm, TeamCreate, AnnouncementCreate, MemberSuspendIn, TaskStateIn
 
 bearer = HTTPBearer(auto_error=False)
 PRIVILEGED = {"Founder", "Core Management"}
@@ -47,7 +50,7 @@ def oid(value: str) -> ObjectId:
     return ObjectId(value)
 
 def clean_user(doc: dict) -> dict:
-    return {"id": str(doc["_id"]), "member_id": doc["member_id"], "name": doc["name"], "email": doc["email"], "role": doc["role"], "team": doc.get("team","Unassigned"), "status": doc["status"], "created_at": doc.get("created_at")}
+    return {"id": str(doc["_id"]), "member_id": doc["member_id"], "name": doc["name"], "email": doc["email"], "role": doc["role"], "team": doc.get("team","Unassigned"), "status": doc["status"], "created_at": doc.get("created_at"), "suspension_until": doc.get("suspension_until"), "suspension_reason": doc.get("suspension_reason"), "suspension_temporary": bool(doc.get("suspension_temporary", False))}
 
 def clean_task(doc: dict) -> dict:
     return {
@@ -63,6 +66,10 @@ def clean_task(doc: dict) -> dict:
         "programming_language": doc.get("programming_language", "General"),
         "credits_reward": doc.get("credits_reward", TASK_CREDIT_VALUES["F"]),
         "credits_awarded": doc.get("credits_awarded", 0),
+        "late_penalty_points": doc.get("late_penalty_points", 0),
+        "task_state": doc.get("task_state", "Active"),
+        "task_state_reason": doc.get("task_state_reason", ""),
+        "recurrence": doc.get("recurrence", "once"),
         "status": doc.get("status", "Todo"),
         "due_date": doc.get("due_date"),
         "submission_note": doc.get("submission_note", ""),
@@ -125,6 +132,8 @@ def clean_common_task(
         "difficulty_rank": doc.get("difficulty_rank", "F"),
         "programming_language": doc.get("programming_language", "General"),
         "credits_reward": doc.get("credits_reward", TASK_CREDIT_VALUES["F"]),
+        "task_state": doc.get("task_state", "Active"),
+        "recurrence": doc.get("recurrence", "once"),
         "due_date": doc.get("due_date"),
         "created_by_name": doc.get("created_by_name", "TechNova Management"),
         "created_at": doc.get("created_at"),
@@ -191,6 +200,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials | None = De
     except Exception:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
     user = await db.users.find_one({"_id": oid(user_id)})
+    if user and user.get("status") == "Suspended" and user.get("suspension_temporary") and user.get("suspension_until") and user["suspension_until"] <= utcnow():
+        await db.users.update_one({"_id": user["_id"], "status": "Suspended"}, {"$set": {"status": "Active", "suspension_until": None, "suspension_temporary": False, "suspension_expired_at": utcnow()}})
+        user = await db.users.find_one({"_id": user["_id"]})
     if not user or user.get("status") != "Active":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account is unavailable")
     return user
@@ -201,6 +213,156 @@ def allow(*roles: str):
             raise HTTPException(403, "You do not have permission to perform this action")
         return user
     return dependency
+
+
+
+async def member_credit_balance(member_id: ObjectId) -> int:
+    earned_rows = await db.tasks.aggregate([
+        {"$match": {"assignee_id": member_id, "status": "Done", "credits_awarded": {"$gt": 0}}},
+        {"$group": {"_id": None, "earned": {"$sum": "$credits_awarded"}}},
+    ]).to_list(length=1)
+    penalty_rows = await db.credit_penalties.aggregate([
+        {"$match": {"user_id": member_id}},
+        {"$group": {"_id": None, "penalties": {"$sum": "$points"}}},
+    ]).to_list(length=1)
+    earned = int(earned_rows[0].get("earned", 0)) if earned_rows else 0
+    penalties = int(penalty_rows[0].get("penalties", 0)) if penalty_rows else 0
+    return max(0, earned - penalties)
+
+
+async def resume_member_paused_tasks(member_id: ObjectId, now: datetime) -> None:
+    paused = await db.tasks.find({
+        "assignee_id": member_id, "task_state": "Suspended",
+        "suspension_pause_by_member": True, "deleted_at": {"$exists": False},
+    }).to_list(500)
+    for task in paused:
+        changes = {"task_state": "Active", "task_state_reason": "", "paused_at": None,
+                   "suspension_pause_by_member": False, "updated_at": now}
+        if task.get("paused_at") and task.get("due_date"):
+            paused_days = max(1, math.ceil((now - task["paused_at"]).total_seconds() / 86400))
+            try:
+                changes["due_date"] = (datetime.fromisoformat(task["due_date"]).date() + timedelta(days=paused_days)).isoformat()
+            except ValueError:
+                pass
+        await db.tasks.update_one({"_id": task["_id"], "task_state": "Suspended"}, {"$set": changes})
+
+
+async def run_daily_maintenance() -> dict:
+    now = utcnow()
+    local_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    today_key = local_today.isoformat()
+    expired_members = await db.users.find({
+        "status": "Suspended", "suspension_temporary": True,
+        "suspension_until": {"$lte": now},
+    }).to_list(500)
+    resumed = await db.users.update_many({
+        "status": "Suspended", "suspension_temporary": True,
+        "suspension_until": {"$lte": now},
+    }, {"$set": {
+        "status": "Active", "suspension_until": None,
+        "suspension_temporary": False, "suspension_expired_at": now,
+    }})
+    for expired_member in expired_members:
+        await resume_member_paused_tasks(expired_member["_id"], now)
+    generated = 0
+    schedules = await db.daily_task_schedules.find({
+        "active": True, "deleted_at": {"$exists": False},
+        "start_date": {"$lte": today_key},
+    }).limit(500).to_list(500)
+    for schedule in schedules:
+        template = schedule.get("template", {})
+        schedule_id = schedule["_id"]
+        if schedule.get("assignment_mode") == "open_to_all":
+            common_doc = {
+                **template, "_id": ObjectId(), "status": "Open", "task_state": "Active",
+                "recurrence": "daily", "daily_schedule_id": schedule_id,
+                "occurrence_date": today_key, "created_at": now, "updated_at": now,
+            }
+            try:
+                await db.common_tasks.insert_one(common_doc)
+                generated += 1
+                recipients = await db.users.find({
+                    "role": {"$in": ["Member", "Faculty"]}, "status": "Active",
+                }).limit(5000).to_list(5000)
+                for recipient in recipients:
+                    await create_notification(recipient, "New daily common task", f'{common_doc["title"]} is available today. Open Tasks & Projects to review it.', "common_task", common_task_id=str(common_doc["_id"]))
+            except DuplicateKeyError:
+                pass
+            await db.daily_task_schedules.update_one({"_id": schedule_id}, {"$set": {"last_generated_date": today_key}})
+            continue
+
+        allowed_roles = ["Member", "Core Management"] if schedule.get("creator_role") == "Founder" else ["Member"]
+        for assignee_id in schedule.get("assignee_ids", []):
+            target = await db.users.find_one({"_id": assignee_id, "status": "Active", "role": {"$in": allowed_roles}})
+            if not target:
+                continue
+            task_doc = {
+                **template, "_id": ObjectId(), "assignee_id": target["_id"],
+                "assignee_name": target["name"], "status": "Todo", "task_state": "Active",
+                "recurrence": "daily", "daily_schedule_id": schedule_id,
+                "occurrence_date": today_key, "submission_note": "",
+                "submission_evidence_url": "", "submission_attested": False,
+                "created_at": now, "updated_at": now,
+            }
+            try:
+                await db.tasks.insert_one(task_doc)
+                generated += 1
+                await create_notification(target, "New daily task assigned", f'{task_doc["title"]} has been added to your tasks for {today_key}.', "task_assigned", task_id=str(task_doc["_id"]))
+            except DuplicateKeyError:
+                pass
+        await db.daily_task_schedules.update_one({"_id": schedule_id}, {"$set": {"last_generated_date": today_key}})
+
+    overdue = await db.tasks.find({
+        "due_date": {"$lt": today_key},
+        "status": {"$in": ["Todo", "In progress", "Review", "Done"]},
+        "task_state": {"$ne": "Suspended"},
+        "deleted_at": {"$exists": False},
+    }).limit(1000).to_list(1000)
+    penalties_applied = 0
+    for task in overdue:
+        if task.get("status") == "Done" and not task.get("submitted_at"):
+            continue
+        if task.get("status") in {"Review", "Done"} and task.get("submitted_at"):
+            submitted = task["submitted_at"]
+            submitted_date = submitted.astimezone(ZoneInfo("Asia/Kolkata")).date().isoformat() if submitted.tzinfo else submitted.date().isoformat()
+            if submitted_date <= task.get("due_date", ""):
+                continue
+        task_key = "late:" + str(task["_id"])
+        points = min(max(1, math.ceil(int(task.get("credits_reward", 5)) * 0.25)), await member_credit_balance(task["assignee_id"]))
+        if points <= 0:
+            await db.tasks.update_one({"_id": task["_id"]}, {"$set": {"late_penalty_applied_at": now, "late_penalty_points": 0}})
+            continue
+        try:
+            await db.credit_penalties.insert_one({
+                "_id": ObjectId(), "reference_key": task_key,
+                "user_id": task["assignee_id"], "task_id": task["_id"],
+                "points": points, "category": "missed_deadline",
+                "reason": "Task was not submitted for review by its due date.",
+                "actor_id": None, "created_at": now,
+            })
+            penalties_applied += 1
+            await create_notification(
+                {"_id": task["assignee_id"], "name": task.get("assignee_name", "Member"), "email": ""},
+                "Task deadline missed · credit penalty",
+                f'{task.get("title", "Task")} was submitted or completed after its due date. {points} credits were deducted. This penalty is applied only once.',
+                "credit_penalty", task_id=str(task["_id"]),
+            )
+        except DuplicateKeyError:
+            pass
+        await db.tasks.update_one({"_id": task["_id"]}, {"$set": {"late_penalty_applied_at": now, "late_penalty_points": points}})
+    return {"suspensions_expired": resumed.modified_count, "daily_tasks_generated": generated, "late_penalties_applied": penalties_applied, "checked_at": now.isoformat()}
+
+
+async def maintenance_worker():
+    while True:
+        try:
+            await run_daily_maintenance()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"TechNova maintenance cycle failed: {exc}")
+        await asyncio.sleep(60)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -217,7 +379,13 @@ async def lifespan(app: FastAPI):
     # Seed initial teams idempotently.
     for name, description in [("Leadership","Club direction and planning"),("Web Development","Websites, interfaces, APIs"),("AI / ML","Applied AI and machine learning"),("Creative & Media","Design, animation, editing"),("Game Development","Game projects and prototyping")]:
         await db.teams.update_one({"name":name},{"$setOnInsert":{"name":name,"description":description,"created_at":utcnow()}},upsert=True)
+    maintenance_task = asyncio.create_task(maintenance_worker())
     yield
+    maintenance_task.cancel()
+    try:
+        await maintenance_task
+    except asyncio.CancelledError:
+        pass
     client.close()
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["300/hour"])
@@ -248,6 +416,11 @@ async def root():
 async def health():
     return {"status":"ok","service":"technova-api"}
 
+
+@app.post("/api/maintenance/run")
+async def run_maintenance_now(actor: dict = Depends(allow("Founder"))):
+    return {"message": "Maintenance cycle completed", **(await run_daily_maintenance())}
+
 @app.post("/api/auth/register", status_code=201)
 @limiter.limit("8/hour")
 async def register(data: RegisterIn, request: Request):
@@ -271,6 +444,9 @@ async def login(data: LoginIn, request: Request):
     if not user or not verify_password(data.password,user["password_hash"]):
         await audit(None,"login_failed","",{"email":str(data.email).lower()},request)
         raise HTTPException(401,"Incorrect email or password")
+    if user["status"] == "Suspended" and user.get("suspension_temporary") and user.get("suspension_until") and user["suspension_until"] <= utcnow():
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"status": "Active", "suspension_until": None, "suspension_temporary": False, "suspension_expired_at": utcnow()}})
+        user = await db.users.find_one({"_id": user["_id"]})
     if user["status"] != "Active":
         raise HTTPException(403,"Your account is pending approval or unavailable")
     token = create_access_token(str(user["_id"]),user["role"])
@@ -376,12 +552,13 @@ async def dashboard(user: dict = Depends(get_current_user)):
         total = await db.users.count_documents({})
         active = await db.users.count_documents({"status":"Active"})
         pending = await db.users.count_documents({"status":"Pending"})
-        tasks = await db.tasks.count_documents({})
-        open_tasks = await db.tasks.count_documents({"status":{"$ne":"Done"}})
-        done = await db.tasks.count_documents({"status":"Done"})
-        recent = await db.tasks.find().sort("created_at",-1).limit(6).to_list(6)
+        active_task_filter = {"deleted_at": {"$exists": False}}
+        tasks = await db.tasks.count_documents(active_task_filter)
+        open_tasks = await db.tasks.count_documents({**active_task_filter, "status":{"$ne":"Done"}})
+        done = await db.tasks.count_documents({**active_task_filter, "status":"Done"})
+        recent = await db.tasks.find(active_task_filter).sort("created_at",-1).limit(6).to_list(6)
         return {"members_total":total,"members_active":active,"members_pending":pending,"tasks_total":tasks,"tasks_open":open_tasks,"tasks_done":done,"recent_tasks":[clean_task(x) for x in recent]}
-    own_tasks = await db.tasks.find({"assignee_id":user["_id"]}).sort("created_at",-1).limit(10).to_list(10)
+    own_tasks = await db.tasks.find({"assignee_id":user["_id"], "deleted_at": {"$exists": False}}).sort("created_at",-1).limit(10).to_list(10)
     return {"members_total":1,"members_active":1,"members_pending":0,"tasks_total":len(own_tasks),"tasks_open":sum(x["status"]!="Done" for x in own_tasks),"tasks_done":sum(x["status"]=="Done" for x in own_tasks),"recent_tasks":[clean_task(x) for x in own_tasks]}
 
 @app.get("/api/leaderboard")
@@ -402,6 +579,10 @@ async def leaderboard(user: dict = Depends(get_current_user)):
         "credits": int(row.get("credits", 0)),
         "completed_tasks": int(row.get("completed_tasks", 0)),
     } for row in credit_rows}
+    penalty_rows = await db.credit_penalties.aggregate([
+        {"$group": {"_id": "$user_id", "penalties": {"$sum": "$points"}}},
+    ]).to_list(length=5000)
+    penalties = {row["_id"]: int(row.get("penalties", 0)) for row in penalty_rows}
 
     entries = []
     for member in active_members:
@@ -411,7 +592,9 @@ async def leaderboard(user: dict = Depends(get_current_user)):
             "member_id": member.get("member_id", ""),
             "name": member.get("name", "Member"),
             "team": member.get("team", "Unassigned"),
-            "credits": score["credits"],
+            "credits": max(0, score["credits"] - penalties.get(member["_id"], 0)),
+            "credits_earned": score["credits"],
+            "credits_penalized": penalties.get(member["_id"], 0),
             "completed_tasks": score["completed_tasks"],
         })
     entries.sort(key=lambda row: (-row["credits"], -row["completed_tasks"], row["name"].casefold()))
@@ -427,7 +610,7 @@ async def leaderboard(user: dict = Depends(get_current_user)):
         "top_three": public_entries[:3],
         "my_entry": ({key: value for key, value in mine.items() if key != "id"} if mine else None),
         "active_member_count": len(entries),
-        "credits_rule": "Credits are granted once, after Founder/Core Management approves a submitted task.",
+        "credits_rule": "Credits are granted once after staff approval. Deadline and disciplinary penalties are deducted transparently.",
     }
 
 
@@ -499,7 +682,9 @@ async def deactivate_member(member_id: str, request: Request, actor: dict = Depe
 
 @app.get("/api/tasks")
 async def list_tasks(user: dict = Depends(get_current_user)):
-    query={} if user["role"] in PRIVILEGED else {"assignee_id":user["_id"]}
+    query = {"deleted_at": {"$exists": False}}
+    if user["role"] not in PRIVILEGED:
+        query["assignee_id"] = user["_id"]
     docs=await db.tasks.find(query).sort("created_at",-1).limit(500).to_list(500)
     return [clean_task(x) for x in docs]
 
@@ -565,7 +750,8 @@ async def broadcast_announcement(
 
 @app.get("/api/common-tasks")
 async def list_common_tasks(user: dict = Depends(get_current_user)):
-    docs = await db.common_tasks.find({"status": "Open"}).sort("created_at", -1).limit(200).to_list(200)
+    common_query = {"deleted_at": {"$exists": False}, "status": {"$in": ["Open", "Suspended"]} if user["role"] in PRIVILEGED else "Open"}
+    docs = await db.common_tasks.find(common_query).sort("created_at", -1).limit(200).to_list(200)
     result = []
     for doc in docs:
         response = await db.common_task_responses.find_one({
@@ -593,7 +779,7 @@ async def list_common_tasks(user: dict = Depends(get_current_user)):
 
 @app.get("/api/tasks/review-queue")
 async def task_review_queue(actor: dict = Depends(allow("Founder", "Core Management"))):
-    query = {"status": "Review"}
+    query = {"status": "Review", "deleted_at": {"$exists": False}}
     if actor.get("role") == "Core Management":
         eligible = await db.users.find({
             "role": "Member",
@@ -711,7 +897,7 @@ async def pending_completion_tasks(member_id: str, actor: dict = Depends(allow("
         raise HTTPException(403, "Core Management can confirm Member task submissions only")
     docs = await db.tasks.find({
         "assignee_id": member["_id"],
-        "status": "Review",
+        "status": "Review", "deleted_at": {"$exists": False},
     }).sort("submitted_at", 1).limit(100).to_list(100)
     result = []
     for doc in docs:
@@ -742,6 +928,8 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
         "difficulty_rank": data.difficulty_rank,
         "programming_language": data.programming_language,
         "credits_reward": TASK_CREDIT_VALUES[data.difficulty_rank],
+        "task_state": "Active",
+        "recurrence": data.recurrence,
         "due_date": data.due_date,
         "created_by": actor["_id"],
         "created_by_name": actor["name"],
@@ -756,6 +944,15 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
         }
         result = await db.common_tasks.insert_one(common_doc)
         common_doc["_id"] = result.inserted_id
+        if data.recurrence == "daily":
+            local_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+            await db.daily_task_schedules.insert_one({
+                "title": base["title"], "template": base, "assignment_mode": "open_to_all",
+                "assignee_ids": [], "created_by": actor["_id"], "created_by_name": actor["name"],
+                "creator_role": actor["role"], "active": True,
+                "start_date": (local_today + timedelta(days=1)).isoformat(),
+                "created_at": now, "last_generated_date": local_today.isoformat(),
+            })
         active_members = await db.users.find({
             "role": {"$in": ["Member", "Faculty"]},
             "status": "Active",
@@ -802,6 +999,19 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
     if any(not can_assign_task(actor, target) for target in targets):
         raise HTTPException(403, "Founder can assign to Core Management or Members; Core Management can assign only to Members")
 
+    schedule_id = None
+    if data.recurrence == "daily":
+        local_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        saved_schedule = await db.daily_task_schedules.insert_one({
+            "title": base["title"], "template": base,
+            "assignment_mode": data.assignment_mode,
+            "assignee_ids": [target["_id"] for target in targets],
+            "created_by": actor["_id"], "created_by_name": actor["name"],
+            "creator_role": actor["role"], "active": True,
+            "start_date": (local_today + timedelta(days=1)).isoformat(),
+            "created_at": now, "last_generated_date": local_today.isoformat(),
+        })
+        schedule_id = saved_schedule.inserted_id
     group_id = str(ObjectId()) if len(targets) > 1 else None
     created = []
     for target in targets:
@@ -812,6 +1022,7 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
             "status": "Todo",
             "submission_note": "",
             "assignment_group_id": group_id,
+            "daily_schedule_id": schedule_id,
         }
         result = await db.tasks.insert_one(doc)
         doc["_id"] = result.inserted_id
@@ -847,6 +1058,8 @@ async def respond_to_common_task(common_task_id: str, body: dict, request: Reque
     })
     if not common:
         raise HTTPException(404, "Common task is no longer available")
+    if common.get("task_state", "Active") != "Active":
+        raise HTTPException(409, "This common task is temporarily paused by management")
     previous = await db.common_task_responses.find_one({
         "common_task_id": common["_id"],
         "user_id": user["_id"],
@@ -910,12 +1123,173 @@ async def respond_to_common_task(common_task_id: str, body: dict, request: Reque
         "task_id": str(personal_task["_id"]) if personal_task else None,
     }
 
+
+@app.post("/api/tasks/{task_id}/state")
+async def set_task_state(task_id: str, data: TaskStateIn, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    task = await db.tasks.find_one({"_id": oid(task_id), "deleted_at": {"$exists": False}})
+    if not task:
+        raise HTTPException(404, "Task not found")
+    reason = (data.reason or "").strip()
+    if data.state == "Suspended" and len(reason) < 5:
+        raise HTTPException(422, "Give a reason of at least 5 characters for pausing a task")
+    now = utcnow()
+    changes = {"task_state": data.state, "task_state_reason": reason if data.state == "Suspended" else "", "updated_at": now}
+    if data.state == "Suspended":
+        changes["paused_at"] = now
+    else:
+        paused_at = task.get("paused_at")
+        if paused_at and task.get("due_date"):
+            paused_days = max(1, math.ceil((now - paused_at).total_seconds() / 86400))
+            try:
+                changes["due_date"] = (datetime.fromisoformat(task["due_date"]).date() + timedelta(days=paused_days)).isoformat()
+            except ValueError:
+                pass
+        changes["paused_at"] = None
+    await db.tasks.update_one({"_id": task["_id"]}, {"$set": changes})
+    await audit(actor, "task_" + data.state.lower(), task_id, {"reason": reason, "deadline_paused": True}, request)
+    return clean_task(await db.tasks.find_one({"_id": task["_id"]}))
+
+
+@app.delete("/api/tasks/{task_id}")
+async def soft_delete_task(task_id: str, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    task = await db.tasks.find_one({"_id": oid(task_id), "deleted_at": {"$exists": False}})
+    if not task:
+        raise HTTPException(404, "Task not found or already deleted")
+    now = utcnow()
+    await db.tasks.update_one({"_id": task["_id"]}, {"$set": {"deleted_at": now, "deleted_by": actor["_id"], "task_state": "Deleted", "updated_at": now}})
+    await audit(actor, "task_soft_deleted", task_id, {"title": task.get("title", "")}, request)
+    return {"message": "Task archived (soft deleted). Its history and audit data are retained."}
+
+
+@app.post("/api/common-tasks/{common_task_id}/state")
+async def set_common_task_state(common_task_id: str, data: TaskStateIn, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    task = await db.common_tasks.find_one({"_id": oid(common_task_id), "deleted_at": {"$exists": False}})
+    if not task:
+        raise HTTPException(404, "Common task not found")
+    reason = (data.reason or "").strip()
+    if data.state == "Suspended" and len(reason) < 5:
+        raise HTTPException(422, "Give a reason of at least 5 characters for pausing a task")
+    await db.common_tasks.update_one({"_id": task["_id"]}, {"$set": {
+        "status": "Suspended" if data.state == "Suspended" else "Open",
+        "task_state": data.state, "task_state_reason": reason if data.state == "Suspended" else "",
+        "updated_at": utcnow(),
+    }})
+    await audit(actor, "common_task_" + data.state.lower(), common_task_id, {"reason": reason}, request)
+    return {"message": "Common task " + ("paused" if data.state == "Suspended" else "resumed")}
+
+
+@app.delete("/api/common-tasks/{common_task_id}")
+async def soft_delete_common_task(common_task_id: str, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    task = await db.common_tasks.find_one({"_id": oid(common_task_id), "deleted_at": {"$exists": False}})
+    if not task:
+        raise HTTPException(404, "Common task not found or already deleted")
+    await db.common_tasks.update_one({"_id": task["_id"]}, {"$set": {
+        "status": "Deleted", "deleted_at": utcnow(), "deleted_by": actor["_id"],
+        "task_state": "Deleted", "updated_at": utcnow(),
+    }})
+    await audit(actor, "common_task_soft_deleted", common_task_id, {"title": task.get("title", "")}, request)
+    return {"message": "Common task archived. Its history is retained."}
+
+
+@app.post("/api/members/{member_id}/suspend")
+async def temporarily_suspend_member(member_id: str, data: MemberSuspendIn, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    target = await db.users.find_one({"_id": oid(member_id)})
+    if not target:
+        raise HTTPException(404, "Member not found")
+    if target.get("role") != "Member":
+        raise HTTPException(403, "Temporary discipline action is limited to Member accounts")
+    if target.get("status") != "Active":
+        raise HTTPException(409, "Only active Members can be temporarily suspended")
+    now = utcnow()
+    until = now + timedelta(hours=data.duration_hours)
+    sanction_id = ObjectId()
+    changed = await db.users.update_one({"_id": target["_id"], "status": "Active"}, {"$set": {
+        "status": "Suspended", "suspended_at": now, "suspension_until": until,
+        "suspension_temporary": True, "suspension_reason": data.reason.strip(),
+        "suspended_by": actor["_id"], "updated_at": now,
+    }})
+    if changed.modified_count != 1:
+        raise HTTPException(409, "Member status changed; refresh and retry")
+    await db.cards.update_many({"member_id": str(target["_id"]), "status": "Active"}, {"$set": {"status": "Revoked", "revoked_at": now}})
+    await db.tasks.update_many({
+        "assignee_id": target["_id"], "status": {"$in": ["Todo", "In progress", "Review"]},
+        "task_state": {"$ne": "Suspended"}, "deleted_at": {"$exists": False},
+    }, {"$set": {"task_state": "Suspended", "task_state_reason": "Member temporary suspension", "paused_at": now, "suspension_pause_by_member": True}})
+    actual_penalty = min(data.credit_penalty, await member_credit_balance(target["_id"]))
+    if actual_penalty > 0:
+        await db.credit_penalties.insert_one({
+            "_id": sanction_id, "reference_key": "disciplinary:" + str(sanction_id),
+            "user_id": target["_id"], "points": actual_penalty,
+            "category": "disciplinary", "reason": data.reason.strip(),
+            "actor_id": actor["_id"], "created_at": now,
+        })
+    await create_notification(target, "Temporary account suspension", f"Your TechNova account is suspended until {until.isoformat()}. Reason: {data.reason.strip()}. Credit deduction: {data.credit_penalty}.", "disciplinary")
+    await audit(actor, "member_temporarily_suspended", member_id, {
+        "reason": data.reason.strip(), "duration_hours": data.duration_hours,
+        "suspension_until": until.isoformat(), "credit_penalty": actual_penalty,
+    }, request)
+    return {"message": "Member temporarily suspended", "suspension_until": until, "credit_penalty": actual_penalty}
+
+
+@app.post("/api/members/{member_id}/reinstate")
+async def reinstate_member(member_id: str, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    target = await db.users.find_one({"_id": oid(member_id)})
+    if not target:
+        raise HTTPException(404, "Member not found")
+    if target.get("role") != "Member":
+        raise HTTPException(403, "Only Member accounts can be reinstated by this action")
+    changed = await db.users.update_one({"_id": target["_id"], "status": "Suspended"}, {"$set": {
+        "status": "Active", "suspension_until": None, "suspension_temporary": False,
+        "reinstated_at": utcnow(), "reinstated_by": actor["_id"],
+    }, "$unset": {"suspension_reason": "", "suspended_at": ""}})
+    if not changed.modified_count:
+        raise HTTPException(409, "This Member is not currently suspended")
+    await resume_member_paused_tasks(target["_id"], utcnow())
+    await audit(actor, "member_reinstated", member_id, {}, request)
+    return clean_user(await db.users.find_one({"_id": target["_id"]}))
+
+
+@app.get("/api/task-schedules")
+async def list_task_schedules(actor: dict = Depends(allow("Founder", "Core Management"))):
+    docs = await db.daily_task_schedules.find({"deleted_at": {"$exists": False}}).sort("created_at", -1).limit(200).to_list(200)
+    return [{
+        "id": str(doc["_id"]), "title": doc.get("title", "Daily task"),
+        "assignment_mode": doc.get("assignment_mode", "individual"),
+        "active": bool(doc.get("active", True)), "start_date": doc.get("start_date"),
+        "last_generated_date": doc.get("last_generated_date"),
+        "created_by_name": doc.get("created_by_name", "Management"),
+    } for doc in docs]
+
+
+@app.post("/api/task-schedules/{schedule_id}/toggle")
+async def toggle_task_schedule(schedule_id: str, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    schedule = await db.daily_task_schedules.find_one({"_id": oid(schedule_id), "deleted_at": {"$exists": False}})
+    if not schedule:
+        raise HTTPException(404, "Daily schedule not found")
+    active = not bool(schedule.get("active", True))
+    await db.daily_task_schedules.update_one({"_id": schedule["_id"]}, {"$set": {"active": active, "updated_at": utcnow()}})
+    await audit(actor, "daily_schedule_" + ("resumed" if active else "paused"), schedule_id, {}, request)
+    return {"message": "Daily task schedule " + ("resumed" if active else "paused"), "active": active}
+
+
+@app.delete("/api/task-schedules/{schedule_id}")
+async def delete_task_schedule(schedule_id: str, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    schedule = await db.daily_task_schedules.find_one({"_id": oid(schedule_id), "deleted_at": {"$exists": False}})
+    if not schedule:
+        raise HTTPException(404, "Daily schedule not found")
+    await db.daily_task_schedules.update_one({"_id": schedule["_id"]}, {"$set": {"active": False, "deleted_at": utcnow(), "deleted_by": actor["_id"]}})
+    await audit(actor, "daily_schedule_deleted", schedule_id, {"title": schedule.get("title", "")}, request)
+    return {"message": "Daily task schedule stopped. Generated tasks are kept."}
+
+
 @app.patch("/api/tasks/{task_id}")
 async def update_task(task_id: str, data: TaskPatch, request: Request, actor: dict = Depends(get_current_user)):
-    target = await db.tasks.find_one({"_id": oid(task_id)})
+    target = await db.tasks.find_one({"_id": oid(task_id), "deleted_at": {"$exists": False}})
     if not target:
         raise HTTPException(404, "Task not found")
     privileged = actor["role"] in PRIVILEGED
+    if target.get("task_state", "Active") != "Active" and not privileged:
+        raise HTTPException(409, "This task is temporarily paused by management")
     if actor.get("role") == "Faculty":
         raise HTTPException(403, "Faculty accounts have read-only access")
     if not privileged and target["assignee_id"] != actor["_id"]:

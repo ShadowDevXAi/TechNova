@@ -43,6 +43,7 @@ class TaskCreate(BaseModel):
     programming_language: ProgrammingLanguage = "General"
     due_date: str | None = None
     project: str = Field(default="Club projects", max_length=100)
+    recurrence: Literal["once", "daily"] = "once"
 
 class TaskPatch(BaseModel):
     title: str | None = Field(default=None, min_length=3, max_length=180)
@@ -83,3 +84,14 @@ class UserPublic(BaseModel):
     team: str
     status: MemberStatus
     model_config = ConfigDict(extra="ignore")
+
+
+class MemberSuspendIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)
+    duration_hours: int = Field(default=24, ge=1, le=720)
+    credit_penalty: int = Field(default=0, ge=0, le=500)
+
+
+class TaskStateIn(BaseModel):
+    state: Literal["Active", "Suspended"]
+    reason: str | None = Field(default=None, max_length=1000)

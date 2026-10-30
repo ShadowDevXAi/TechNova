@@ -12,6 +12,11 @@ async def ensure_indexes():
     await db.tasks.create_index([("assignee_id", 1), ("status", 1)])
     await db.tasks.create_index("created_at")
     await db.tasks.create_index([("status", 1), ("assignee_id", 1), ("credits_awarded", 1)])
+    await db.tasks.create_index([("daily_schedule_id", 1), ("occurrence_date", 1), ("assignee_id", 1)], unique=True, partialFilterExpression={"daily_schedule_id": {"$exists": True}})
+    await db.common_tasks.create_index([("daily_schedule_id", 1), ("occurrence_date", 1)], unique=True, partialFilterExpression={"daily_schedule_id": {"$exists": True}})
+    await db.daily_task_schedules.create_index([("active", 1), ("start_date", 1)])
+    await db.credit_penalties.create_index("reference_key", unique=True)
+    await db.credit_penalties.create_index("user_id")
     await db.tasks.create_index(
         [("common_task_id", 1), ("assignee_id", 1)],
         unique=True,
