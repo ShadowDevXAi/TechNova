@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import os
 import hmac
 import hashlib
@@ -38,6 +39,7 @@ def clean_user(doc: dict) -> dict:
 def clean_task(doc: dict) -> dict:
     return {
         "id": str(doc["_id"]),
+        "assignment_group_id": doc.get("assignment_group_id"),
         "title": doc["title"],
         "description": doc.get("description", ""),
         "project": doc.get("project", "Club projects"),
@@ -70,6 +72,81 @@ async def next_member_id(role: str) -> str:
 
 async def audit(actor: dict | None, action: str, target: str = "", details: dict | None = None, request: Request | None = None):
     await db.audit.insert_one({"actor_id": actor.get("_id") if actor else None, "actor_role": actor.get("role") if actor else None, "action": action, "target": target, "details": details or {}, "ip": request.client.host if request and request.client else None, "created_at": utcnow()})
+
+
+def clean_notification(doc: dict) -> dict:
+    return {
+        "id": str(doc["_id"]),
+        "type": doc.get("type", "general"),
+        "title": doc.get("title", "TechNova notification"),
+        "message": doc.get("message", ""),
+        "task_id": doc.get("task_id"),
+        "common_task_id": doc.get("common_task_id"),
+        "read": bool(doc.get("read_at")),
+        "created_at": doc.get("created_at"),
+    }
+
+
+def clean_common_task(doc: dict, response_status: str | None = None, accepted_count: int = 0) -> dict:
+    return {
+        "id": str(doc["_id"]),
+        "title": doc["title"],
+        "description": doc.get("description", ""),
+        "project": doc.get("project", "Club projects"),
+        "priority": doc.get("priority", "Medium"),
+        "due_date": doc.get("due_date"),
+        "created_by_name": doc.get("created_by_name", "TechNova Management"),
+        "created_at": doc.get("created_at"),
+        "response_status": response_status,
+        "accepted_count": accepted_count,
+    }
+
+
+def _send_notification_email(recipient: str, subject: str, body: str) -> None:
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = settings.smtp_from_email
+    message["To"] = recipient
+    message.set_content(body)
+    context = ssl.create_default_context()
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=8) as server:
+        if settings.smtp_use_tls:
+            server.starttls(context=context)
+        if settings.smtp_username:
+            server.login(settings.smtp_username, settings.smtp_password)
+        server.send_message(message)
+
+
+async def create_notification(
+    recipient: dict,
+    title: str,
+    message: str,
+    notification_type: str = "general",
+    task_id: str | None = None,
+    common_task_id: str | None = None,
+) -> None:
+    await db.notifications.insert_one({
+        "user_id": recipient["_id"],
+        "type": notification_type,
+        "title": title,
+        "message": message,
+        "task_id": task_id,
+        "common_task_id": common_task_id,
+        "read_at": None,
+        "created_at": utcnow(),
+    })
+    # In-app delivery is always enabled. Email is an optional extra when SMTP is configured.
+    if settings.smtp_host and settings.smtp_from_email and recipient.get("email"):
+        try:
+            await asyncio.to_thread(
+                _send_notification_email,
+                recipient["email"],
+                title,
+                message,
+            )
+        except Exception:
+            # A mail-provider outage must never undo a saved task or in-app notification.
+            pass
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
     if not credentials:
@@ -346,6 +423,46 @@ async def list_tasks(user: dict = Depends(get_current_user)):
     return [clean_task(x) for x in docs]
 
 
+@app.get("/api/notifications")
+async def list_notifications(user: dict = Depends(get_current_user)):
+    docs = await db.notifications.find({"user_id": user["_id"]}).sort("created_at", -1).limit(60).to_list(60)
+    return [clean_notification(x) for x in docs]
+
+
+@app.post("/api/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, user: dict = Depends(get_current_user)):
+    result = await db.notifications.update_one(
+        {"_id": oid(notification_id), "user_id": user["_id"], "read_at": None},
+        {"$set": {"read_at": utcnow()}},
+    )
+    if result.matched_count == 0:
+        exists = await db.notifications.find_one({"_id": oid(notification_id), "user_id": user["_id"]})
+        if not exists:
+            raise HTTPException(404, "Notification not found")
+    return {"message": "Notification marked as read"}
+
+
+@app.get("/api/common-tasks")
+async def list_common_tasks(user: dict = Depends(get_current_user)):
+    docs = await db.common_tasks.find({"status": "Open"}).sort("created_at", -1).limit(200).to_list(200)
+    result = []
+    for doc in docs:
+        response = await db.common_task_responses.find_one({
+            "common_task_id": doc["_id"],
+            "user_id": user["_id"],
+        })
+        accepted_count = await db.common_task_responses.count_documents({
+            "common_task_id": doc["_id"],
+            "response": "accepted",
+        })
+        result.append(clean_common_task(
+            doc,
+            response.get("response") if response else None,
+            accepted_count,
+        ))
+    return result
+
+
 @app.get("/api/tasks/pending-confirmation")
 async def pending_completion_tasks(member_id: str, actor: dict = Depends(allow("Founder", "Core Management"))):
     """List tasks submitted for QR-gated completion by the scanned member."""
@@ -375,17 +492,172 @@ def can_assign_task(actor: dict, target: dict) -> bool:
         return target.get("role") == "Member"
     return False
 
-@app.post("/api/tasks",status_code=201)
-async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(allow("Founder","Core Management"))):
-    target=await db.users.find_one({"_id":oid(data.assignee_id)})
-    if not target or target["status"]!="Active": raise HTTPException(400,"Assignee must be an active member")
-    if not can_assign_task(actor, target):
+
+@app.post("/api/tasks", status_code=201)
+async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
+    now = utcnow()
+    base = {
+        "title": data.title.strip(),
+        "description": data.description.strip(),
+        "project": data.project.strip() or "Club projects",
+        "priority": data.priority,
+        "due_date": data.due_date,
+        "created_by": actor["_id"],
+        "created_by_name": actor["name"],
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    if data.assignment_mode == "open_to_all":
+        common_doc = {
+            **base,
+            "status": "Open",
+        }
+        result = await db.common_tasks.insert_one(common_doc)
+        common_doc["_id"] = result.inserted_id
+        active_members = await db.users.find({
+            "role": "Member",
+            "status": "Active",
+        }).to_list(500)
+        for member in active_members:
+            await create_notification(
+                member,
+                "New common task available",
+                f'{actor["name"]} posted "{common_doc["title"]}". Open Tasks & Projects to accept or decline it.',
+                "common_task",
+                common_task_id=str(result.inserted_id),
+            )
+        await audit(actor, "common_task_created", str(result.inserted_id), {
+            "notified_members": len(active_members),
+        }, request)
+        return clean_common_task(common_doc, None, 0)
+
+    raw_ids = data.assignee_ids or ([data.assignee_id] if data.assignee_id else [])
+    if data.assignment_mode == "individual" and data.assignee_id:
+        raw_ids = [data.assignee_id]
+    assignee_ids = list(dict.fromkeys(raw_ids))
+    if not assignee_ids:
+        raise HTTPException(422, "Choose at least one active assignee")
+    if len(assignee_ids) > 100:
+        raise HTTPException(422, "A task can be assigned to at most 100 members")
+
+    try:
+        requested_ids = [oid(value) for value in assignee_ids]
+    except HTTPException:
+        raise HTTPException(422, "One or more assignee IDs are invalid")
+    targets = await db.users.find({
+        "_id": {"$in": requested_ids},
+        "status": "Active",
+    }).to_list(100)
+    if len(targets) != len(requested_ids):
+        raise HTTPException(400, "Every selected assignee must be an active member")
+    if any(not can_assign_task(actor, target) for target in targets):
         raise HTTPException(403, "Founder can assign to Core Management or Members; Core Management can assign only to Members")
-    now=utcnow()
-    doc={"title":data.title.strip(),"description":data.description,"project":data.project,"assignee_id":target["_id"],"assignee_name":target["name"],"priority":data.priority,"status":"Todo","due_date":data.due_date,"submission_note":"","created_by":actor["_id"],"created_at":now,"updated_at":now}
-    res=await db.tasks.insert_one(doc); doc["_id"]=res.inserted_id
-    await audit(actor,"task_created",str(res.inserted_id),{"assignee_id":str(target["_id"])},request)
-    return clean_task(doc)
+
+    group_id = str(ObjectId()) if len(targets) > 1 else None
+    created = []
+    for target in targets:
+        doc = {
+            **base,
+            "assignee_id": target["_id"],
+            "assignee_name": target["name"],
+            "status": "Todo",
+            "submission_note": "",
+            "assignment_group_id": group_id,
+        }
+        result = await db.tasks.insert_one(doc)
+        doc["_id"] = result.inserted_id
+        created.append(clean_task(doc))
+        due_text = f' Due date: {data.due_date}.' if data.due_date else ""
+        await create_notification(
+            target,
+            "New task assigned to you",
+            f'{actor["name"]} assigned you "{data.title.strip()}". Project: {base["project"]}.{due_text}',
+            "task_assigned",
+            task_id=str(result.inserted_id),
+        )
+    await audit(actor, "task_created", group_id or created[0]["id"], {
+        "assignee_ids": [str(target["_id"]) for target in targets],
+        "task_count": len(created),
+        "assignment_group_id": group_id,
+    }, request)
+    if len(created) == 1:
+        return created[0]
+    return {"count": len(created), "assignment_group_id": group_id, "tasks": created}
+
+
+@app.post("/api/common-tasks/{common_task_id}/respond")
+async def respond_to_common_task(common_task_id: str, body: dict, request: Request, user: dict = Depends(get_current_user)):
+    if user.get("role") != "Member":
+        raise HTTPException(403, "Only active Members can accept or decline common tasks")
+    response = body.get("response")
+    if response not in {"accepted", "declined"}:
+        raise HTTPException(422, "Response must be accepted or declined")
+    common = await db.common_tasks.find_one({
+        "_id": oid(common_task_id),
+        "status": "Open",
+    })
+    if not common:
+        raise HTTPException(404, "Common task is no longer available")
+    previous = await db.common_task_responses.find_one({
+        "common_task_id": common["_id"],
+        "user_id": user["_id"],
+    })
+    if previous:
+        raise HTTPException(409, "You have already responded to this common task")
+
+    personal_task = None
+    if response == "accepted":
+        task_doc = {
+            "title": common["title"],
+            "description": common.get("description", ""),
+            "project": common.get("project", "Club projects"),
+            "assignee_id": user["_id"],
+            "assignee_name": user["name"],
+            "priority": common.get("priority", "Medium"),
+            "status": "Todo",
+            "due_date": common.get("due_date"),
+            "submission_note": "",
+            "created_by": common["created_by"],
+            "created_by_name": common.get("created_by_name", "TechNova Management"),
+            "created_at": utcnow(),
+            "updated_at": utcnow(),
+            "common_task_id": common["_id"],
+        }
+        personal_task = await db.tasks.find_one_and_update(
+            {"common_task_id": common["_id"], "assignee_id": user["_id"]},
+            {"$setOnInsert": task_doc},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+    try:
+        await db.common_task_responses.insert_one({
+            "common_task_id": common["_id"],
+            "user_id": user["_id"],
+            "user_name": user["name"],
+            "response": response,
+            "task_id": personal_task["_id"] if personal_task else None,
+            "created_at": utcnow(),
+        })
+    except DuplicateKeyError:
+        raise HTTPException(409, "You have already responded to this common task")
+
+    creator = await db.users.find_one({"_id": common["created_by"], "status": "Active"})
+    if creator:
+        await create_notification(
+            creator,
+            f'Common task {response}',
+            f'{user["name"]} {response} "{common["title"]}".',
+            "common_task_response",
+            task_id=str(personal_task["_id"]) if personal_task else None,
+            common_task_id=common_task_id,
+        )
+    await audit(user, "common_task_responded", common_task_id, {"response": response}, request)
+    return {
+        "message": "You accepted the task. It is now in your task list." if response == "accepted" else "You declined this common task.",
+        "response": response,
+        "task_id": str(personal_task["_id"]) if personal_task else None,
+    }
 
 @app.patch("/api/tasks/{task_id}")
 async def update_task(task_id: str, data: TaskPatch, request: Request, actor: dict = Depends(get_current_user)):
@@ -409,14 +681,24 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
     elif changes.get("status") == "In progress":
         changes["submitted_at"] = None
         changes["submitted_by"] = None
+    reassigned_to = None
     if privileged and "assignee_id" in changes:
         assignee=await db.users.find_one({"_id":oid(changes["assignee_id"])})
         if not assignee or assignee["status"]!="Active": raise HTTPException(400,"Assignee must be active")
         if not can_assign_task(actor, assignee):
             raise HTTPException(403, "You cannot assign tasks to this role")
         changes["assignee_id"]=assignee["_id"]; changes["assignee_name"]=assignee["name"]
+        reassigned_to = assignee
     changes["updated_at"]=utcnow()
     await db.tasks.update_one({"_id":target["_id"]},{"$set":changes})
+    if reassigned_to:
+        await create_notification(
+            reassigned_to,
+            "Task assigned to you",
+            f'{actor["name"]} assigned you "{target["title"]}".',
+            "task_assigned",
+            task_id=task_id,
+        )
     await audit(actor,"task_updated",task_id,{"fields":list(changes)},request)
     return clean_task(await db.tasks.find_one({"_id":target["_id"]}))
 

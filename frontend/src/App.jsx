@@ -65,6 +65,7 @@ const links = [
   ["Overview", LayoutDashboard],
   ["Members", Users],
   ["Tasks & Projects", ClipboardList],
+  ["Notifications", Bell],
   ["Digital ID Cards", CreditCard],
   ["Verification", ShieldCheck],
   ["Teams", FolderKanban],
@@ -77,6 +78,8 @@ function App() {
   const [page, setPage] = useState("Overview");
   const [members, setMembers] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [commonTasks, setCommonTasks] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [teams, setTeams] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [search, setSearch] = useState("");
@@ -107,7 +110,9 @@ function App() {
   const [taskForm, setTaskForm] = useState({
     title: "",
     description: "",
+    assignment_mode: "individual",
     assignee_id: "",
+    assignee_ids: [],
     priority: "Medium",
     due_date: "",
     project: "Club projects",
@@ -141,16 +146,20 @@ function App() {
     try {
       const me = await api("/auth/me", t);
       setUser(me);
-      const [d, ms, ts, tm] = await Promise.all([
+      const [d, ms, ts, tm, common, inbox] = await Promise.all([
         api("/dashboard", t),
         api("/members", t),
         api("/tasks", t),
         api("/teams", t),
+        api("/common-tasks", t),
+        api("/notifications", t),
       ]);
       setDashboard(d);
       setMembers(ms);
       setTasks(ts);
       setTeams(tm);
+      setCommonTasks(common);
+      setNotifications(inbox);
       if (me.role === "Member") setSelected(me);
       else if (!selected && ms.length) setSelected(ms[0]);
     } catch (e) {
@@ -163,6 +172,18 @@ function App() {
 
   useEffect(() => {
     if (token) load(token);
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const timer = window.setInterval(async () => {
+      try {
+        setNotifications(await api("/notifications", token));
+      } catch {
+        // Keep the current inbox visible during a temporary network interruption.
+      }
+    }, 45000);
+    return () => window.clearInterval(timer);
   }, [token]);
 
   // Keep navigation usable on short screens and on mobile devices.
@@ -336,6 +357,8 @@ function App() {
     setReviewQueueMemberId("");
     setMembers([]);
     setTasks([]);
+    setCommonTasks([]);
+    setNotifications([]);
     setDashboard(null);
     setPage("Overview");
     window.history.replaceState({}, "", "/");
@@ -400,27 +423,76 @@ function App() {
 
   async function createTask(e) {
     e.preventDefault();
+    if (taskForm.assignment_mode === "selected_members" && !taskForm.assignee_ids.length) {
+      fail(new Error("Select at least one active member."));
+      return;
+    }
+    if (taskForm.assignment_mode === "individual" && !taskForm.assignee_id) {
+      fail(new Error("Choose an assignee."));
+      return;
+    }
     setBusy(true);
     try {
       await api("/tasks", token, {
         method: "POST",
         body: JSON.stringify(taskForm),
       });
+      const mode = taskForm.assignment_mode;
+      const selectedCount = taskForm.assignee_ids.length;
       setModal("");
       setTaskForm({
         title: "",
         description: "",
+        assignment_mode: "individual",
         assignee_id: "",
+        assignee_ids: [],
         priority: "Medium",
         due_date: "",
         project: "Club projects",
       });
-      notify("Task created");
+      notify(
+        mode === "open_to_all"
+          ? "Common task published to all active members"
+          : mode === "selected_members"
+          ? "Task assigned to " + selectedCount + " members; notifications sent"
+          : "Task assigned; notification sent"
+      );
       await refresh();
     } catch (e) {
       fail(e);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function respondToCommonTask(task, response) {
+    try {
+      const result = await api("/common-tasks/" + task.id + "/respond", token, {
+        method: "POST",
+        body: JSON.stringify({ response }),
+      });
+      notify(result.message);
+      await refresh();
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function markNotificationRead(item) {
+    try {
+      if (!item.read) {
+        await api("/notifications/" + item.id + "/read", token, { method: "POST" });
+        setNotifications((rows) => rows.map((row) =>
+          row.id === item.id ? { ...row, read: true } : row
+        ));
+      }
+      setPage(
+        item.type === "common_task" || item.type === "task_assigned" || item.type === "common_task_response"
+          ? "Tasks & Projects"
+          : "Notifications"
+      );
+    } catch (e) {
+      fail(e);
     }
   }
 
@@ -639,6 +711,14 @@ function App() {
       .toLowerCase()
       .includes(search.toLowerCase())
   );
+  const eligibleAssignees = members.filter(
+    (m) =>
+      m.status === "Active" &&
+      (isFounder
+        ? ["Core Management", "Member"].includes(m.role)
+        : m.role === "Member")
+  );
+  const unreadNotifications = notifications.filter((item) => !item.read).length;
 
   if (!token || !user) {
     return (
@@ -951,8 +1031,14 @@ function App() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <button className="bell" title="Refresh data" onClick={refresh}>
-              <RefreshCw size={17} />
+            <button
+              className="bell notification-bell"
+              title="Open notifications"
+              aria-label={unreadNotifications ? unreadNotifications + " unread notifications" : "Open notifications"}
+              onClick={() => setPage("Notifications")}
+            >
+              <Bell size={17} />
+              {unreadNotifications > 0 && <span className="notification-count">{unreadNotifications > 9 ? "9+" : unreadNotifications}</span>}
             </button>
             <div className="avatar">{initials(user.name)}</div>
           </div>
@@ -986,6 +1072,8 @@ function App() {
                     onClick={() => {
                       setTaskForm({
                         ...taskForm,
+                        assignment_mode: "individual",
+                        assignee_ids: [],
                         assignee_id:
                           members.find(
                             (m) => m.status === "Active" && m.role === "Member"
@@ -1061,6 +1149,39 @@ function App() {
                       ? "Create the first task to get started."
                       : "Tasks assigned to you will appear here."}
                   </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {page === "Notifications" && (
+            <>
+              <div className="title">
+                <div>
+                  <label>YOUR WORKSPACE INBOX</label>
+                  <h1>Notifications</h1>
+                  <p>New task assignments and updates from your TechNova team.</p>
+                </div>
+                <button className="secondary" onClick={refresh}>
+                  <RefreshCw size={14} /> Refresh inbox
+                </button>
+              </div>
+              <div className="panel notification-list">
+                {notifications.map((item) => (
+                  <div className={"notification-row " + (item.read ? "" : "unread")} key={item.id}>
+                    <span className="notification-symbol"><Bell size={17} /></span>
+                    <div className="notification-copy">
+                      <b>{item.title}</b>
+                      <p>{item.message}</p>
+                      <small>{item.created_at ? new Date(item.created_at).toLocaleString() : "Just now"}</small>
+                    </div>
+                    <button className="secondary notification-open" onClick={() => markNotificationRead(item)}>
+                      {item.type === "task_assigned" || item.type === "common_task" || item.type === "common_task_response" ? "Open tasks" : item.read ? "Viewed" : "Mark read"}
+                    </button>
+                  </div>
+                ))}
+                {!notifications.length && (
+                  <div className="empty">You are all caught up. New task assignments will appear here.</div>
                 )}
               </div>
             </>
@@ -1265,6 +1386,8 @@ function App() {
                     onClick={() => {
                       setTaskForm({
                         ...taskForm,
+                        assignment_mode: "individual",
+                        assignee_ids: [],
                         assignee_id:
                           members.find(
                             (m) => m.status === "Active" && m.role === "Member"
@@ -1278,6 +1401,49 @@ function App() {
                     <Plus size={14} /> Create task
                   </button>
                 )}
+              </div>
+              <div className="panel common-task-board">
+                <div className="panelhead">
+                  <div>
+                    <b>Common tasks · Open to everyone</b>
+                    <small>Every active Member can accept or decline. Accepted tasks become personal tasks.</small>
+                  </div>
+                  <span className="common-task-count">{commonTasks.length} open</span>
+                </div>
+                <div className="common-task-grid">
+                  {commonTasks.map((item) => (
+                    <article className="common-task-card" key={item.id}>
+                      <div className="common-task-meta">
+                        <span className="pill">{item.priority}</span>
+                        <small>{item.project}</small>
+                      </div>
+                      <h3>{item.title}</h3>
+                      <p>{item.description || "No additional description provided."}</p>
+                      <small className="common-task-due">Due: {item.due_date || "No due date"} · {item.accepted_count} accepted</small>
+                      {user.role === "Member" && !item.response_status && (
+                        <div className="common-task-actions">
+                          <button className="primary" onClick={() => respondToCommonTask(item, "accepted")}>
+                            <Check size={14} /> Accept task
+                          </button>
+                          <button className="secondary" onClick={() => respondToCommonTask(item, "declined")}>
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                      {item.response_status && (
+                        <div className={"common-task-response " + item.response_status}>
+                          {item.response_status === "accepted" ? "✓ You accepted this task — it is in your task list." : "You declined this common task."}
+                        </div>
+                      )}
+                      {isAdmin && (
+                        <small className="common-task-creator">Posted by {item.created_by_name}</small>
+                      )}
+                    </article>
+                  ))}
+                  {!commonTasks.length && (
+                    <div className="empty common-empty">No common tasks are open right now.</div>
+                  )}
+                </div>
               </div>
               <div className="stats compact four">
                 {[
@@ -2087,30 +2253,66 @@ function App() {
                   />
                 </label>
                 <label>
-                  Assignee
+                  Assignment type
                   <select
-                    required
-                    value={taskForm.assignee_id}
-                    onChange={(e) =>
-                      setTaskForm({ ...taskForm, assignee_id: e.target.value })
-                    }
+                    value={taskForm.assignment_mode}
+                    onChange={(e) => setTaskForm({
+                      ...taskForm,
+                      assignment_mode: e.target.value,
+                      assignee_id: "",
+                      assignee_ids: [],
+                    })}
                   >
-                    <option value="">Choose active member</option>
-                    {members
-                      .filter(
-                        (m) =>
-                          m.status === "Active" &&
-                          (isFounder
-                            ? ["Core Management", "Member"].includes(m.role)
-                            : m.role === "Member")
-                      )
-                      .map((m) => (
+                    <option value="individual">One member</option>
+                    <option value="selected_members">Multiple selected members</option>
+                    <option value="open_to_all">Common task — all Members can choose</option>
+                  </select>
+                </label>
+                {taskForm.assignment_mode === "individual" && (
+                  <label>
+                    Assignee
+                    <select
+                      required
+                      value={taskForm.assignee_id}
+                      onChange={(e) => setTaskForm({ ...taskForm, assignee_id: e.target.value })}
+                    >
+                      <option value="">Choose active member</option>
+                      {eligibleAssignees.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.name} · {m.role} · {m.member_id}
                         </option>
                       ))}
-                  </select>
-                </label>
+                    </select>
+                  </label>
+                )}
+                {taskForm.assignment_mode === "selected_members" && (
+                  <div className="member-picker">
+                    <b>Select members for this task</b>
+                    <small>Each selected member receives a separate task card and can track progress independently.</small>
+                    {eligibleAssignees.map((m) => (
+                      <label className="member-picker-option" key={m.id}>
+                        <input
+                          type="checkbox"
+                          checked={taskForm.assignee_ids.includes(m.id)}
+                          onChange={(e) => setTaskForm({
+                            ...taskForm,
+                            assignee_ids: e.target.checked
+                              ? [...taskForm.assignee_ids, m.id]
+                              : taskForm.assignee_ids.filter((id) => id !== m.id),
+                          })}
+                        />
+                        <span><b>{m.name}</b><small>{m.role} · {m.member_id}</small></span>
+                      </label>
+                    ))}
+                    {!eligibleAssignees.length && <small>No eligible active members are available.</small>}
+                  </div>
+                )}
+                {taskForm.assignment_mode === "open_to_all" && (
+                  <div className="assignment-hint">
+                    <b>Open volunteer task</b>
+                    <p>This appears in every active Member’s Common Tasks board. Each person can accept or decline; accepted tasks are tracked separately.</p>
+                  </div>
+                )}
                 <label>
                   Project
                   <input

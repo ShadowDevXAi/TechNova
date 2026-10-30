@@ -33,7 +33,9 @@ class MemberPatch(BaseModel):
 class TaskCreate(BaseModel):
     title: str = Field(min_length=3, max_length=180)
     description: str = Field(default="", max_length=4000)
-    assignee_id: str
+    assignee_id: str | None = None
+    assignee_ids: list[str] = Field(default_factory=list, max_length=100)
+    assignment_mode: Literal["individual", "selected_members", "open_to_all"] = "individual"
     priority: Priority = "Medium"
     due_date: str | None = None
     project: str = Field(default="Club projects", max_length=100)
