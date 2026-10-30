@@ -1363,7 +1363,8 @@ async def temporarily_suspend_member(member_id: str, data: MemberSuspendIn, requ
         "assignee_id": target["_id"], "status": {"$in": ["Todo", "In progress", "Review"]},
         "task_state": {"$ne": "Suspended"}, "deleted_at": {"$exists": False},
     }, {"$set": {"task_state": "Suspended", "task_state_reason": "Member temporary suspension", "paused_at": now, "suspension_pause_by_member": True}})
-    actual_penalty = min(data.credit_penalty, await member_credit_balance(target["_id"]))
+    # Club discipline deductions may take a member's credit balance below zero.
+    actual_penalty = data.credit_penalty
     if actual_penalty > 0:
         await db.credit_penalties.insert_one({
             "_id": sanction_id, "reference_key": "disciplinary:" + str(sanction_id),
