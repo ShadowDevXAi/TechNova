@@ -544,6 +544,31 @@ function App() {
         body: fd,
       });
       notify("Attachment uploaded");
+      await refresh();
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function downloadReviewAttachment(file) {
+    try {
+      const response = await fetch(
+        API_BASE + "/api/attachments/" + file.id + "/download",
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (!response.ok) {
+        let detail = {};
+        try { detail = await response.json(); } catch {}
+        throw new Error(detail.detail || "Could not download " + file.filename);
+      }
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = file.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     } catch (e) {
       fail(e);
     }
@@ -1509,6 +1534,20 @@ function App() {
                           <small>{task.assignee_name} · {task.assignee_member_id || "Member"} · {task.assignee_team || "Unassigned"}</small>
                           <span>{task.submission_note || "No completion note submitted."}</span>
                           <small>{task.attachments_count || 0} attachment(s) · Submitted {task.submitted_at ? new Date(task.submitted_at).toLocaleString() : "recently"}</small>
+                          {!!task.attachments?.length && (
+                            <span className="review-attachments">
+                              {task.attachments.map((file) => (
+                                <button
+                                  type="button"
+                                  className="textbtn"
+                                  key={file.id}
+                                  onClick={() => downloadReviewAttachment(file)}
+                                >
+                                  <Download size={12} /> {file.filename}
+                                </button>
+                              ))}
+                            </span>
+                          ) }
                         </span>
                       </label>
                     ))}
