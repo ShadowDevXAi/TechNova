@@ -519,7 +519,7 @@ function App() {
       });
       notify(
         mode === "open_to_all"
-          ? "Common task published to all active members"
+          ? "Common task published to Members and Faculty"
           : mode === "selected_members"
           ? "Task assigned to " + selectedCount + " members; notifications sent"
           : "Task assigned; notification sent"
@@ -1382,6 +1382,7 @@ function App() {
                     "Core management",
                     members.filter((m) => m.role === "Core Management").length,
                   ],
+                  ["Faculty", members.filter((m) => m.role === "Faculty").length],
                   [
                     "Awaiting approval",
                     members.filter((m) => m.status === "Pending").length,
@@ -1639,8 +1640,8 @@ function App() {
               <div className="panel common-task-board">
                 <div className="panelhead">
                   <div>
-                    <b>Common tasks · Open to everyone</b>
-                    <small>Every active Member can accept or decline. Faculty can view the opportunity; accepted tasks become personal tasks.</small>
+                    <b>Common tasks · Member volunteer board</b>
+                    <small>Active Members can accept or decline. Faculty can view the opportunity and announcements but cannot claim student tasks.</small>
                   </div>
                   <span className="common-task-count">{commonTasks.length} open</span>
                 </div>
