@@ -80,6 +80,10 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [commonTasks, setCommonTasks] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [reviewQueue, setReviewQueue] = useState([]);
+  const [selectedReviewIds, setSelectedReviewIds] = useState([]);
+  const [reviewSearch, setReviewSearch] = useState("");
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const [teams, setTeams] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [search, setSearch] = useState("");
@@ -146,13 +150,16 @@ function App() {
     try {
       const me = await api("/auth/me", t);
       setUser(me);
-      const [d, ms, ts, tm, common, inbox] = await Promise.all([
+      const [d, ms, ts, tm, common, inbox, reviews] = await Promise.all([
         api("/dashboard", t),
         api("/members", t),
         api("/tasks", t),
         api("/teams", t),
         api("/common-tasks", t),
         api("/notifications", t),
+        ["Founder", "Core Management"].includes(me.role)
+          ? api("/tasks/review-queue", t)
+          : Promise.resolve([]),
       ]);
       setDashboard(d);
       setMembers(ms);
@@ -160,6 +167,8 @@ function App() {
       setTeams(tm);
       setCommonTasks(common);
       setNotifications(inbox);
+      setReviewQueue(reviews);
+      setSelectedReviewIds((current) => current.filter((id) => reviews.some((task) => task.id === id)));
       if (me.role === "Member") setSelected(me);
       else if (!selected && ms.length) setSelected(ms[0]);
     } catch (e) {
@@ -359,6 +368,10 @@ function App() {
     setTasks([]);
     setCommonTasks([]);
     setNotifications([]);
+    setReviewQueue([]);
+    setSelectedReviewIds([]);
+    setReviewSearch("");
+    setAssigneeSearch("");
     setDashboard(null);
     setPage("Overview");
     window.history.replaceState({}, "", "/");
@@ -465,6 +478,29 @@ function App() {
     }
   }
 
+  async function approveSelectedTasks() {
+    const chosen = reviewQueue.filter((task) => selectedReviewIds.includes(task.id));
+    if (!chosen.length) return;
+    const confirmed = window.confirm(
+      "Approve " + chosen.length + " submitted task(s)? Check the submission notes and attached work before approving."
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      const result = await api("/tasks/bulk-confirm", token, {
+        method: "POST",
+        body: JSON.stringify({ task_ids: chosen.map((task) => task.id) }),
+      });
+      setSelectedReviewIds([]);
+      notify(result.message || "Task submissions approved");
+      await refresh();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function respondToCommonTask(task, response) {
     try {
       const result = await api("/common-tasks/" + task.id + "/respond", token, {
@@ -486,8 +522,11 @@ function App() {
           row.id === item.id ? { ...row, read: true } : row
         ));
       }
+      if (item.type === "task_review") await refresh();
       setPage(
-        item.type === "common_task" || item.type === "task_assigned" || item.type === "common_task_response"
+        item.type === "common_task" || item.type === "task_assigned" ||
+        item.type === "common_task_response" || item.type === "task_review" ||
+        item.type === "task_approved"
           ? "Tasks & Projects"
           : "Notifications"
       );
@@ -717,6 +756,16 @@ function App() {
       (isFounder
         ? ["Core Management", "Member"].includes(m.role)
         : m.role === "Member")
+  );
+  const filteredAssignees = eligibleAssignees.filter((m) =>
+    (m.name + " " + m.member_id + " " + m.team)
+      .toLowerCase()
+      .includes(assigneeSearch.toLowerCase())
+  );
+  const filteredReviewQueue = reviewQueue.filter((task) =>
+    (task.title + " " + task.assignee_name + " " + task.assignee_member_id + " " + task.assignee_team + " " + task.submission_note)
+      .toLowerCase()
+      .includes(reviewSearch.toLowerCase())
   );
   const unreadNotifications = notifications.filter((item) => !item.read).length;
 
@@ -1176,7 +1225,7 @@ function App() {
                       <small>{item.created_at ? new Date(item.created_at).toLocaleString() : "Just now"}</small>
                     </div>
                     <button className="secondary notification-open" onClick={() => markNotificationRead(item)}>
-                      {item.type === "task_assigned" || item.type === "common_task" || item.type === "common_task_response" ? "Open tasks" : item.read ? "Viewed" : "Mark read"}
+                      {["task_assigned", "common_task", "common_task_response", "task_review", "task_approved"].includes(item.type) ? "Open tasks" : item.read ? "Viewed" : "Mark read"}
                     </button>
                   </div>
                 ))}
@@ -1402,6 +1451,77 @@ function App() {
                   </button>
                 )}
               </div>
+              {isAdmin && (
+                <div className="panel review-queue-panel">
+                  <div className="panelhead">
+                    <div>
+                      <b>Quick completion approvals</b>
+                      <small>{reviewQueue.length} submission(s) waiting · approve several at once after checking their work</small>
+                    </div>
+                    <span className="common-task-count">{reviewQueue.length} pending</span>
+                  </div>
+                  <div className="review-queue-controls">
+                    <input
+                      type="search"
+                      value={reviewSearch}
+                      onChange={(e) => setReviewSearch(e.target.value)}
+                      placeholder="Search task or member name..."
+                    />
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setSelectedReviewIds(filteredReviewQueue.map((task) => task.id))}
+                      disabled={!filteredReviewQueue.length}
+                    >
+                      Select visible
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setSelectedReviewIds([])}
+                      disabled={!selectedReviewIds.length}
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={approveSelectedTasks}
+                      disabled={busy || !selectedReviewIds.length}
+                    >
+                      <Check size={14} /> Approve selected ({selectedReviewIds.length})
+                    </button>
+                  </div>
+                  <div className="review-queue-list">
+                    {filteredReviewQueue.map((task) => (
+                      <label className="review-queue-item" key={task.id}>
+                        <input
+                          type="checkbox"
+                          checked={selectedReviewIds.includes(task.id)}
+                          onChange={(e) => setSelectedReviewIds((current) =>
+                            e.target.checked
+                              ? [...current, task.id]
+                              : current.filter((id) => id !== task.id)
+                          )}
+                        />
+                        <span className="review-queue-copy">
+                          <b>{task.title}</b>
+                          <small>{task.assignee_name} · {task.assignee_member_id || "Member"} · {task.assignee_team || "Unassigned"}</small>
+                          <span>{task.submission_note || "No completion note submitted."}</span>
+                          <small>{task.attachments_count || 0} attachment(s) · Submitted {task.submitted_at ? new Date(task.submitted_at).toLocaleString() : "recently"}</small>
+                        </span>
+                      </label>
+                    ))}
+                    {!filteredReviewQueue.length && (
+                      <div className="empty">
+                        {reviewQueue.length ? "No submissions match your search." : "No submissions are waiting for approval."}
+                      </div>
+                    )}
+                  </div>
+                  <p className="review-queue-note">Only Founder and Core Management can approve. This quick review does not require scanning every member’s QR code; inspect submitted notes and attachments first. Individual QR verification remains available when needed.</p>
+                </div>
+              )}
+
               <div className="panel common-task-board">
                 <div className="panelhead">
                   <div>
@@ -1419,7 +1539,17 @@ function App() {
                       </div>
                       <h3>{item.title}</h3>
                       <p>{item.description || "No additional description provided."}</p>
-                      <small className="common-task-due">Due: {item.due_date || "No due date"} · {item.accepted_count} accepted</small>
+                      <small className="common-task-due">Due: {item.due_date || "No due date"}</small>
+                      <div className="common-task-progress">
+                        <div>
+                          <b>{item.accepted_count} accepted</b>
+                          <small>{item.accepted_members?.length ? item.accepted_members.join(", ") : "No one has accepted yet."}</small>
+                        </div>
+                        <div>
+                          <b>{item.completed_count || 0} completed</b>
+                          <small>{item.completed_members?.length ? item.completed_members.join(", ") : "No one has completed this task yet."}</small>
+                        </div>
+                      </div>
                       {user.role === "Member" && !item.response_status && (
                         <div className="common-task-actions">
                           <button className="primary" onClick={() => respondToCommonTask(item, "accepted")}>
@@ -1538,7 +1668,7 @@ function App() {
                                 </select>
                               )}
                               {t.status === "Review" && (
-                                <small className="sub">Awaiting QR confirmation</small>
+                                <small className="sub">Awaiting Founder/Core Management approval</small>
                               )}
                               {t.status === "Done" && t.completion_confirmed_by_name && (
                                 <small className="sub">
@@ -2287,24 +2417,32 @@ function App() {
                 )}
                 {taskForm.assignment_mode === "selected_members" && (
                   <div className="member-picker">
-                    <b>Select members for this task</b>
+                    <b>Select members for this task ({taskForm.assignee_ids.length} selected)</b>
                     <small>Each selected member receives a separate task card and can track progress independently.</small>
-                    {eligibleAssignees.map((m) => (
-                      <label className="member-picker-option" key={m.id}>
-                        <input
-                          type="checkbox"
-                          checked={taskForm.assignee_ids.includes(m.id)}
-                          onChange={(e) => setTaskForm({
-                            ...taskForm,
-                            assignee_ids: e.target.checked
-                              ? [...taskForm.assignee_ids, m.id]
-                              : taskForm.assignee_ids.filter((id) => id !== m.id),
-                          })}
-                        />
-                        <span><b>{m.name}</b><small>{m.role} · {m.member_id}</small></span>
-                      </label>
-                    ))}
-                    {!eligibleAssignees.length && <small>No eligible active members are available.</small>}
+                    <input
+                      type="search"
+                      value={assigneeSearch}
+                      onChange={(e) => setAssigneeSearch(e.target.value)}
+                      placeholder="Search member name, ID or team..."
+                    />
+                    <div className="member-picker-list">
+                      {filteredAssignees.map((m) => (
+                        <label className="member-picker-option" key={m.id}>
+                          <input
+                            type="checkbox"
+                            checked={taskForm.assignee_ids.includes(m.id)}
+                            onChange={(e) => setTaskForm({
+                              ...taskForm,
+                              assignee_ids: e.target.checked
+                                ? [...taskForm.assignee_ids, m.id]
+                                : taskForm.assignee_ids.filter((id) => id !== m.id),
+                            })}
+                          />
+                          <span><b>{m.name}</b><small>{m.role} · {m.member_id} · {m.team || "Unassigned"}</small></span>
+                        </label>
+                      ))}
+                      {!filteredAssignees.length && <small>No active members match this search.</small>}
+                    </div>
                   </div>
                 )}
                 {taskForm.assignment_mode === "open_to_all" && (
