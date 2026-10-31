@@ -2355,7 +2355,7 @@ async def hub_create(collection: str, request: Request, user: dict = Depends(get
          "status":"Open","category":str(data.get("category","")).strip()[:60],"url":url,
          "team":str(data.get("team","")).strip()[:80],"visibility":"Club","created_by":user["_id"],
          "created_by_name":user.get("name","Member"),"created_at":utcnow(),"due_date":str(data.get("due_date",""))[:40],
-         "points":max(0,min(int(data.get("points",0) or 0),1000)),"members":[str(user["_id"])],"comments":[],"submissions":[]}
+         "points":max(0,min(int(data.get("points",0) or 0),1000)),"options":[str(x).strip()[:100] for x in data.get("options",[]) if str(x).strip()][:8],"votes":[],"members":[str(user["_id"])],"comments":[],"submissions":[]}
     res=await target.insert_one(doc)
     await audit(user,f"hub_{collection}_created",str(res.inserted_id),{"title":title},request)
     return hub_clean({"_id":res.inserted_id,**doc})
