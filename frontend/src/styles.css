@@ -6697,3 +6697,57 @@ td, th {
   .common-task-actions { display: grid; grid-template-columns: 1fr; }
   .common-task-actions button { width: 100%; justify-content: center; }
 }
+
+
+/* Scrollable management panels and complete admin task register */
+.daily-schedule-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.daily-schedule-list {
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 195, 220, .42) rgba(9, 22, 37, .35);
+}
+.daily-schedule-list::-webkit-scrollbar,
+.common-task-grid::-webkit-scrollbar,
+.tablepanel .overflow::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.daily-schedule-list::-webkit-scrollbar-thumb,
+.common-task-grid::-webkit-scrollbar-thumb,
+.tablepanel .overflow::-webkit-scrollbar-thumb {
+  border-radius: 20px;
+  background: rgba(79, 195, 220, .38);
+}
+.daily-schedule-list::-webkit-scrollbar-track,
+.common-task-grid::-webkit-scrollbar-track,
+.tablepanel .overflow::-webkit-scrollbar-track {
+  background: rgba(9, 22, 37, .28);
+}
+.common-task-grid {
+  max-height: 760px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 195, 220, .42) rgba(9, 22, 37, .35);
+}
+.tablepanel .overflow {
+  max-height: 680px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.tablepanel .overflow thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+@media (max-width: 760px) {
+  .daily-schedule-list { max-height: 240px; }
+  .common-task-grid { max-height: 680px; }
+  .tablepanel .overflow { max-height: 560px; }
+}
