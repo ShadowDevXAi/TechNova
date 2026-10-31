@@ -118,6 +118,9 @@ function App() {
   const [autoVerifyRoute, setAutoVerifyRoute] = useState(false);
   const [issuedCard, setIssuedCard] = useState(null);
   const [ownCard, setOwnCard] = useState(null);
+  const [selectedProgress, setSelectedProgress] = useState(null);
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [progressError, setProgressError] = useState("");
   const [scanEnabled, setScanEnabled] = useState(false);
   const [cardRoleFilter, setCardRoleFilter] = useState("Founder");
   const [settingsForm, setSettingsForm] = useState({
@@ -210,6 +213,46 @@ function App() {
       });
     return () => { cancelled = true; };
   }, [autoVerifyRoute, token, user?.id, page, verifyToken]);
+
+  // Load progression for the selected cardholder, not only the signed-in administrator.
+  // Refresh occasionally so newly approved tasks appear while the ID card stays open.
+  useEffect(() => {
+    if (page !== "Digital ID Cards" || !token || !selected?.id) {
+      setSelectedProgress(null);
+      setProgressLoading(false);
+      setProgressError("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    const loadProgress = async () => {
+      setProgressLoading(true);
+      try {
+        const snapshot = await api(
+          "/members/" + encodeURIComponent(selected.id) + "/progress",
+          token
+        );
+        if (!cancelled) {
+          setSelectedProgress(snapshot);
+          setProgressError("");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setProgressError(err.message || "Member progress could not be loaded.");
+        }
+      } finally {
+        if (!cancelled) setProgressLoading(false);
+      }
+    };
+
+    setSelectedProgress(null);
+    loadProgress();
+    const timer = window.setInterval(loadProgress, 60000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [page, token, selected?.id]);
 
   useEffect(() => {
     if (page !== "Digital ID Cards" || !token || !user ||
@@ -1853,6 +1896,41 @@ function App() {
                           <span>{selected.member_id}</span>
                         </div>
                       </div>
+                      <section className="card-progression" aria-label="Member XP and level">
+                        <div className="card-progression-heading">
+                          <span>TECHNOVA PROGRESSION</span>
+                          {selectedProgress && <b>LEVEL {selectedProgress.level}</b>}
+                        </div>
+                        {progressLoading && !selectedProgress ? (
+                          <div className="card-progression-loading">Calculating member progress…</div>
+                        ) : selectedProgress ? (
+                          <>
+                            <div className="card-progression-title">{selectedProgress.level_title}</div>
+                            <div className="card-progression-xp">
+                              <strong>{Number(selectedProgress.xp).toLocaleString("en-IN")} XP</strong>
+                              <span>{Number(selectedProgress.xp_to_next_level).toLocaleString("en-IN")} XP to next level</span>
+                            </div>
+                            <div
+                              className="card-progression-track"
+                              role="progressbar"
+                              aria-label="Progress to next level"
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={selectedProgress.level_progress}
+                            >
+                              <span style={{ width: selectedProgress.level_progress + "%" }} />
+                            </div>
+                            <div className="card-progression-foot">
+                              <span>{selectedProgress.completed_tasks} approved · {selectedProgress.pending_reviews} in review</span>
+                              <span>{selectedProgress.credits} credits · Rank {selectedProgress.credit_rank}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="card-progression-loading">
+                            {progressError || "Member progress is not available yet."}
+                          </div>
+                        )}
+                      </section>
                       <div className="carddata">
                         <p>
                           <small>TEAM</small>
@@ -2027,6 +2105,12 @@ function App() {
                         <small>
                           {verifyResult.role} · {verifyResult.club}
                         </small>
+                        {verifyResult.level_title && (
+                          <div className="verify-member-progress">
+                            <b>Level {verifyResult.level} · {verifyResult.level_title}</b>
+                            <span>{Number(verifyResult.xp || 0).toLocaleString("en-IN")} XP</span>
+                          </div>
+                        )}
                         {user &&
                           ["Founder", "Core Management"].includes(user.role) &&
                           (!isAdmin ||
