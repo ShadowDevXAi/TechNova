@@ -1385,6 +1385,8 @@ def can_assign_task(actor: dict, target: dict) -> bool:
 @app.post("/api/tasks", status_code=201)
 async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(allow("Founder", "Core Management"))):
     now = utcnow()
+    if data.recurrence == "daily" and data.assignment_mode == "individual":
+        raise HTTPException(422, "Daily recurring missions now publish to the shared Daily Task Board. Use a one-time task for individual assignments.")
     base = {
         "title": data.title.strip(),
         "description": data.description.strip(),
