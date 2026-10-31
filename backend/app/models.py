@@ -1,3 +1,8 @@
+"""Pydantic request/response schemas and shared portal value types.
+
+FastAPI uses these models to validate request bodies before route handlers run.
+"""
+
 from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
@@ -9,16 +14,19 @@ TaskDifficulty = Literal["F", "E", "D", "C", "B", "A", "S", "SS", "SSS"]
 ProgrammingLanguage = Literal["General", "C", "C++", "C#", "Java", "Python", "JavaScript", "TypeScript", "HTML/CSS", "React", "FastAPI", "SQL / MongoDB", "Godot / GDScript", "Other"]
 
 class RegisterIn(BaseModel):
+    """Validate the public new-member registration form."""
     name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(min_length=12, max_length=128)
     team: str = Field(default="Unassigned", max_length=80)
 
 class LoginIn(BaseModel):
+    """Validate email/password login submissions."""
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
 
 class MemberCreate(BaseModel):
+    """Validate a management-created member account."""
     name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     role: Role = "Member"
@@ -27,12 +35,14 @@ class MemberCreate(BaseModel):
     password: str = Field(min_length=12, max_length=128)
 
 class MemberPatch(BaseModel):
+    """Allow safe partial edits to member profile, role, team and status."""
     name: str | None = Field(default=None, min_length=2, max_length=100)
     role: Role | None = None
     team: str | None = Field(default=None, max_length=80)
     status: MemberStatus | None = None
 
 class TaskCreate(BaseModel):
+    """Validate new individual, selected-member or open-to-all tasks."""
     title: str = Field(min_length=3, max_length=180)
     description: str = Field(default="", max_length=4000)
     assignee_id: str | None = None
@@ -46,6 +56,7 @@ class TaskCreate(BaseModel):
     recurrence: Literal["once", "daily"] = "once"
 
 class TaskPatch(BaseModel):
+    """Validate editable task fields and submission/review updates."""
     title: str | None = Field(default=None, min_length=3, max_length=180)
     description: str | None = Field(default=None, max_length=4000)
     assignee_id: str | None = None
@@ -59,23 +70,28 @@ class TaskPatch(BaseModel):
     review_feedback: str | None = Field(default=None, max_length=2000)
 
 class TaskBulkConfirm(BaseModel):
+    """Validate a batch of task IDs selected for review confirmation."""
     task_ids: list[str] = Field(min_length=1, max_length=100)
 
 
 class AnnouncementCreate(BaseModel):
+    """Validate a club-wide announcement title and message."""
     title: str = Field(min_length=3, max_length=120)
     message: str = Field(min_length=3, max_length=3000)
 
 
 class TaskCompletionConfirm(BaseModel):
+    """Validate the digital-ID token used to confirm task completion."""
     card_token: str = Field(min_length=30, max_length=200)
 
 
 class TeamCreate(BaseModel):
+    """Validate creation of a club development team."""
     name: str = Field(min_length=2, max_length=80)
     description: str = Field(default="", max_length=500)
 
 class UserPublic(BaseModel):
+    """Describe the safe public member fields returned by the API."""
     id: str
     member_id: str
     name: str
@@ -87,11 +103,13 @@ class UserPublic(BaseModel):
 
 
 class MemberSuspendIn(BaseModel):
+    """Validate temporary suspension reason, duration and optional penalty."""
     reason: str = Field(min_length=5, max_length=1000)
     duration_hours: int = Field(default=24, ge=1, le=720)
     credit_penalty: int = Field(default=0, ge=0, le=500)
 
 
 class TaskStateIn(BaseModel):
+    """Validate an Active/Suspended task-state change and its reason."""
     state: Literal["Active", "Suspended"]
     reason: str | None = Field(default=None, max_length=1000)
