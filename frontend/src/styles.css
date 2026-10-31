@@ -7686,3 +7686,28 @@ td, th {
   .task-page-compact .task-detail-status-field { grid-column:auto; }
   .task-page-compact .review-queue-controls input,.task-page-compact .review-queue-controls .review-approve-all { grid-column:auto; }
 }
+
+
+/* Task detail dialog rendered at document body to escape mobile scroll/overflow parents */
+.task-page-compact .kanban-task-card,.task-page-compact .common-task-card {
+  -webkit-tap-highlight-color:rgba(66,217,242,.14); touch-action:pan-y; cursor:pointer;
+}
+.task-page-compact .kanban-task-card:focus-visible,.task-page-compact .common-task-card:focus-visible {
+  outline:2px solid #42d9f2; outline-offset:3px;
+}
+.task-detail-backdrop {
+  position:fixed!important; inset:0!important; z-index:2147483000!important;
+  display:flex!important; align-items:center!important; justify-content:center!important;
+  padding:16px!important; overflow-y:auto!important; background:rgba(2,8,18,.82);
+  -webkit-overflow-scrolling:touch;
+}
+.task-detail-modal {
+  position:relative; flex:0 1 620px; width:min(620px,100%)!important;
+  max-height:min(88vh,760px)!important; overflow-y:auto!important;
+  overscroll-behavior:contain; margin:auto!important;
+}
+@media(max-width:760px) {
+ .task-detail-backdrop { align-items:flex-start!important; padding:12px 10px!important; }
+ .task-detail-modal { flex:0 0 auto; width:100%!important; max-width:560px!important; max-height:calc(100dvh - 24px)!important; margin:auto 0!important; border-radius:14px!important; }
+ .task-detail-header { position:sticky; top:0; z-index:5; background:#10243a; }
+}
