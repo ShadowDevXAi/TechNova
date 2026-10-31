@@ -2435,7 +2435,7 @@ function App() {
           )}
 
           {page === "Digital ID Cards" && (
-            <>
+            <div className="id-studio-page">
               <div className="title">
                 <div>
                   <label>IDENTITY STUDIO</label>
@@ -2611,7 +2611,7 @@ function App() {
                   )}
                 </div>}
               </div>
-            </>
+            </div>
           )}
 
           {page === "Verification" && (
