@@ -789,12 +789,10 @@ async def database_stats(actor: dict = Depends(allow("Founder", "Core Management
     """Live MongoDB database/collection counts and storage statistics."""
     stats = await db.command("dbStats")
     collection_names = await db.list_collection_names()
-    collections = []
-    total_documents = 0
-    for name in sorted(collection_names):
-        count = await db[name].count_documents({})
-        total_documents += count
-        collections.append({"name": name, "documents": count})
+    collection_names = sorted(collection_names)
+    counts = await asyncio.gather(*(db[name].count_documents({}) for name in collection_names))
+    collections = [{"name": name, "documents": count} for name, count in zip(collection_names, counts)]
+    total_documents = sum(counts)
 
     storage_bytes = int(stats.get("storageSize", 0)) + int(stats.get("indexSize", 0))
     data_bytes = int(stats.get("dataSize", 0))
