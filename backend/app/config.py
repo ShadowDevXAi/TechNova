@@ -1,7 +1,10 @@
+"""Validated environment configuration for API, email, AI and founder bootstrap."""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import EmailStr, Field
 
 class Settings(BaseSettings):
+    """Typed settings loaded from environment variables and the backend .env file."""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     mongodb_uri: str = Field(min_length=1)
     database_name: str = "technova"
@@ -21,6 +24,7 @@ class Settings(BaseSettings):
     bootstrap_founder_email: EmailStr
     bootstrap_founder_password: str = Field(min_length=12)
     def origins(self) -> list[str]:
+        """Return normalized, unique frontend origins for the CORS allow-list."""
         return list(dict.fromkeys(
             origin.strip().rstrip("/")
             for origin in self.frontend_origins.split(",")
