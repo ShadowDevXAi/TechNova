@@ -639,32 +639,42 @@ function App() {
   async function approveSelectedTasks(taskIds = selectedReviewIds, scopeLabel = "selected submissions") {
     const requestedIds = [...new Set(taskIds)];
     const chosen = reviewQueue.filter((task) => requestedIds.includes(task.id));
-    if (!chosen.length) return;
+    if (!chosen.length) {
+      fail(new Error("Select at least one submission waiting for review."));
+      return;
+    }
+    const eligible = chosen.filter((task) => task.submission_evidence_url && task.submission_attested);
+    const blocked = chosen.length - eligible.length;
+    if (!eligible.length) {
+      fail(new Error("Approval needs screenshot evidence and the member's completion attestation. Ask the member to resubmit both."));
+      return;
+    }
     const confirmed = window.confirm(
-      "Approve " + chosen.length + " " + scopeLabel + "? Review the submitted notes and attachments first. Founder/Core Management approval will be recorded."
+      "Approve " + eligible.length + " ready " + scopeLabel +
+      (blocked ? "? " + blocked + " submission(s) without screenshot proof or attestation will be skipped." : "?") +
+      " Approved tasks move to Completed and receive credits."
     );
     if (!confirmed) return;
     setBusy(true);
     let approvedCount = 0;
     try {
-      // The API accepts up to 100 task IDs per request; process larger queues in safe batches.
-      for (let start = 0; start < chosen.length; start += 100) {
-        const batch = chosen.slice(start, start + 100);
+      for (let start = 0; start < eligible.length; start += 100) {
+        const batch = eligible.slice(start, start + 100);
         const result = await api("/tasks/bulk-confirm", token, {
           method: "POST",
           body: JSON.stringify({ task_ids: batch.map((task) => task.id) }),
         });
-        approvedCount += result.approved_count || batch.length;
+        approvedCount += Number(result.approved_count || 0);
       }
       setSelectedReviewIds([]);
-      notify(approvedCount + " task submission(s) approved");
+      notify(approvedCount + " submission(s) approved" + (blocked ? "; " + blocked + " need evidence/attestation" : ""));
       await refresh();
     } catch (e) {
       await refresh();
       fail(new Error(
         approvedCount
-          ? approvedCount + " submission(s) were approved. Refresh the queue and retry the remaining items. " + (e.message || "")
-          : e.message || "Could not approve submissions"
+          ? approvedCount + " approved; remaining submissions need attention. " + (e.message || "")
+          : e.message || "Approval failed. Check the submission requirements and try again."
       ));
     } finally {
       setBusy(false);
@@ -2143,8 +2153,24 @@ function App() {
                     </header>
                     <div className="task-detail-content">
                       <p>{selectedTaskDetail.description || "No additional description provided."}</p>
+                      {selectedTaskDetail.submission_note && <div className="task-detail-submission"><b>Submission note</b><p>{selectedTaskDetail.submission_note}</p></div>}
+                      {selectedTaskDetail.submission_evidence_url && <a className="task-detail-evidence" href={selectedTaskDetail.submission_evidence_url} target="_blank" rel="noreferrer">Open submitted screenshot evidence ↗</a>}
+                      {selectedTaskDetail.project_url && <a className="task-detail-evidence" href={selectedTaskDetail.project_url} target="_blank" rel="noreferrer">Open project / demo ↗</a>}
+                      {!!selectedTaskDetail.attachments?.length && <div className="task-detail-submission"><b>Attached files</b>{selectedTaskDetail.attachments.map(file => <p key={file.id}>{file.filename}</p>)}</div>}
                       <div className="task-detail-grid">
-                        <span><b>Status</b>{selectedTaskDetail.status || "Todo"}</span>
+                        <span className="task-detail-status-field"><b>Status</b>
+                          {isAdmin && selectedTaskDetail.status !== "Done" ? (
+                            <select value={selectedTaskDetail.status || "Todo"} onChange={async (e) => {
+                              const nextStatus = e.target.value;
+                              await updateTask(selectedTaskDetail, { status: nextStatus });
+                              setSelectedTaskDetail(current => current ? { ...current, status: nextStatus } : current);
+                            }}>
+                              <option value="Todo">To do</option>
+                              <option value="In progress">In progress</option>
+                              <option value="Review">In review / submission</option>
+                            </select>
+                          ) : (selectedTaskDetail.status || "Todo")}
+                        </span>
                         <span><b>Priority</b>{selectedTaskDetail.priority || "Medium"}</span>
                         <span><b>Assigned to</b>{selectedTaskDetail.assignee_name || "Unassigned"}</span>
                         <span><b>Due date</b>{selectedTaskDetail.due_date || "Not set"}</span>
@@ -2152,6 +2178,8 @@ function App() {
                         <span><b>Reward</b>{selectedTaskDetail.status === "Done" ? (selectedTaskDetail.credits_awarded || 0) : (selectedTaskDetail.credits_reward || 5)} credits</span>
                         <span><b>Project</b>{selectedTaskDetail.project || "Club project"}</span>
                         <span><b>Language</b>{selectedTaskDetail.programming_language || "General"}</span>
+                        {selectedTaskDetail.submitted_at && <span><b>Submitted</b>{new Date(selectedTaskDetail.submitted_at).toLocaleString()}</span>}
+                        {selectedTaskDetail.submission_attested !== undefined && <span><b>Member attestation</b>{selectedTaskDetail.submission_attested ? "Confirmed" : "Missing"}</span>}
                         {selectedTaskDetail.accepted_count !== undefined && <span><b>Accepted</b>{selectedTaskDetail.accepted_count ?? selectedTaskDetail.accepted_members?.length ?? 0} members</span>}
                         {selectedTaskDetail.completed_count !== undefined && <span><b>Completed</b>{selectedTaskDetail.completed_count ?? selectedTaskDetail.completed_members?.length ?? 0} members</span>}
                       </div>
@@ -2319,6 +2347,14 @@ function App() {
                           <b>{task.title}</b>
                           <small>{task.assignee_name} · {task.assignee_member_id || "Member"} · {task.assignee_team || "Unassigned"}</small>
                           <span>{task.submission_note || "No completion note submitted."}</span>
+                          <span className="review-readiness">
+                            {task.submission_evidence_url && task.submission_attested
+                              ? "✓ Ready for approval — screenshot and attestation received"
+                              : "Needs resubmission: " + [!task.submission_evidence_url ? "screenshot evidence" : "", !task.submission_attested ? "member attestation" : ""].filter(Boolean).join(" and ")}
+                          </span>
+                          <button type="button" className="primary review-single-approve" disabled={busy || !task.submission_evidence_url || !task.submission_attested} onClick={(event) => { event.preventDefault(); event.stopPropagation(); approveSelectedTasks([task.id], "submission"); }}>
+                            <Check size={13}/> Approve submission
+                          </button>
                           {task.submission_evidence_url ? (
                             <span className="submission-evidence">
                               <a href={task.submission_evidence_url} target="_blank" rel="noreferrer">Open screenshot evidence ↗</a>
