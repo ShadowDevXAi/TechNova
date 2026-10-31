@@ -806,15 +806,25 @@ function App() {
   }
 
   async function respondToCommonTask(task, response) {
+    if (busy) return;
+    setBusy(true);
     try {
       const result = await api("/common-tasks/" + task.id + "/respond", token, {
         method: "POST",
         body: JSON.stringify({ response }),
       });
-      notify(result.message);
+      setCommonTasks((rows) => rows.map((row) =>
+        row.id === task.id ? { ...row, response_status: response } : row
+      ));
+      setSelectedTaskDetail((current) =>
+        current?.id === task.id ? { ...current, response_status: response } : current
+      );
+      notify(result.message || (response === "accepted" ? "Task accepted and added to your task list." : "Mission declined."));
       await refresh();
     } catch (e) {
       fail(e);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -2184,6 +2194,20 @@ function App() {
                         {selectedTaskDetail.accepted_count !== undefined && <span><b>Accepted</b>{selectedTaskDetail.accepted_count ?? selectedTaskDetail.accepted_members?.length ?? 0} members</span>}
                         {selectedTaskDetail.completed_count !== undefined && <span><b>Completed</b>{selectedTaskDetail.completed_count ?? selectedTaskDetail.completed_members?.length ?? 0} members</span>}
                       </div>
+                      {user?.role === "Member" && !selectedTaskDetail.response_status && selectedTaskDetail.task_state !== "Suspended" && (
+                        <div className="task-detail-response-actions" onClick={(event) => event.stopPropagation()}>
+                          <p>You have not responded to this open mission yet.</p>
+                          <button type="button" className="primary" disabled={busy} onClick={() => respondToCommonTask(selectedTaskDetail, "accepted")}>
+                            <Check size={15}/> {busy ? "Please wait..." : "Accept task"}
+                          </button>
+                          <button type="button" className="secondary" disabled={busy} onClick={() => respondToCommonTask(selectedTaskDetail, "declined")}>Reject mission</button>
+                        </div>
+                      )}
+                      {selectedTaskDetail.response_status && (
+                        <div className={"common-task-response " + selectedTaskDetail.response_status}>
+                          {selectedTaskDetail.response_status === "accepted" ? "✓ You accepted this task — it is in your task list." : "You rejected this mission."}
+                        </div>
+                      )}
                       {(selectedTaskDetail.accepted_members?.length > 0 || selectedTaskDetail.completed_members?.length > 0) && (
                         <div className="task-detail-member-lists">
                           {selectedTaskDetail.accepted_members?.length > 0 && <p><b>Accepted by:</b> {selectedTaskDetail.accepted_members.join(", ")}</p>}
