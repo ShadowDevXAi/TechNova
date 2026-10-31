@@ -2,8 +2,6 @@
  * Portal action handlers, grouped in one place so screen components can focus on layout.
  * The factory receives React state/setters and shared helpers from App.jsx.
  */
-import { api, API_BASE } from "../api/client.js";
-
 export default function createPortalActions(context) {
   const {
     token,
