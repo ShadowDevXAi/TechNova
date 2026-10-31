@@ -7637,3 +7637,23 @@ td, th {
   .id-studio-page .idcard { width:3.375in !important; height:2.125in !important; min-height:2.125in !important; padding:12px !important; }
   .id-studio-page .cardtag { position:absolute !important; left:12px !important; right:12px !important; bottom:8px !important; }
 }
+
+
+/* Submission review and task status controls */
+.task-detail-status-field select {
+  width:100%; min-width:0; padding:7px 9px; border-radius:7px;
+  border:1px solid #31536d; background:#0a1929; color:#eaf6ff; font:inherit;
+}
+.task-detail-submission {
+  margin-top:14px; padding:12px; border:1px solid rgba(82,166,198,.22);
+  border-radius:10px; background:rgba(9,27,43,.65);
+}
+.task-detail-submission > b { color:#79dff1; font-size:10px; text-transform:uppercase; letter-spacing:.07em; }
+.task-detail-submission p { margin:7px 0 0; color:#c2d2e3; font-size:12px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
+.task-detail-evidence { display:inline-flex; margin:12px 10px 0 0; color:#6edff3; font-size:11px; text-decoration:none; }
+.task-detail-evidence:hover { text-decoration:underline; }
+.review-readiness { display:block; margin-top:7px; color:#9eb4ca; font-size:10px; line-height:1.5; }
+.review-single-approve { display:inline-flex; align-items:center; gap:6px; margin-top:9px; padding:7px 11px; font-size:10px; }
+.review-single-approve:disabled { opacity:.42; cursor:not-allowed; }
+.review-queue-item { align-items:flex-start; }
+.review-queue-copy { min-width:0; }
