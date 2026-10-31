@@ -2277,7 +2277,7 @@ def hub_clean(doc):
         "team":doc.get("team",""),"created_by":doc.get("created_by_name",""),
         "created_at":doc.get("created_at"),"due_date":doc.get("due_date"),
         "points":doc.get("points",0),"members":doc.get("members",[]),
-        "comments":doc.get("comments",[]),"submissions":doc.get("submissions",[]),"rsvps":doc.get("rsvps",[]),"options":doc.get("options",[]),"votes":doc.get("votes",[]),
+        "comments":doc.get("comments",[]),"submissions":doc.get("submissions",[]),"rsvps":doc.get("rsvps",[]),"options":doc.get("options",[]),"votes":[{"option":v.get("option")} for v in doc.get("votes",[])],
     }.items()}
 
 @app.get("/api/hub/profile")
@@ -2312,7 +2312,13 @@ async def hub_list(collection: str, user: dict = Depends(get_current_user)):
     if collection=="projects" and user.get("role")=="Member":
         query={"$and":[{"status":{"$ne":"Archived"}},{"$or":[{"visibility":"Club"},{"members":str(user["_id"])}]}]}
     docs=await target.find(query).sort("created_at",-1).to_list(200)
-    return [hub_clean(x) for x in docs]
+    cleaned=[]
+    for doc in docs:
+        item=hub_clean(doc)
+        if collection=="challenges" and user.get("role") not in HUB_STAFF:
+            item["submissions"]=[sub for sub in item.get("submissions",[]) if sub.get("user_id")==str(user["_id"])]
+        cleaned.append(item)
+    return cleaned
 
 @app.post("/api/hub/{collection}",status_code=201)
 async def hub_create(collection: str, request: Request, user: dict = Depends(get_current_user)):
