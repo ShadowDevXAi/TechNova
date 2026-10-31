@@ -120,3 +120,8 @@ This is an expanded functional starter, not a guarantee of zero limitations or a
 - Founder/Core Management can temporarily suspend a Member for a reason, for 1–720 hours, and apply a credit deduction. The account is automatically reactivated after the expiry time; assigned active tasks are paused during the suspension and their due dates are extended on reinstatement. This is a management decision recorded in the audit log, not an automatic penalty for every missed deadline.
 - Members can view their current credit balance and recent award/deduction ledger on the Leaderboard page. The leaderboard and workspace refresh every 15 seconds while the browser tab is visible.
 - Hard deletion is intentionally avoided for task records; archive operations retain records for accountability and recovery.
+
+
+## Code map and module guide
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the frontend/backend folder map, the purpose of each module, and the conventions for adding new functions and endpoints.
