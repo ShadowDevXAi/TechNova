@@ -2318,7 +2318,7 @@ async def hub_list(collection: str, user: dict = Depends(get_current_user)):
 async def hub_create(collection: str, request: Request, user: dict = Depends(get_current_user)):
     target=HUB_COLLECTIONS.get(collection)
     if target is None: raise HTTPException(404,"Hub section not found")
-    if user.get("role") not in HUB_STAFF and collection not in {"discussions","messages"}:
+    if user.get("role") not in HUB_STAFF and collection not in {"discussions","messages","mentorship"}:
         raise HTTPException(403,"Only club management can publish this item")
     data=await request.json()
     if collection=="mentorship":
