@@ -7269,3 +7269,48 @@ td, th {
   }
   .task-page-compact .kanban-lane-empty { flex-basis:174px; min-width:174px; }
 }
+
+
+/* Compact task previews; full information opens for every signed-in role */
+.task-page-compact .kanban-task-card {
+  padding:9px !important;
+  border-radius:10px;
+  cursor:pointer;
+}
+.task-page-compact .kanban-task-card h3 { margin:7px 0 5px; font-size:11px; line-height:1.35; }
+.task-page-compact .kanban-task-card > p,
+.task-page-compact .kanban-task-card .kanban-task-details,
+.task-page-compact .kanban-task-card .kanban-feedback,
+.task-page-compact .kanban-task-card .kanban-confirmed { display:none; }
+.task-page-compact .kanban-task-card .kanban-task-tags { gap:4px; margin:6px 0; }
+.task-page-compact .kanban-task-card .kanban-card-actions { gap:6px; margin-top:7px; padding-top:6px; }
+.task-page-compact .kanban-task-card .kanban-status-control { margin-top:7px; }
+.task-detail-backdrop {
+  position:fixed; inset:0; z-index:1200; display:grid; place-items:center;
+  padding:18px; background:rgba(2,8,18,.78); backdrop-filter:blur(8px);
+}
+.task-detail-modal {
+  width:min(620px,100%); max-height:min(82vh,760px); overflow:auto;
+  border:1px solid rgba(75,195,224,.3); border-radius:18px;
+  background:linear-gradient(145deg,#10243a,#081523); color:#e8f3ff;
+  box-shadow:0 24px 80px rgba(0,0,0,.48);
+}
+.task-detail-header {
+  display:flex; justify-content:space-between; align-items:flex-start; gap:16px;
+  padding:20px 22px; border-bottom:1px solid rgba(116,148,187,.16);
+}
+.task-detail-header small { color:#56c7df; font-size:9px; letter-spacing:.16em; }
+.task-detail-header h2 { margin:7px 0 0; font-size:19px; line-height:1.35; }
+.task-detail-content { padding:20px 22px; }
+.task-detail-content > p { color:#b7c9db; font-size:13px; line-height:1.7; white-space:pre-wrap; }
+.task-detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:16px; }
+.task-detail-grid span { display:grid; gap:5px; min-width:0; padding:11px; border:1px solid rgba(116,148,187,.15); border-radius:10px; background:rgba(5,15,27,.35); color:#d8e8f7; font-size:12px; overflow-wrap:anywhere; }
+.task-detail-grid b { color:#8198b1; font-size:9px; text-transform:uppercase; letter-spacing:.06em; }
+.task-detail-footer { display:flex; justify-content:flex-end; padding:0 22px 20px; }
+.task-detail-footer button { padding:9px 16px; border:1px solid rgba(75,195,224,.35); border-radius:9px; color:#dff8ff; background:rgba(38,145,174,.18); cursor:pointer; }
+@media (max-width:480px) {
+  .task-detail-backdrop { padding:10px; }
+  .task-detail-header,.task-detail-content { padding:16px; }
+  .task-detail-grid { gap:7px; }
+  .task-detail-grid span { padding:9px; font-size:11px; }
+}
