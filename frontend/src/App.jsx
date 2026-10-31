@@ -2058,6 +2058,7 @@ function App() {
                         <span className="pill">{item.priority}</span>
                         {item.task_state === "Suspended" && <span className="schedule-state paused">Paused</span>}
                         {item.recurrence === "daily" && <span className="schedule-state active">Daily mission</span>}
+                        {item.auto_generated && <span className="schedule-state active">AI-generated</span>}
                         <span className={"difficulty-badge rank-" + (item.difficulty_rank || "F").toLowerCase()}>{item.difficulty_rank || "F"} · {item.credits_reward || 5} CR</span>
                         <small>{item.project} · {item.programming_language || "General"}</small>
                       </div>
