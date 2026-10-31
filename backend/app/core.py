@@ -262,6 +262,60 @@ async def member_credit_balance(member_id: ObjectId) -> int:
     return earned - penalties
 
 
+# XP progression is separate from the letter-based task-credit rank.
+# The title changes at each level; square thresholds keep progression open-ended.
+LEVEL_TITLES = (
+    "Newcomer", "Learner", "Contributor", "Builder", "Developer", "Engineer",
+    "Innovator", "Specialist", "Architect", "Master Developer", "TechNova Legend",
+)
+
+
+# Purpose: Calculate a member's level, title and progress to the next level.
+def member_level_details(xp: int) -> dict:
+    """Return the open-ended XP level and its progress bar values.
+
+    Level 1 starts at 0 XP. Further levels begin at 100, 400, 900, 1600 XP,
+    and so on. Credits are calculated separately and never determine this level.
+    """
+    xp = max(0, int(xp or 0))
+    level = math.isqrt(xp // 100) + 1
+    level_start_xp = (level - 1) ** 2 * 100
+    next_level_xp = level ** 2 * 100
+    if level <= len(LEVEL_TITLES):
+        level_title = LEVEL_TITLES[level - 1]
+    else:
+        level_title = f"TechNova Legend · Tier {level - len(LEVEL_TITLES) + 1}"
+    span = max(1, next_level_xp - level_start_xp)
+    progress = min(100.0, max(0.0, (xp - level_start_xp) * 100.0 / span))
+    return {
+        "level": level,
+        "level_title": level_title,
+        "level_start_xp": level_start_xp,
+        "next_level_xp": next_level_xp,
+        "xp_to_next_level": max(0, next_level_xp - xp),
+        "level_progress": round(progress, 1),
+    }
+
+
+# Purpose: Build one consistent XP and credit snapshot for a member profile or ID card.
+async def member_progress_summary(member_id: ObjectId) -> dict:
+    """Calculate the same XP, level title and credit rank wherever progress is shown."""
+    completed = await db.tasks.count_documents({"assignee_id": member_id, "status": "Done"})
+    pending = await db.tasks.count_documents({"assignee_id": member_id, "status": "Review"})
+    xp = completed * 100 + pending * 25
+    credits = await member_credit_balance(member_id)
+    return {
+        "xp": xp,
+        **member_level_details(xp),
+        "completed_tasks": completed,
+        "pending_reviews": pending,
+        "credits": credits,
+        "credit_rank": member_rank(credits),
+        "xp_approved": completed * 100,
+        "xp_pending_review": pending * 25,
+    }
+
+
 # Purpose: Resume tasks paused during a temporary suspension and extend due dates.
 async def resume_member_paused_tasks(member_id: ObjectId, now: datetime) -> None:
     paused = await db.tasks.find({
