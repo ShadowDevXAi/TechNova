@@ -513,6 +513,11 @@ async def run_daily_maintenance() -> dict:
     local_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     today_key = local_today.isoformat()
     discipline_cleanup = await migrate_daily_task_board_only_mode()
+    # Stop old recurring personal daily assignments; daily auto missions now live on the shared board.
+    await db.daily_task_schedules.update_many(
+        {"assignment_mode": "individual", "active": True, "deleted_at": {"$exists": False}},
+        {"$set": {"active": False, "paused_reason": "Daily missions now publish to the shared volunteer board", "updated_at": now}},
+    )
     migration_record = await db.app_settings.find_one({"_id": "daily_task_board_only_v1"}) or {}
     discipline_activated_at = migration_record.get("discipline_activated_at") or migration_record.get("completed_at") or now
     expired_members = await db.users.find({
@@ -777,6 +782,41 @@ async def root():
 @app.get("/api/health")
 async def health():
     return {"status":"ok","service":"technova-api"}
+
+
+@app.get("/api/admin/database-stats")
+async def database_stats(actor: dict = Depends(allow("Founder", "Core Management"))):
+    """Live MongoDB database/collection counts and storage statistics."""
+    stats = await db.command("dbStats")
+    collection_names = await db.list_collection_names()
+    collections = []
+    total_documents = 0
+    for name in sorted(collection_names):
+        count = await db[name].count_documents({})
+        total_documents += count
+        collections.append({"name": name, "documents": count})
+
+    storage_bytes = int(stats.get("storageSize", 0)) + int(stats.get("indexSize", 0))
+    data_bytes = int(stats.get("dataSize", 0))
+    index_bytes = int(stats.get("indexSize", 0))
+    try:
+        limit_gb = float(os.getenv("MONGODB_STORAGE_LIMIT_GB", "0") or 0)
+    except ValueError:
+        limit_gb = 0
+    limit_bytes = int(limit_gb * 1024 ** 3) if limit_gb > 0 else None
+    return {
+        "database": db.name,
+        "collections_count": len(collection_names),
+        "documents_count": total_documents,
+        "storage_bytes": storage_bytes,
+        "data_bytes": data_bytes,
+        "index_bytes": index_bytes,
+        "storage_limit_bytes": limit_bytes,
+        "remaining_bytes": max(0, limit_bytes - storage_bytes) if limit_bytes else None,
+        "storage_limit_configured": bool(limit_bytes),
+        "collections": collections,
+        "measured_at": utcnow().isoformat(),
+    }
 
 
 @app.post("/api/maintenance/run")
