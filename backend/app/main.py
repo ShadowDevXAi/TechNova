@@ -1215,10 +1215,12 @@ async def deactivate_member(member_id: str, request: Request, actor: dict = Depe
 
 @app.get("/api/tasks")
 async def list_tasks(user: dict = Depends(get_current_user)):
+    # Founder and Core Management can inspect the full club task register.
+    # Members only receive tasks assigned to their own account.
     query = {"deleted_at": {"$exists": False}}
-    if user["role"] not in PRIVILEGED:
+    if user.get("role") not in {"Founder", "Core Management"}:
         query["assignee_id"] = user["_id"]
-    docs=await db.tasks.find(query).sort("created_at",-1).limit(500).to_list(500)
+    docs = await db.tasks.find(query).sort("created_at", -1).limit(5000).to_list(5000)
     return [clean_task(x) for x in docs]
 
 
