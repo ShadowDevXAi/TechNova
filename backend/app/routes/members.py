@@ -64,6 +64,28 @@ async def leaderboard(user: dict = Depends(get_current_user)):
     }
 
 
+# Purpose: member progress returns the XP level and credit rank used on digital ID cards.
+@router.get("/api/members/{member_id}/progress")
+async def member_progress(member_id: str, user: dict = Depends(get_current_user)):
+    """Return progression for the signed-in member or a member visible to management."""
+    target_id = oid(member_id)
+    is_self = str(target_id) == str(user["_id"])
+    if not is_self and user.get("role") not in PRIVILEGED:
+        raise HTTPException(403, "You can only view your own progression")
+    member = await db.users.find_one({"_id": target_id})
+    if not member:
+        raise HTTPException(404, "Member not found")
+    progress = await member_progress_summary(target_id)
+    return {
+        "id": str(member["_id"]),
+        "member_id": member.get("member_id", ""),
+        "name": member.get("name", "Member"),
+        "role": member.get("role", "Member"),
+        "team": member.get("team", "Unassigned"),
+        **progress,
+    }
+
+
 # Purpose: list members handles the members feature flow and returns its API result.
 @router.get("/api/members")
 async def list_members(q: str = "", user: dict = Depends(get_current_user)):
