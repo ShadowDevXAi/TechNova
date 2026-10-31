@@ -141,6 +141,8 @@ function App() {
   const [teams, setTeams] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [databaseStats, setDatabaseStats] = useState(null);
+  const [autoTaskSettings, setAutoTaskSettings] = useState({ mode: "custom", daily_target: 5, unlimited_daily_cap: 20, generated_today: 0, open_today: 0, total_generated: 0, remaining_today: 5 });
+  const [autoTaskBusy, setAutoTaskBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [modal, setModal] = useState("");
@@ -208,7 +210,7 @@ function App() {
     try {
       const me = await api("/auth/me", t);
       setUser(me);
-      const [d, ms, ts, tm, common, board, ledger, schedules, inbox, reviews, dbStats] = await Promise.all([
+      const [d, ms, ts, tm, common, board, ledger, schedules, inbox, reviews, dbStats, autoStats] = await Promise.all([
         api("/dashboard", t),
         api("/members", t),
         api("/tasks", t),
@@ -224,9 +226,13 @@ function App() {
         ["Founder", "Core Management"].includes(me.role)
           ? api("/admin/database-stats", t).catch(() => null)
           : Promise.resolve(null),
+        ["Founder", "Core Management"].includes(me.role)
+          ? api("/auto-tasks/settings", t).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setDashboard(d);
       setDatabaseStats(dbStats);
+      if (autoStats) setAutoTaskSettings(autoStats);
       setMembers(ms);
       setTasks(ts);
       setTeams(tm);
@@ -270,14 +276,18 @@ function App() {
         if (["Founder", "Core Management"].includes(user.role)) {
           requests.push(api("/tasks/review-queue", token));
           requests.push(api("/admin/database-stats", token).catch(() => null));
+          requests.push(api("/common-tasks", token));
+          requests.push(api("/auto-tasks/settings", token).catch(() => null));
         }
-        const [nextTasks, nextNotifications, nextDashboard, nextReviews, nextDbStats] =
+        const [nextTasks, nextNotifications, nextDashboard, nextReviews, nextDbStats, nextCommonTasks, nextAutoStats] =
           await Promise.all(requests);
         if (cancelled) return;
         setTasks(nextTasks);
         setNotifications(nextNotifications);
         setDashboard(nextDashboard);
         if (nextDbStats) setDatabaseStats(nextDbStats);
+        if (nextCommonTasks) setCommonTasks(nextCommonTasks);
+        if (nextAutoStats) setAutoTaskSettings(nextAutoStats);
         if (nextReviews) {
           setReviewQueue(nextReviews);
           setSelectedReviewIds((current) =>
@@ -721,6 +731,29 @@ function App() {
       notify(result.message);
       await refresh();
     } catch (e) { fail(e); }
+  }
+
+  async function saveAutoTaskSettings() {
+    setAutoTaskBusy(true);
+    try {
+      const result = await api("/auto-tasks/settings", token, {
+        method: "PUT",
+        body: JSON.stringify({ mode: autoTaskSettings.mode, daily_target: Number(autoTaskSettings.daily_target) }),
+      });
+      setAutoTaskSettings(result);
+      notify("Daily generation settings saved.");
+    } catch (e) { fail(e); }
+    finally { setAutoTaskBusy(false); }
+  }
+
+  async function generateAutoTasksNow() {
+    setAutoTaskBusy(true);
+    try {
+      const result = await api("/auto-tasks/generate", token, { method: "POST" });
+      await refresh();
+      notify(result.generated ? result.generated + " new daily missions published." : "Today's generation target is already reached.");
+    } catch (e) { fail(e); }
+    finally { setAutoTaskBusy(false); }
   }
 
   async function disciplineMember(member) {
@@ -2084,6 +2117,41 @@ function App() {
                       </div>
                     ))}
                     {!dailySchedules.length && <div className="empty">No recurring shared missions configured. The random AI daily mission is generated separately.</div>}
+                  </div>
+                  <div className="auto-task-controls">
+                    <div className="panelhead">
+                      <div><b>Random mission generator</b><small>Set a daily target or enable unlimited mode with a safety cap.</small></div>
+                      <span className="common-task-count">{autoTaskSettings.generated_today || 0} generated today</span>
+                    </div>
+                    <div className="auto-task-metrics">
+                      <span><b>{autoTaskSettings.open_today || 0}</b><small>Open today</small></span>
+                      <span><b>{autoTaskSettings.total_generated || 0}</b><small>Total generated</small></span>
+                      <span><b>{autoTaskSettings.remaining_today || 0}</b><small>Remaining today</small></span>
+                    </div>
+                    {isFounder ? (
+                      <>
+                        <div className="auto-task-setting-row">
+                          <label>Generation mode
+                            <select value={autoTaskSettings.mode} onChange={(e) => setAutoTaskSettings((current) => ({ ...current, mode: e.target.value }))}>
+                              <option value="custom">Custom daily target</option>
+                              <option value="unlimited">Unlimited mode (safe cap)</option>
+                            </select>
+                          </label>
+                          {autoTaskSettings.mode === "custom" && (
+                            <label>Daily missions (1–50)
+                              <input type="number" min="1" max="50" value={autoTaskSettings.daily_target} onChange={(e) => setAutoTaskSettings((current) => ({ ...current, daily_target: e.target.value }))} />
+                            </label>
+                          )}
+                        </div>
+                        <small className="auto-task-safety-note">{autoTaskSettings.mode === "unlimited" ? "Unlimited mode publishes up to 20 missions per day to protect Gemini API usage and the 512 MB database." : "Custom mode publishes up to your selected number per day (maximum 50)."}</small>
+                        <div className="auto-task-actions">
+                          <button className="primary" onClick={saveAutoTaskSettings} disabled={autoTaskBusy}>Save generation settings</button>
+                          <button className="secondary" onClick={generateAutoTasksNow} disabled={autoTaskBusy}>Generate now</button>
+                        </div>
+                      </>
+                    ) : (
+                      <small className="auto-task-safety-note">Founder controls generation mode and limits. Current mode: {autoTaskSettings.mode === "unlimited" ? "Unlimited (20/day safety cap)" : "Custom · " + autoTaskSettings.daily_target + "/day"}.</small>
+                    )}
                   </div>
                 </div>
               )}
