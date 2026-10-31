@@ -1,6 +1,6 @@
 /**
  * Shared HTTP client for the TechNova portal.
- * Adds the API base URL, JSON/FormData headers and bearer token, then normalizes API errors.
+ * Adds API URL, auth and correct body headers, then normalizes API errors.
  */
 export const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -18,7 +18,8 @@ export const API_BASE = (
  */
 export async function api(path, token, opts = {}) {
   const isForm = typeof FormData !== "undefined" && opts.body instanceof FormData;
-  const response = await fetch(\`\${API_BASE}/api\${path}\`, {
+  const endpoint = API_BASE + "/api" + path;
+  const response = await fetch(endpoint, {
     ...opts,
     headers: {
       ...(!isForm ? { "Content-Type": "application/json" } : {}),
@@ -36,7 +37,7 @@ export async function api(path, token, opts = {}) {
 
   if (!response.ok) {
     throw new Error(
-      data.detail || data.message || \`Request failed: \${response.status}\`
+      data.detail || data.message || "Request failed: " + response.status
     );
   }
   return data;
