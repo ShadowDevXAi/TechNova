@@ -143,6 +143,8 @@ def clean_common_task(
         "recurrence": doc.get("recurrence", "once"),
         "due_date": doc.get("due_date"),
         "created_by_name": doc.get("created_by_name", "TechNova Management"),
+        "auto_generated": bool(doc.get("auto_generated", False)),
+        "generation_source": doc.get("generation_source"),
         "created_at": doc.get("created_at"),
         "response_status": response_status,
         "accepted_count": len(accepted_members),
