@@ -7723,3 +7723,42 @@ td, th {
  .task-detail-response-actions { display:grid; grid-template-columns:minmax(0,1fr); }
  .task-detail-response-actions button { width:100%; justify-content:center; }
 }
+
+/* TechNova global scrolling system — desktop, tablet and touch devices */
+html { scroll-behavior:smooth; -webkit-text-size-adjust:100%; overscroll-behavior-y:auto; }
+body, #root, .shell { min-width:320px; min-height:100%; }
+body { -webkit-overflow-scrolling:touch; overscroll-behavior-x:none; }
+main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.kanban-task-board,.common-task-board { min-width:0; }
+.content { width:100%; overflow:visible; }
+.overflow,.tablepanel > .overflow {
+  display:block; width:100%; max-width:100%; overflow-x:auto!important; overflow-y:auto;
+  -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; overscroll-behavior-y:contain;
+  touch-action:pan-x pan-y; scrollbar-width:thin;
+  scrollbar-color:rgba(112,229,255,.42) rgba(8,14,25,.28); scroll-behavior:smooth;
+}
+.overflow::-webkit-scrollbar,.kanban-lanes::-webkit-scrollbar,.review-queue-list::-webkit-scrollbar,.member-picker-list::-webkit-scrollbar { width:7px; height:7px; }
+.overflow::-webkit-scrollbar-track,.kanban-lanes::-webkit-scrollbar-track { background:rgba(8,14,25,.35); border-radius:99px; }
+.overflow::-webkit-scrollbar-thumb,.kanban-lanes::-webkit-scrollbar-thumb {
+  background:rgba(112,229,255,.35); border:2px solid transparent; background-clip:padding-box; border-radius:99px;
+}
+.overflow::-webkit-scrollbar-thumb:hover,.kanban-lanes::-webkit-scrollbar-thumb:hover { background-color:rgba(112,229,255,.65); }
+.kanban-lanes {
+  max-width:100%; min-width:0; overflow-x:auto!important; overflow-y:hidden!important;
+  -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; touch-action:pan-x pan-y;
+  scroll-behavior:smooth; scrollbar-width:thin; scrollbar-color:rgba(112,229,255,.4) rgba(8,14,25,.25);
+  scroll-snap-type:x proximity;
+}
+.kanban-lane { min-width:0; scroll-snap-align:start; }
+.review-queue-list,.member-picker-list,.picker,.task-detail-modal,.modal {
+  -webkit-overflow-scrolling:touch; overscroll-behavior:contain; scrollbar-width:thin;
+  scrollbar-color:rgba(112,229,255,.38) rgba(8,14,25,.2);
+}
+@media (max-width:760px) {
+  html,body { width:100%; overflow-x:clip; }
+  .content { padding-left:max(13px,env(safe-area-inset-left)); padding-right:max(13px,env(safe-area-inset-right)); }
+  .overflow,.tablepanel > .overflow { max-width:calc(100vw - 26px); overscroll-behavior-x:contain; touch-action:pan-x pan-y; }
+  .overflow table,.tablepanel > .overflow table { width:max-content; min-width:650px; }
+  .kanban-lanes { width:100%; padding-left:10px; padding-right:10px; scroll-snap-type:x mandatory; }
+  .kanban-lane { scroll-snap-align:center; }
+}
+@media (prefers-reduced-motion:reduce) { html,.overflow,.kanban-lanes { scroll-behavior:auto!important; } }
