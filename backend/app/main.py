@@ -403,9 +403,9 @@ async def generate_automatic_daily_tasks() -> dict:
             # targets above the bank size still work when no Gemini API key is configured.
             base_templates = list(templates)
             variant_number = 1
-            while len(templates) < min(15, remaining):
+            while len(templates) < remaining:
                 for base in base_templates:
-                    if len(templates) >= min(15, remaining):
+                    if len(templates) >= remaining:
                         break
                     variant = dict(base)
                     variant["title"] = f'{base["title"]} · Extension {variant_number}'
