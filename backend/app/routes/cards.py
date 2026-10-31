@@ -116,7 +116,21 @@ async def verify_card(token: str, request: Request, actor: dict = Depends(allow(
     if actor.get("role") == "Core Management" and member.get("role") != "Member":
         raise HTTPException(403, "Core Management can verify Member IDs only")
     await audit(actor, "card_verified", str(member["_id"]), {"member_id": member["member_id"]}, request)
-    return {"valid": True, "status": "Active", "name": member["name"], "member_id": member["member_id"], "role": member["role"], "team": member.get("team", "Unassigned"), "club": "TechNova"}
+    progress = await member_progress_summary(member["_id"])
+    return {
+        "valid": True,
+        "status": "Active",
+        "name": member["name"],
+        "member_id": member["member_id"],
+        "role": member["role"],
+        "team": member.get("team", "Unassigned"),
+        "club": "TechNova",
+        "xp": progress["xp"],
+        "level": progress["level"],
+        "level_title": progress["level_title"],
+        "credits": progress["credits"],
+        "credit_rank": progress["credit_rank"],
+    }
 
 # Purpose: confirm card verification handles the cards feature flow and returns its API result.
 @router.post("/api/verify/{token}/confirm")
