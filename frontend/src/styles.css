@@ -7916,3 +7916,178 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
 .hub-create>form{display:grid;gap:10px;padding:12px 0;border-bottom:1px solid #263d54}.hub-create>form:last-child{border-bottom:0}.hub-review{display:grid;gap:8px;padding:12px;border:1px solid #34465b;border-radius:10px;background:#0a1522}.hub-review small{color:#83a0ba}.hub-review pre{max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;border-radius:8px;background:#060d16;color:#d2e7f6;font-size:11px}.hub-review>div{display:flex;flex-wrap:wrap;gap:8px}.hub-achievements article span{display:flex;gap:6px;flex-wrap:wrap}.hub-achievements article span button{font-size:11px;padding:6px 9px}
 /* Additional Club Hub modules */
 .hub-create select{width:100%;padding:11px 12px;border:1px solid #2a4058;border-radius:9px;background:#081321;color:#eaf2ff}.hub-create>article{display:grid;gap:7px;padding:12px;border:1px solid #2a4058;border-radius:10px;background:#101d2d}.hub-create>article small{color:#9bb0c6;overflow-wrap:anywhere}.hub-achievements article small{overflow-wrap:anywhere}.hub-card button.secondary{margin:2px 4px 2px 0}
+
+
+/* Club Hub responsive layout and reliable horizontal section navigation */
+.hub-page {
+  display: grid;
+  width: 100%;
+  max-width: 1320px;
+  min-width: 0;
+  margin-inline: auto;
+  gap: 22px;
+}
+.hub-page > * { min-width: 0; max-width: 100%; }
+.hub-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 22px;
+  padding: clamp(20px, 2.5vw, 30px);
+}
+.hub-hero > div:first-child { min-width: 0; }
+.hub-hero h1 { line-height: 1.12; letter-spacing: -0.8px; }
+.hub-hero p { max-width: 720px; line-height: 1.55; }
+.hub-level { flex: 0 0 auto; }
+.hub-stats { width: 100%; }
+.hub-stats > div { min-width: 0; }
+.hub-stats span, .hub-stats small { line-height: 1.45; overflow-wrap: anywhere; }
+
+.hub-sectionbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 12px;
+}
+.hub-tab-shell {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid rgba(99, 132, 170, .18);
+  border-radius: 14px;
+  background: rgba(9, 17, 30, .72);
+}
+.hub-tab-arrow {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  width: 34px;
+  min-width: 34px;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid rgba(105, 141, 180, .16);
+  border-radius: 9px;
+  color: #a9c2d9;
+  background: rgba(20, 39, 59, .78);
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease, background .18s ease;
+}
+.hub-tab-arrow:hover {
+  color: #70e5ff;
+  border-color: rgba(112, 229, 255, .42);
+  background: rgba(24, 66, 87, .72);
+}
+.hub-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  flex-flow: row nowrap;
+  width: 100%;
+  min-width: 0;
+  gap: 7px;
+  margin: 0;
+  padding: 2px 1px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(112, 229, 255, .48) rgba(8, 14, 25, .35);
+}
+.hub-tabs button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: max-content;
+  min-height: 40px;
+  gap: 8px;
+  padding: 9px 13px;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid #263b53;
+  border-radius: 10px;
+  color: #a9bad0;
+  background: #0d1726;
+  transition: color .18s ease, border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.hub-tabs button:hover { color: #e9f8ff; border-color: #3e718d; }
+.hub-tabs button.active {
+  color: #76e8fb;
+  border-color: #3289a2;
+  background: linear-gradient(135deg, rgba(20, 66, 83, .95), rgba(16, 43, 58, .95));
+  box-shadow: inset 0 0 0 1px rgba(112, 229, 255, .08);
+}
+.hub-tabs::-webkit-scrollbar { height: 6px; }
+.hub-tabs::-webkit-scrollbar-track { background: rgba(8, 14, 25, .35); border-radius: 99px; }
+.hub-tabs::-webkit-scrollbar-thumb {
+  background: rgba(112, 229, 255, .42);
+  border: 1px solid rgba(8, 14, 25, .45);
+  border-radius: 99px;
+}
+.hub-tabs::-webkit-scrollbar-thumb:hover { background: rgba(112, 229, 255, .68); }
+.hub-add {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  gap: 7px;
+  padding: 10px 16px;
+  border-radius: 11px;
+  white-space: nowrap;
+}
+.hub-grid { width: 100%; min-width: 0; align-items: stretch; }
+.hub-card { min-width: 0; overflow-wrap: anywhere; }
+.hub-empty { width: 100%; min-width: 0; padding: clamp(30px, 4vw, 46px) 18px; }
+.hub-create { width: 100%; min-width: 0; }
+.hub-footnote {
+  align-items: flex-start;
+  line-height: 1.55;
+  padding: 12px 14px;
+  border: 1px solid rgba(99, 132, 170, .13);
+  border-radius: 12px;
+  background: rgba(9, 17, 30, .52);
+}
+.hub-footnote svg { flex: 0 0 auto; margin-top: 1px; }
+
+@media (max-width: 980px) {
+  .hub-sectionbar { grid-template-columns: minmax(0, 1fr); }
+  .hub-add { justify-self: end; }
+}
+@media (max-width: 760px) {
+  .hub-page { gap: 16px; }
+  .hub-hero { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 19px; }
+  .hub-level { width: 100%; white-space: normal; }
+  .hub-sectionbar { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .hub-tab-shell { gap: 4px; padding: 4px; }
+  .hub-tab-arrow { flex-basis: 31px; width: 31px; min-width: 31px; min-height: 37px; }
+  .hub-tabs { width: 100%; max-width: 100%; gap: 6px; }
+  .hub-tabs button { min-height: 39px; padding: 9px 11px; font-size: 12px; }
+  .hub-add { justify-self: end; min-height: 40px; }
+  .hub-grid { grid-template-columns: minmax(0, 1fr); }
+  .hub-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .hub-card { padding: 15px; }
+}
+@media (max-width: 520px) {
+  .hub-hero h1 { font-size: 25px; }
+  .hub-hero p { font-size: 13px; }
+  .hub-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .hub-stats > div { padding: 12px; }
+  .hub-stats > div:last-child { grid-column: 1 / -1; }
+  .hub-stats b { font-size: 21px; }
+  .hub-sectionbar { gap: 8px; }
+  .hub-tab-shell { gap: 3px; }
+  .hub-tab-arrow { flex-basis: 28px; width: 28px; min-width: 28px; min-height: 36px; }
+  .hub-tabs button { gap: 6px; padding: 8px 10px; font-size: 11px; }
+  .hub-footnote { font-size: 10px; }
+}
