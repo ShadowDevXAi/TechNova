@@ -129,6 +129,7 @@ function App() {
   const [reviewSearch, setReviewSearch] = useState("");
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [taskStatusFilter, setTaskStatusFilter] = useState("All");
+  const [selectedTaskDetail, setSelectedTaskDetail] = useState(null);
   const [announcementForm, setAnnouncementForm] = useState({ title: "", message: "" });
   const [submissionForm, setSubmissionForm] = useState({
     taskId: "",
@@ -2062,7 +2063,7 @@ function App() {
                         </header>
                         <div className="kanban-lane-cards">
                           {laneTasks.map((t) => (
-                            <article className="kanban-task-card" key={t.id}>
+                            <article className="kanban-task-card" key={t.id} role="button" tabIndex={0} aria-label={`View details for ${t.title}`} onClick={() => setSelectedTaskDetail(t)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedTaskDetail(t); } }}>
                               <div className="kanban-task-top">
                                 <small>{t.id.slice(-6)} · {t.project || "Club project"}</small>
                                 <span className={"pill " + (t.priority || "Medium").toLowerCase()}>{t.priority || "Medium"}</span>
@@ -2133,6 +2134,33 @@ function App() {
                 </div>
                 {!tasks.length && <div className="empty">No tasks created yet.</div>}
               </div>
+              {selectedTaskDetail && (
+                <div className="task-detail-backdrop" onClick={() => setSelectedTaskDetail(null)}>
+                  <section className="task-detail-modal" role="dialog" aria-modal="true" aria-labelledby="task-detail-title" onClick={(e) => e.stopPropagation()}>
+                    <header className="task-detail-header">
+                      <div><small>TECHNOVA TASK DETAILS</small><h2 id="task-detail-title">{selectedTaskDetail.title}</h2></div>
+                      <button type="button" className="textbtn" onClick={() => setSelectedTaskDetail(null)} aria-label="Close task details">✕</button>
+                    </header>
+                    <div className="task-detail-content">
+                      <p>{selectedTaskDetail.description || "No additional description provided."}</p>
+                      <div className="task-detail-grid">
+                        <span><b>Status</b>{selectedTaskDetail.status || "Todo"}</span>
+                        <span><b>Priority</b>{selectedTaskDetail.priority || "Medium"}</span>
+                        <span><b>Assigned to</b>{selectedTaskDetail.assignee_name || "Unassigned"}</span>
+                        <span><b>Due date</b>{selectedTaskDetail.due_date || "Not set"}</span>
+                        <span><b>Difficulty rank</b>{selectedTaskDetail.difficulty_rank || "F"}</span>
+                        <span><b>Reward</b>{selectedTaskDetail.status === "Done" ? (selectedTaskDetail.credits_awarded || 0) : (selectedTaskDetail.credits_reward || 5)} credits</span>
+                        <span><b>Project</b>{selectedTaskDetail.project || "Club project"}</span>
+                        <span><b>Language</b>{selectedTaskDetail.programming_language || "General"}</span>
+                      </div>
+                      {selectedTaskDetail.review_feedback && <div className="kanban-feedback">Review feedback: {selectedTaskDetail.review_feedback}</div>}
+                      {selectedTaskDetail.task_state === "Suspended" && <div className="kanban-paused-note">This task is paused by management.</div>}
+                      {selectedTaskDetail.status === "Done" && selectedTaskDetail.completion_confirmed_by_name && <p className="kanban-confirmed">Confirmed by {selectedTaskDetail.completion_confirmed_by_name}</p>}
+                    </div>
+                    <footer className="task-detail-footer"><button type="button" onClick={() => setSelectedTaskDetail(null)}>Close details</button></footer>
+                  </section>
+                </div>
+              )}
                             <div className="panel common-task-board">
                 <div className="panelhead">
                   <div>
