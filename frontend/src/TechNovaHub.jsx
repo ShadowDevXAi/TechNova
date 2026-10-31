@@ -61,7 +61,8 @@ export default function TechNovaHub({token,user}) {
       setMessages(lists[listSections.length+3]);
       setMembers(lists[listSections.length+4]);
       setCertificates(lists[listSections.length+5]);
-      setData(v=>({...v,mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));\n      setMentorshipRequests(lists[listSections.length+2]);\n      setMessages(lists[listSections.length+3]);\n      setMembers(lists[listSections.length+4]);\n      setCertificates(lists[listSections.length+5]);\n      setData(v=>({...v,attendance:lists[listSections.length],mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));
+      setData(v=>({...v,mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));
+      setData(v=>({...v,attendance:lists[listSections.length],mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));
     } catch(e){setError(e.message);}
   };
   useEffect(()=>{if(token)refresh();},[token]);
@@ -91,7 +92,8 @@ export default function TechNovaHub({token,user}) {
   const sendMessage=async(e)=>{e.preventDefault();try{await call("/hub/messages",{method:"POST",body:JSON.stringify({recipient_id:recipientId,message:messageText})});setMessage("Message sent.");setMessageText("");await refresh();}catch(e){setError(e.message);}};
   const requestMentorship=async(e)=>{e.preventDefault();try{await call("/hub/mentorship",{method:"POST",body:JSON.stringify({mentor,goal})});setMessage("Mentorship request sent.");setMentor("");setGoal("");await refresh();}catch(e){setError(e.message);}};
   const issueCertificate=async()=>{try{await call("/hub/certificates/issue",{method:"POST"});setMessage("Certificate issued.");await refresh();}catch(e){setError(e.message);}};
-  const decideMentorship=async(id,decision)=>{try{await call("/hub/mentorship/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};\n  const decideReward=async(id,decision)=>{try{await call("/hub/rewards/requests/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
+  const decideMentorship=async(id,decision)=>{try{await call("/hub/mentorship/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
+  const decideReward=async(id,decision)=>{try{await call("/hub/rewards/requests/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
   const reviewChallenge=async(item,userId,decision)=>{try{await call("/hub/challenges/"+item.id+"/review",{method:"POST",body:JSON.stringify({user_id:userId,decision,feedback:decision==="Accepted"?"Approved by club management":"Please revise and resubmit."})});setMessage("Challenge submission reviewed.");await refresh();}catch(e){setError(e.message);}};
   const canCreate=(staff&&["projects","challenges","events","resources","polls","rewards"].includes(section))||section==="discussions";
   return <main className="hub-page">
