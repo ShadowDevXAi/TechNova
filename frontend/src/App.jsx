@@ -1951,6 +1951,7 @@ function App() {
 
           {page === "Tasks & Projects" && (
             <>
+              <div className="task-page-compact">
               <div className="title">
                 <div>
                   <label>WORK MANAGEMENT</label>
@@ -2386,6 +2387,8 @@ function App() {
               )}
                 </div>
               </details>
+            
+              </div>
             </>
           )}
 
