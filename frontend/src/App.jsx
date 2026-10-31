@@ -222,7 +222,7 @@ function App() {
           ? api("/tasks/review-queue", t)
           : Promise.resolve([]),
         ["Founder", "Core Management"].includes(me.role)
-          ? api("/admin/database-stats", t)
+          ? api("/admin/database-stats", t).catch(() => null)
           : Promise.resolve(null),
       ]);
       setDashboard(d);
@@ -269,7 +269,7 @@ function App() {
         ];
         if (["Founder", "Core Management"].includes(user.role)) {
           requests.push(api("/tasks/review-queue", token));
-          requests.push(api("/admin/database-stats", token));
+          requests.push(api("/admin/database-stats", token).catch(() => null));
         }
         const [nextTasks, nextNotifications, nextDashboard, nextReviews, nextDbStats] =
           await Promise.all(requests);
@@ -2071,11 +2071,11 @@ function App() {
               {isAdmin && (
                 <div className="panel daily-schedule-panel">
                   <div className="panelhead">
-                    <div><b>Daily mission automation</b><small>Daily templates generate new task copies automatically. Pausing a schedule stops future copies only.</small></div>
-                    <span className="common-task-count">{dailySchedules.filter((schedule) => schedule.active).length} active</span>
+                    <div><b>Daily mission automation</b><small>Shared daily mission templates publish to the volunteer board. Members choose whether to accept or reject.</small></div>
+                    <span className="common-task-count">{dailySchedules.filter((schedule) => schedule.active && schedule.assignment_mode === "open_to_all").length} active</span>
                   </div>
                   <div className="daily-schedule-list">
-                    {dailySchedules.map((schedule) => (
+                    {dailySchedules.filter((schedule) => schedule.assignment_mode === "open_to_all").map((schedule) => (
                       <div className="daily-schedule-row" key={schedule.id}>
                         <div><b>{schedule.title}</b><small>{schedule.assignment_mode === "open_to_all" ? "Common mission" : "Assigned task"} · Starts {schedule.start_date} · Last created {schedule.last_generated_date || "pending"}</small></div>
                         <span className={"schedule-state " + (schedule.active ? "active" : "paused")}>{schedule.active ? "Repeating" : "Paused"}</span>
@@ -2083,7 +2083,7 @@ function App() {
                         <button className="textbtn danger" onClick={() => deleteDailySchedule(schedule)}>Stop</button>
                       </div>
                     ))}
-                    {!dailySchedules.length && <div className="empty">No daily missions configured. Choose “Repeat automatically every day” when creating a task.</div>}
+                    {!dailySchedules.length && <div className="empty">No recurring shared missions configured. The random AI daily mission is generated separately.</div>}
                   </div>
                 </div>
               )}
@@ -2137,13 +2137,13 @@ function App() {
                             <Check size={14} /> Accept task
                           </button>
                           <button className="secondary" onClick={() => respondToCommonTask(item, "declined")}>
-                            Decline
+                            Reject mission
                           </button>
                         </div>
                       )}
                       {item.response_status && (
                         <div className={"common-task-response " + item.response_status}>
-                          {item.response_status === "accepted" ? "✓ You accepted this task — it is in your task list." : "You declined this common task."}
+                          {item.response_status === "accepted" ? "✓ You accepted this task — it is in your task list." : "You rejected this mission."}
                         </div>
                       )}
                       {isAdmin && (
