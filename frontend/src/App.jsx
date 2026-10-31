@@ -2279,137 +2279,102 @@ function App() {
                   </div>
                 ))}
               </div>
-              <div className="panel tablepanel">
-                <div className="panelhead">
-                  <b>{isAdmin ? "All club tasks" : "My task board"}</b>
-                  <small>{isAdmin ? "Founder and Core Management can view every active assigned task across the club." : "Your assigned tasks · saved in MongoDB and refreshed automatically."} · {filteredTaskRows.length} shown</small>
+              <div className="panel kanban-task-board">
+                <div className="panelhead kanban-board-heading">
+                  <div>
+                    <b>{isAdmin ? "All club tasks" : "My task board"}</b>
+                    <small>{isAdmin ? "Club-wide task overview · Founder and Core Management" : "Your assigned tasks"} · {filteredTaskRows.length} visible / {tasks.length} total</small>
+                  </div>
+                  <span className="common-task-count">{filteredTaskRows.length} tasks</span>
                 </div>
-                <div className="overflow">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>TASK</th>
-                        <th>ASSIGNEE</th>
-                        <th>PRIORITY</th>
-                        <th>DUE</th>
-                        <th>STATUS</th>
-                        <th>COMMENTS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredTaskRows.map((t) => (
-                          <tr key={t.id}>
-                            <td>
-                              <b>{t.title}</b>
-                              <small className="sub">
-                                {t.id.slice(-6)} · {t.project}
-                              </small>
-                              <small className="task-tech-meta">
+                <div className="kanban-scroll-hint"><span>← Scroll horizontally to explore task stages →</span></div>
+                <div className="kanban-lanes">
+                  {[
+                    { key: "Todo", title: "To do", tone: "todo" },
+                    { key: "In progress", title: "Doing", tone: "doing" },
+                    { key: "Review", title: "In review", tone: "review" },
+                    { key: "Done", title: "Done", tone: "done" },
+                  ].map((lane) => {
+                    const laneTasks = filteredTaskRows.filter((task) => task.status === lane.key);
+                    return (
+                      <section className={"kanban-lane lane-" + lane.tone} key={lane.key}>
+                        <header className="kanban-lane-heading">
+                          <span className="kanban-lane-dot" />
+                          <b>{lane.title}</b>
+                          <span className="kanban-lane-count">{laneTasks.length}</span>
+                        </header>
+                        <div className="kanban-lane-cards">
+                          {laneTasks.map((t) => (
+                            <article className="kanban-task-card" key={t.id}>
+                              <div className="kanban-task-top">
+                                <small>{t.id.slice(-6)} · {t.project || "Club project"}</small>
+                                <span className={"pill " + (t.priority || "Medium").toLowerCase()}>{t.priority || "Medium"}</span>
+                              </div>
+                              <h3>{t.title}</h3>
+                              {t.description && <p>{t.description}</p>}
+                              <div className="kanban-task-tags">
                                 <span className={"difficulty-badge rank-" + (t.difficulty_rank || "F").toLowerCase()}>{t.difficulty_rank || "F"} rank</span>
                                 <span>{t.programming_language || "General"}</span>
-                                <span>{t.status === "Done" ? "+" + (t.credits_awarded || 0) + " earned" : "+" + (t.credits_reward || 5) + " credits"}</span>
-                                {t.late_penalty_points > 0 && <span className="late-penalty-label">−{t.late_penalty_points} late penalty</span>}
                                 {t.recurrence === "daily" && <span className="schedule-state active">Daily</span>}
                                 {t.auto_generated && <span className="schedule-state active">Auto-generated</span>}
-                              </small>
-                              {t.description && (
-                                <small className="sub">{t.description}</small>
+                                {t.task_state === "Suspended" && <span className="schedule-state paused">Paused</span>}
+                              </div>
+                              <div className="kanban-task-details">
+                                <span><b>Assigned to</b>{t.assignee_name || "Unassigned"}</span>
+                                <span><b>Due date</b>{t.due_date || "Not set"}</span>
+                                <span><b>Reward</b>{t.status === "Done" ? (t.credits_awarded || 0) : (t.credits_reward || 5)} credits</span>
+                              </div>
+                              {t.review_feedback && <div className="kanban-feedback">Feedback: {t.review_feedback}</div>}
+                              {t.status === "Done" && t.completion_confirmed_by_name && <small className="kanban-confirmed">Confirmed by {t.completion_confirmed_by_name}</small>}
+                              {t.task_state === "Suspended" && <div className="kanban-paused-note">Paused by management</div>}
+                              {user.role === "Member" && t.assignee_id === user.id && t.status !== "Done" && t.task_state !== "Suspended" && (
+                                <label className="kanban-status-control">Update progress
+                                  <select
+                                    value={t.status}
+                                    onChange={(e) => {
+                                      const nextStatus = e.target.value;
+                                      if (nextStatus === "Review") openTaskSubmission(t);
+                                      else updateTask(t, { status: nextStatus });
+                                    }}
+                                  >
+                                    {t.status === "Todo" && <option value="Todo">To do</option>}
+                                    {t.status === "Todo" && <option value="In progress">In progress</option>}
+                                    {t.status === "In progress" && <option value="In progress">In progress</option>}
+                                    {t.status === "In progress" && <option value="Review">Submit for review</option>}
+                                    {t.status === "Review" && <option value="Review">In review</option>}
+                                    {t.status === "Review" && <option value="In progress">Return to work</option>}
+                                  </select>
+                                </label>
                               )}
-                            </td>
-                            <td>{t.assignee_name}</td>
-                            <td>
-                              <span className={"pill " + t.priority.toLowerCase()}>
-                                {t.priority}
-                              </span>
-                            </td>
-                            <td>{t.due_date || "Not set"}</td>
-                            <td>
-                              {t.task_state === "Suspended" ? <span className="schedule-state paused">Paused by management</span> : user.role === "Member" && t.assignee_id === user.id && t.status !== "Done" ? (
-                                <select
-                                  className={"task-status-select status-" + t.status.toLowerCase().replaceAll(" ", "-")}
-                                  value={t.status}
-                                  aria-label={"Update " + t.title + " status"}
-                                  onChange={(e) => {
-                                    const nextStatus = e.target.value;
-                                    if (nextStatus === "Review") {
-                                      openTaskSubmission(t);
-                                    } else {
-                                      updateTask(t, { status: nextStatus });
-                                    }
-                                  }}
-                                >
-                                  {t.status === "Todo" && <option value="Todo">To do</option>}
-                                  {t.status === "Todo" && <option value="In progress">In progress</option>}
-                                  {t.status === "In progress" && <option value="In progress">In progress</option>}
-                                  {t.status === "In progress" && <option value="Review">Submit for review</option>}
-                                  {t.status === "Review" && <option value="Review">In review</option>}
-                                  {t.status === "Review" && <option value="In progress">Return to work</option>}
-                                </select>
-                              ) : (
-                                <span className={"pill task-status-pill status-" + t.status.toLowerCase().replaceAll(" ", "-")}>
-                                  {t.status === "Done" ? "Done ✓" : t.status === "Review" ? "In review" : t.status === "Todo" ? "To do" : t.status}
-                                </span>
-                              )}
-                              {t.status === "Review" && (
-                                <small className="sub">Awaiting Founder/Core Management evidence review</small>
-                              )}
-                              {t.review_feedback && t.status === "In progress" && (
-                                <small className="sub review-feedback">Changes requested: {t.review_feedback}</small>
-                              )}
-                              {t.status === "Done" && t.completion_confirmed_by_name && (
-                                <small className="sub">
-                                  Confirmed by {t.completion_confirmed_by_name}
-                                </small>
-                              )}
-                            </td>
-                            <td>
-                              <button
-                                className="textbtn"
-                                onClick={async () => {
-                                  let text = prompt("Add a task comment");
-                                  if (text) {
+                              <div className="kanban-card-actions">
+                                <button className="textbtn" onClick={async () => {
+                                  const comment = prompt("Add a task comment");
+                                  if (comment) {
                                     try {
-                                      await api(
-                                        `/tasks/${t.id}/comments`,
-                                        token,
-                                        {
-                                          method: "POST",
-                                          body: JSON.stringify({ text }),
-                                        }
-                                      );
+                                      await api(`/tasks/${t.id}/comments`, token, { method: "POST", body: JSON.stringify({ text: comment }) });
                                       notify("Comment added");
-                                    } catch (e) {
-                                      fail(e);
-                                    }
+                                    } catch (e) { fail(e); }
                                   }
-                                }}
-                              >
-                                Comment
-                              </button>{" "}
-                              {isAdmin && <div className="task-admin-actions">
-                                <button className="textbtn" onClick={() => toggleTaskPause(t)}>{t.task_state === "Suspended" ? "Resume" : "Pause"}</button>
-                                <button className="textbtn danger" onClick={() => archiveTask(t)}>Delete</button>
-                              </div>}
-                              <label className="filebtn">
-                                Attach
-                                <input
-                                  type="file"
-                                  hidden
-                                  onChange={(e) =>
-                                    e.target.files?.[0] &&
-                                    uploadAttachment(t.id, e.target.files[0])
-                                  }
-                                />
-                              </label>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
+                                }}>Comment</button>
+                                <label className="filebtn">Attach
+                                  <input type="file" hidden onChange={(e) => e.target.files?.[0] && uploadAttachment(t.id, e.target.files[0])} />
+                                </label>
+                                {isAdmin && (
+                                  <>
+                                    <button className="textbtn" onClick={() => toggleTaskPause(t)}>{t.task_state === "Suspended" ? "Resume" : "Pause"}</button>
+                                    <button className="textbtn danger" onClick={() => archiveTask(t)}>Archive</button>
+                                  </>
+                                )}
+                              </div>
+                            </article>
+                          ))}
+                          {!laneTasks.length && <div className="kanban-lane-empty">No tasks in this stage</div>}
+                        </div>
+                      </section>
+                    );
+                  })}
                 </div>
-                {!tasks.length && (
-                  <div className="empty">No tasks created yet.</div>
-                )}
+                {!tasks.length && <div className="empty">No tasks created yet.</div>}
               </div>
             </>
           )}
