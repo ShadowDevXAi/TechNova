@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
+    # Firebase Admin credentials are mounted as a Render Secret File, never committed.
+    firebase_service_account_file: str = ""
+    firebase_project_id: str = "technova-f4460"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
     bootstrap_founder_name: str = Field(min_length=2)

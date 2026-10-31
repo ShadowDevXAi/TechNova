@@ -496,7 +496,20 @@ async def set_task_state(task_id: str, data: TaskStateIn, request: Request, acto
             except ValueError:
                 pass
         changes["paused_at"] = None
+    previous_state = task.get("task_state", "Active")
     await db.tasks.update_one({"_id": task["_id"]}, {"$set": changes})
+    if previous_state != data.state:
+        assignee = await db.users.find_one({"_id": task["assignee_id"], "status": "Active"})
+        if assignee:
+            is_paused = data.state == "Suspended"
+            detail = f" Reason: {reason}" if is_paused and reason else ""
+            await create_notification(
+                assignee,
+                "Task paused by management" if is_paused else "Task resumed by management",
+                f"{actor['name']} {'paused' if is_paused else 'resumed'} \"{task['title']}\".{detail}",
+                "task_paused" if is_paused else "task_resumed",
+                task_id=task_id,
+            )
     await audit(actor, "task_" + data.state.lower(), task_id, {"reason": reason, "deadline_paused": True}, request)
     return clean_task(await db.tasks.find_one({"_id": task["_id"]}))
 
@@ -534,11 +547,28 @@ async def set_common_task_state(common_task_id: str, data: TaskStateIn, request:
             raise HTTPException(409, "This daily mission has expired. The next scheduled occurrence will be created automatically.")
     if data.state == "Suspended" and len(reason) < 5:
         raise HTTPException(422, "Give a reason of at least 5 characters for pausing a task")
+    previous_state = task.get("task_state", "Active")
     await db.common_tasks.update_one({"_id": task["_id"]}, {"$set": {
         "status": "Suspended" if data.state == "Suspended" else "Open",
         "task_state": data.state, "task_state_reason": reason if data.state == "Suspended" else "",
         "updated_at": utcnow(),
     }})
+    if previous_state != data.state:
+        responses = await db.common_task_responses.find({
+            "common_task_id": task["_id"], "response": "accepted",
+        }).to_list(5000)
+        accepted_ids = list({row["user_id"] for row in responses if row.get("user_id")})
+        recipients = await db.users.find({"_id": {"$in": accepted_ids}, "status": "Active"}).to_list(5000) if accepted_ids else []
+        is_paused = data.state == "Suspended"
+        detail = f" Reason: {reason}" if is_paused and reason else ""
+        for recipient in recipients:
+            await create_notification(
+                recipient,
+                "Common mission paused" if is_paused else "Common mission reopened",
+                f"{actor['name']} {'paused' if is_paused else 'reopened'} \"{task['title']}\".{detail}",
+                "common_task_paused" if is_paused else "common_task_resumed",
+                common_task_id=common_task_id,
+            )
     await audit(actor, "common_task_" + data.state.lower(), common_task_id, {"reason": reason}, request)
     return {"message": "Common task " + ("paused" if data.state == "Suspended" else "resumed")}
 
@@ -614,6 +644,12 @@ async def reinstate_member(member_id: str, request: Request, actor: dict = Depen
     if not changed.modified_count:
         raise HTTPException(409, "This Member is not currently suspended")
     await resume_member_paused_tasks(target["_id"], utcnow())
+    await create_notification(
+        target,
+        "TechNova account reinstated",
+        f"Your account access has been restored by {actor['name']}. You can sign in and continue your club work.",
+        "account_reinstated",
+    )
     await audit(actor, "member_reinstated", member_id, {}, request)
     return clean_user(await db.users.find_one({"_id": target["_id"]}))
 

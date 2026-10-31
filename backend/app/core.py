@@ -35,6 +35,7 @@ from pymongo import ReturnDocument
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from .config import settings
 from .db import client, db, ensure_indexes
+from .firebase_push import send_push_notification
 from .security import hash_password, verify_password, create_access_token, decode_access_token, new_card_token, token_hash, utcnow
 from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TaskBulkConfirm, TaskCompletionConfirm, TeamCreate, AnnouncementCreate, MemberSuspendIn, TaskStateIn
 
@@ -217,6 +218,13 @@ async def create_notification(
         except Exception:
             # A mail-provider outage must never undo a saved task or in-app notification.
             pass
+    # Push delivery is optional and isolated: a Firebase outage never breaks the portal action.
+    await send_push_notification(
+        recipient["_id"], title, message,
+        notification_type=notification_type,
+        task_id=task_id,
+        common_task_id=common_task_id,
+    )
 
 # Purpose: Validate the bearer token, load the active member and expire timed suspensions.
 async def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):

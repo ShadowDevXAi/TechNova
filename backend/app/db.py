@@ -30,6 +30,8 @@ async def ensure_indexes():
         partialFilterExpression={"common_task_id": {"$exists": True}},
     )
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.push_tokens.create_index("token", unique=True)
+    await db.push_tokens.create_index([("user_id", 1), ("updated_at", -1)])
     await db.common_tasks.create_index("created_at")
     await db.common_tasks.create_index("auto_generation_key", unique=True, sparse=True)
     await db.common_task_responses.create_index(

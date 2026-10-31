@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import TechNovaHub from "./TechNovaHub";
+import PushNotificationSettings from "./components/PushNotificationSettings.jsx";
+import { listenForForegroundMessages } from "./firebase.js";
 import { api, API_BASE } from "./api/client.js";
 import TechNovaLogo from "./components/TechNovaLogo.jsx";
 import { links } from "./config/navigation.js";
@@ -514,6 +516,27 @@ function App() {
     Done: tasks.filter((task) => task.status === "Done").length,
   };
   const unreadNotifications = notifications.filter((item) => !item.read).length;
+
+  // Surface push messages immediately while the portal tab is open.
+  useEffect(() => {
+    if (!token || !user) return undefined;
+    let active = true;
+    let unsubscribe = () => {};
+    listenForForegroundMessages((payload) => {
+      const title = payload?.notification?.title || payload?.data?.title || "TechNova update";
+      const body = payload?.notification?.body || payload?.data?.body || "You have a new club notification.";
+      if ("Notification" in window && Notification.permission === "granted") {
+        try { new Notification(title, { body }); } catch {}
+      }
+    }).then((stop) => {
+      if (active) unsubscribe = stop;
+      else stop();
+    }).catch(() => {});
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [token, user?.id]);
 
   if (!token || !user) {
     return (
@@ -2266,6 +2289,7 @@ function App() {
                 </div>
               </div>
               <div className="panel settings">
+                <PushNotificationSettings token={token} />
                 <h3>Profile</h3>
                 <form onSubmit={saveProfile}>
                   <label>

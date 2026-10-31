@@ -141,7 +141,20 @@ export default function createPortalActions(context) {
   }
 
   // Purpose: Clear the session and reset all member-specific portal state.
-  function logout() {
+  async function logout() {
+    // Unbind this browser's notification token before ending the session.
+    const registeredPushToken = localStorage.getItem("tn_fcm_token");
+    if (registeredPushToken && token) {
+      try {
+        await api("/push/unregister", token, {
+          method: "POST",
+          body: JSON.stringify({ token: registeredPushToken }),
+        });
+      } catch {
+        // Logout must remain available even if the push API is temporarily offline.
+      }
+      localStorage.removeItem("tn_fcm_token");
+    }
     localStorage.removeItem("tn_token");
     setToken("");
     setUser(null);
