@@ -25,6 +25,7 @@ async def ensure_indexes():
     )
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.common_tasks.create_index("created_at")
+    await db.common_tasks.create_index("auto_generation_key", unique=True, sparse=True)
     await db.common_task_responses.create_index(
         [("common_task_id", 1), ("user_id", 1)],
         unique=True,
