@@ -351,85 +351,144 @@ async def automatic_task_templates(count: int) -> tuple[list[dict], str]:
 
 
 async def generate_automatic_daily_tasks() -> dict:
+    """Publish one AI/bank-generated daily mission to the shared Daily Task Board.
+
+    It does not create personal tasks or assign the mission to any Member.
+    Members may choose to accept a common task through the existing opt-in flow.
+    """
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
-    members = await db.users.find({"role": "Member", "status": "Active"}).limit(1000).to_list(1000)
-    if not members:
-        return {"generated": 0, "source": "none", "date": today}
-    missing = []
-    for member in members:
-        key = f"{today}:{member['_id']}"
-        exists = await db.tasks.find_one({"auto_generation_key": key}, {"_id": 1})
-        if not exists:
-            missing.append(member)
-    if not missing:
+    generation_key = f"auto-daily-board:{today}"
+    existing = await db.common_tasks.find_one({"auto_generation_key": generation_key}, {"_id": 1})
+    if existing:
         return {"generated": 0, "source": "already_generated", "date": today}
 
-    templates, source = await automatic_task_templates(max(5, min(15, len(missing))))
+    templates, source = await automatic_task_templates(1)
     if not templates:
         templates, source = list(AUTO_TASK_BANK), "Built-in task bank"
-    random.shuffle(templates)
+    template = random.choice(templates)
+    rank, reward = automatic_task_rank(template)
+    now = utcnow()
     founder = await db.users.find_one({"role": "Founder", "status": "Active"})
-    if not founder:
-        print("Automatic daily tasks skipped: active Founder account not found.")
-        return {"generated": 0, "source": source, "date": today}
+    common_doc = {
+        "_id": ObjectId(),
+        "title": template["title"],
+        "description": template["description"],
+        "project": "Daily Coding Challenge",
+        "priority": "High" if rank in {"S", "SS", "SSS"} else ("Medium" if rank in {"C", "B", "A"} else "Low"),
+        "difficulty_rank": rank,
+        "programming_language": template.get("programming_language", "General"),
+        "credits_reward": reward,
+        "late_penalty_points": 0,
+        "task_state": "Active",
+        "task_state_reason": "",
+        "recurrence": "daily",
+        "status": "Open",
+        "due_date": today,
+        "occurrence_date": today,
+        "created_by": founder["_id"] if founder else None,
+        "created_by_name": "TechNova Auto Task Engine",
+        "created_at": now,
+        "updated_at": now,
+        "auto_generated": True,
+        "generation_source": source,
+        "auto_generation_key": generation_key,
+        "auto_complexity": template.get("complexity", 1),
+        "estimated_minutes": template.get("estimated_minutes", 60),
+    }
+    try:
+        result = await db.common_tasks.insert_one(common_doc)
+    except DuplicateKeyError:
+        return {"generated": 0, "source": "already_generated", "date": today}
+
+    recipients = await db.users.find({
+        "role": {"$in": ["Member", "Faculty"]}, "status": "Active",
+    }).limit(5000).to_list(5000)
+    for recipient in recipients:
+        await create_notification(
+            recipient,
+            "New daily coding mission",
+            f'{common_doc["title"]} is available on the shared Daily Task Board. Accept it if you want to work on it; it has not been assigned to you.',
+            "common_task",
+            common_task_id=str(result.inserted_id),
+        )
+    await audit(founder, "automatic_daily_board_task_published", today, {
+        "common_task_id": str(result.inserted_id),
+        "source": source,
+        "rank": rank,
+        "credits_reward": reward,
+        "assigned_to_members": False,
+    })
+    return {"generated": 1, "source": source, "date": today, "common_task_id": str(result.inserted_id)}
+
+
+async def migrate_daily_task_board_only_mode() -> dict:
+    """One-time cleanup of penalties and unintended personal auto-assignments."""
+    migration_id = "daily_task_board_only_v1"
+    if await db.app_settings.find_one({"_id": migration_id}):
+        return {"previous_penalties_removed": 0, "old_auto_tasks_archived": 0, "auto_suspensions_reversed": 0}
 
     now = utcnow()
-    generated = 0
-    random.shuffle(missing)
-    for index, member in enumerate(missing):
-        template = random.choice(templates)
-        rank, reward = automatic_task_rank(template)
-        generation_key = f"{today}:{member['_id']}"
-        task_doc = {
-            "_id": ObjectId(),
-            "title": template["title"],
-            "description": template["description"],
-            "project": "Daily Coding Challenge",
-            "assignee_id": member["_id"],
-            "assignee_name": member["name"],
-            "priority": "High" if rank in {"S", "SS", "SSS"} else ("Medium" if rank in {"C", "B", "A"} else "Low"),
-            "difficulty_rank": rank,
-            "programming_language": template.get("programming_language", "General"),
-            "credits_reward": reward,
-            "credits_awarded": 0,
-            "late_penalty_points": 0,
-            "task_state": "Active",
-            "recurrence": "once",
-            "status": "Todo",
-            "due_date": today,
-            "submission_note": "",
-            "submission_evidence_url": "",
-            "submission_attested": False,
-            "created_by": founder["_id"],
-            "created_by_name": "TechNova Auto Task Engine",
-            "created_at": now,
-            "updated_at": now,
+    penalties_removed = await db.credit_penalties.count_documents({})
+    await db.credit_penalties.delete_many({})
+
+    auto_suspended = await db.users.find({
+        "role": "Member", "automatic_discipline": True,
+    }).to_list(5000)
+    for member in auto_suspended:
+        await resume_member_paused_tasks(member["_id"], now)
+
+    restored = await db.users.update_many(
+        {"role": "Member", "automatic_discipline": True},
+        {"$set": {
+            "status": "Active", "suspension_until": None,
+            "suspension_temporary": False, "updated_at": now,
+        }, "$unset": {
+            "suspension_reason": "", "suspended_at": "", "suspended_by": "",
+            "automatic_discipline": "", "missed_task_warning_level": "",
+            "missed_task_warning_sent_at": "",
+        }},
+    )
+    await db.users.update_many(
+        {"role": "Member"},
+        {"$unset": {"missed_task_warning_level": "", "missed_task_warning_sent_at": ""}},
+    )
+
+    archived = await db.tasks.update_many(
+        {
             "auto_generated": True,
-            "generation_source": source,
-            "auto_generation_key": generation_key,
-            "auto_complexity": template.get("complexity", 1),
-            "estimated_minutes": template.get("estimated_minutes", 60),
-        }
-        try:
-            result = await db.tasks.insert_one(task_doc)
-        except DuplicateKeyError:
-            continue
-        generated += 1
-        await create_notification(
-            member,
-            "Your daily coding challenge is ready",
-            f'{task_doc["title"]} · Rank {rank} · {reward} credits · Due today. Open Tasks & Projects to view the full requirements.',
-            "task_assigned",
-            task_id=str(result.inserted_id),
-        )
-
-    if generated:
-        await audit(founder, "automatic_daily_tasks_generated", today, {
-            "generated": generated, "source": source,
-            "ranked_tasks": True, "random_assignment": True,
-        })
-    return {"generated": generated, "source": source, "date": today}
-
+            "status": {"$ne": "Done"},
+            "deleted_at": {"$exists": False},
+        },
+        {"$set": {
+            "deleted_at": now, "deleted_by": None,
+            "task_state": "Deleted", "task_state_reason": "Moved to shared Daily Task Board",
+            "updated_at": now,
+        }},
+    )
+    await db.tasks.update_many(
+        {"$or": [
+            {"late_penalty_points": {"$gt": 0}},
+            {"missed_task_penalty_applied": True},
+        ]},
+        {"$set": {"late_penalty_points": 0}, "$unset": {
+            "late_penalty_applied_at": "", "missed_task_penalty_applied": "",
+        }},
+    )
+    await db.app_settings.update_one(
+        {"_id": migration_id},
+        {"$setOnInsert": {
+            "completed_at": now,
+            "penalties_removed": penalties_removed,
+            "auto_tasks_archived": archived.modified_count,
+            "auto_suspensions_reversed": restored.modified_count,
+        }},
+        upsert=True,
+    )
+    return {
+        "previous_penalties_removed": penalties_removed,
+        "old_auto_tasks_archived": archived.modified_count,
+        "auto_suspensions_reversed": restored.modified_count,
+    }
 
 
 
@@ -437,6 +496,7 @@ async def run_daily_maintenance() -> dict:
     now = utcnow()
     local_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     today_key = local_today.isoformat()
+    await migrate_daily_task_board_only_mode()
     expired_members = await db.users.find({
         "status": "Suspended", "suspension_temporary": True,
         "suspension_until": {"$lte": now},
@@ -507,155 +567,15 @@ async def run_daily_maintenance() -> dict:
 
     automatic_daily = await generate_automatic_daily_tasks()
 
-    # A missed task is an assigned personal task (including accepted common tasks
-    # and generated daily missions) that remains unfinished after its due date.
-    overdue = await db.tasks.find({
-        "due_date": {"$lt": today_key},
-        "status": {"$in": ["Todo", "In progress", "Review"]},
-        "task_state": {"$ne": "Suspended"},
-        "deleted_at": {"$exists": False},
-    }).limit(5000).to_list(5000)
-    penalties_applied = 0
-    for task in overdue:
-        # A submission sent before the deadline is not a miss, even if staff
-        # has not reviewed it yet. A late submission remains a missed deadline.
-        if task.get("status") == "Review" and task.get("submitted_at"):
-            submitted = task["submitted_at"]
-            submitted_date = submitted.astimezone(ZoneInfo("Asia/Kolkata")).date().isoformat() if submitted.tzinfo else submitted.date().isoformat()
-            if submitted_date <= task.get("due_date", ""):
-                continue
-        task_key = "missed-task:" + str(task["_id"])
-        # Deduct the full credit value assigned to the task's difficulty rank.
-        points = task_credit_value(task)
-        try:
-            await db.credit_penalties.insert_one({
-                "_id": ObjectId(), "reference_key": task_key,
-                "user_id": task["assignee_id"], "task_id": task["_id"],
-                "points": points, "category": "missed_task",
-                "reason": f'Missed task deadline · rank {task.get("difficulty_rank", "F")}.',
-                "actor_id": None, "created_at": now,
-            })
-            penalties_applied += 1
-            await create_notification(
-                {"_id": task["assignee_id"], "name": task.get("assignee_name", "Member"), "email": ""},
-                "Task deadline missed · credit penalty",
-                f'{task.get("title", "Task")} was not submitted by its due date. {points} credits (rank {task.get("difficulty_rank", "F")}) were deducted. This penalty is applied only once.',
-                "credit_penalty", task_id=str(task["_id"]),
-            )
-        except DuplicateKeyError:
-            pass
-        await db.tasks.update_one({"_id": task["_id"]}, {"$set": {
-            "late_penalty_applied_at": now, "late_penalty_points": points,
-            "missed_task_penalty_applied": True,
-        }})
-
-    # Warn active members once when they reach three missed assigned tasks.
-    # The atomic user-field update prevents duplicate warnings across maintenance cycles.
-    warning_counts = await db.credit_penalties.aggregate([
-        {"$match": {"category": "missed_task", "task_id": {"$exists": True}}},
-        {"$group": {"_id": "$user_id", "missed_task_count": {"$sum": 1}}},
-        {"$match": {"missed_task_count": {"$gte": 3, "$lt": 5}}},
-    ]).to_list(length=5000)
-    warnings_sent = 0
-    for row in warning_counts:
-        member = await db.users.find_one({
-            "_id": row["_id"], "role": "Member", "status": "Active",
-        })
-        if not member:
-            continue
-        warned = await db.users.update_one(
-            {
-                "_id": member["_id"],
-                "role": "Member",
-                "status": "Active",
-                "$or": [
-                    {"missed_task_warning_level": {"$exists": False}},
-                    {"missed_task_warning_level": {"$lt": 3}},
-                ],
-            },
-            {"$set": {
-                "missed_task_warning_level": 3,
-                "missed_task_warning_sent_at": now,
-                "updated_at": now,
-            }},
-        )
-        if warned.modified_count != 1:
-            continue
-        warnings_sent += 1
-        await create_notification(
-            member,
-            "Warning: three task deadlines missed",
-            f'You have missed {row["missed_task_count"]} assigned task deadlines. This is an official warning: reaching 5 missed tasks triggers an automatic 24-hour club suspension. Complete your pending tasks on time and contact club management if you need support or believe a deadline was recorded incorrectly.',
-            "disciplinary",
-        )
-        await audit(None, "member_warned_for_three_missed_tasks", str(member["_id"]), {
-            "missed_task_count": row["missed_task_count"],
-            "suspension_threshold": 5,
-        })
-
-    # Five distinct missed assigned tasks trigger a 24-hour temporary club
-    # suspension. Count only this rule's penalties, so unrelated manual
-    # discipline penalties and older legacy late-fee records do not count.
-    missed_counts = await db.credit_penalties.aggregate([
-        {"$match": {"category": "missed_task", "task_id": {"$exists": True}}},
-        {"$group": {"_id": "$user_id", "missed_task_count": {"$sum": 1}}},
-        {"$match": {"missed_task_count": {"$gte": 5}}},
-    ]).to_list(length=5000)
-    auto_suspended = 0
-    for row in missed_counts:
-        member = await db.users.find_one({
-            "_id": row["_id"], "role": "Member", "status": "Active",
-        })
-        if not member:
-            continue
-        until = now + timedelta(hours=24)
-        reason = f'Automatic suspension: {row["missed_task_count"]} assigned tasks were not completed by their deadlines.'
-        changed = await db.users.update_one(
-            {"_id": member["_id"], "role": "Member", "status": "Active"},
-            {"$set": {
-                "status": "Suspended", "suspended_at": now,
-                "suspension_until": until, "suspension_temporary": True,
-                "suspension_reason": reason, "suspended_by": None,
-                "automatic_discipline": True, "updated_at": now,
-            }},
-        )
-        if changed.modified_count != 1:
-            continue
-        auto_suspended += 1
-        await db.cards.update_many(
-            {"member_id": str(member["_id"]), "status": "Active"},
-            {"$set": {"status": "Revoked", "revoked_at": now}},
-        )
-        await db.tasks.update_many({
-            "assignee_id": member["_id"],
-            "status": {"$in": ["Todo", "In progress", "Review"]},
-            "task_state": {"$ne": "Suspended"},
-            "deleted_at": {"$exists": False},
-        }, {"$set": {
-            "task_state": "Suspended",
-            "task_state_reason": "Member temporary suspension after five missed tasks",
-            "paused_at": now,
-            "suspension_pause_by_member": True,
-        }})
-        await create_notification(
-            member, "Automatic 24-hour club suspension",
-            f'You missed {row["missed_task_count"]} assigned tasks. Your account is temporarily suspended until {until.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p IST")}. Rank-based task penalties have been deducted from your credits; your balance may become negative. Contact club management if you believe this is incorrect.',
-            "disciplinary",
-        )
-        await audit(None, "member_auto_suspended_for_missed_tasks", str(member["_id"]), {
-            "missed_task_count": row["missed_task_count"],
-            "duration_hours": 24, "suspension_until": until.isoformat(),
-        })
-
     return {
         "suspensions_expired": resumed.modified_count,
         "daily_tasks_generated": generated,
         "automatic_daily_tasks_generated": automatic_daily["generated"],
         "automatic_task_source": automatic_daily["source"],
         "daily_missions_closed": closed_daily_missions.modified_count,
-        "late_penalties_applied": penalties_applied,
-        "members_warned_for_missed_tasks": warnings_sent,
-        "members_auto_suspended": auto_suspended,
+        "late_penalties_applied": 0,
+        "members_warned_for_missed_tasks": 0,
+        "members_auto_suspended": 0,
         "checked_at": now.isoformat(),
     }
 
@@ -731,7 +651,7 @@ async def run_maintenance_now(actor: dict = Depends(allow("Founder"))):
 @app.post("/api/auto-tasks/generate")
 async def generate_auto_tasks_now(actor: dict = Depends(allow("Founder"))):
     result = await generate_automatic_daily_tasks()
-    return {"message": "Automatic task generation checked", **result}
+    return {"message": "Daily coding mission published to the shared board", **result}
 
 @app.post("/api/auth/register", status_code=201)
 @limiter.limit("8/hour")
