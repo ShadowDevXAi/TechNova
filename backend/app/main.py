@@ -352,75 +352,101 @@ async def automatic_task_templates(count: int) -> tuple[list[dict], str]:
     return list(AUTO_TASK_BANK), "Built-in task bank"
 
 
-async def generate_automatic_daily_tasks() -> dict:
-    """Publish one AI/bank-generated daily mission to the shared Daily Task Board.
-
-    It does not create personal tasks or assign the mission to any Member.
-    Members may choose to accept a common task through the existing opt-in flow.
-    """
-    today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
-    generation_key = f"auto-daily-board:{today}"
-    existing = await db.common_tasks.find_one({"auto_generation_key": generation_key}, {"_id": 1})
-    if existing:
-        return {"generated": 0, "source": "already_generated", "date": today}
-
-    templates, source = await automatic_task_templates(1)
-    if not templates:
-        templates, source = list(AUTO_TASK_BANK), "Built-in task bank"
-    template = random.choice(templates)
-    rank, reward = automatic_task_rank(template)
-    now = utcnow()
-    founder = await db.users.find_one({"role": "Founder", "status": "Active"})
-    common_doc = {
-        "_id": ObjectId(),
-        "title": template["title"],
-        "description": template["description"],
-        "project": "Daily Coding Challenge",
-        "priority": "High" if rank in {"S", "SS", "SSS"} else ("Medium" if rank in {"C", "B", "A"} else "Low"),
-        "difficulty_rank": rank,
-        "programming_language": template.get("programming_language", "General"),
-        "credits_reward": reward,
-        "late_penalty_points": 0,
-        "task_state": "Active",
-        "task_state_reason": "",
-        "recurrence": "daily",
-        "status": "Open",
-        "due_date": today,
-        "occurrence_date": today,
-        "created_by": founder["_id"] if founder else None,
-        "created_by_name": "TechNova Auto Task Engine",
-        "created_at": now,
-        "updated_at": now,
-        "auto_generated": True,
-        "generation_source": source,
-        "auto_generation_key": generation_key,
-        "auto_complexity": template.get("complexity", 1),
-        "estimated_minutes": template.get("estimated_minutes", 60),
-    }
+async def auto_task_generation_config() -> dict:
+    saved = await db.app_settings.find_one({"_id": "auto_daily_task_config"}) or {}
+    mode = saved.get("mode", "custom")
+    if mode not in {"custom", "unlimited"}:
+        mode = "custom"
     try:
-        result = await db.common_tasks.insert_one(common_doc)
-    except DuplicateKeyError:
-        return {"generated": 0, "source": "already_generated", "date": today}
+        daily_target = max(1, min(50, int(saved.get("daily_target", 5))))
+    except (TypeError, ValueError):
+        daily_target = 5
+    return {"mode": mode, "daily_target": daily_target, "unlimited_daily_cap": 20}
 
+
+async def auto_task_generation_status() -> dict:
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+    config = await auto_task_generation_config()
+    query = {"auto_generated": True, "occurrence_date": today, "deleted_at": {"$exists": False}}
+    generated_today = await db.common_tasks.count_documents(query)
+    open_today = await db.common_tasks.count_documents({**query, "status": "Open"})
+    total_generated = await db.common_tasks.count_documents({"auto_generated": True, "deleted_at": {"$exists": False}})
+    target = config["daily_target"] if config["mode"] == "custom" else config["unlimited_daily_cap"]
+    return {**config, "generated_today": generated_today, "open_today": open_today,
+            "total_generated": total_generated, "daily_target_effective": target,
+            "remaining_today": max(0, target - generated_today), "date": today}
+
+
+async def generate_automatic_daily_tasks() -> dict:
+    """Fill today's shared volunteer board up to its configured daily target."""
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+    config = await auto_task_generation_config()
+    target = config["daily_target"] if config["mode"] == "custom" else config["unlimited_daily_cap"]
+    existing = await db.common_tasks.find({
+        "auto_generated": True, "occurrence_date": today, "deleted_at": {"$exists": False},
+    }, {"title": 1}).to_list(100)
+    existing_titles = {str(row.get("title", "")).strip().casefold() for row in existing}
+    remaining = max(0, target - len(existing))
+    if not remaining:
+        return {"generated": 0, "source": "daily_limit_reached", **(await auto_task_generation_status())}
+
+    founder = await db.users.find_one({"role": "Founder", "status": "Active"})
     recipients = await db.users.find({
         "role": {"$in": ["Member", "Faculty"]}, "status": "Active",
     }).limit(5000).to_list(5000)
-    for recipient in recipients:
-        await create_notification(
-            recipient,
-            "New daily coding mission",
-            f'{common_doc["title"]} is available on the shared Daily Task Board. Accept it if you want to work on it; it has not been assigned to you.',
-            "common_task",
-            common_task_id=str(result.inserted_id),
-        )
-    await audit(founder, "automatic_daily_board_task_published", today, {
-        "common_task_id": str(result.inserted_id),
-        "source": source,
-        "rank": rank,
-        "credits_reward": reward,
-        "assigned_to_members": False,
-    })
-    return {"generated": 1, "source": source, "date": today, "common_task_id": str(result.inserted_id)}
+    created, sequence, sources = 0, len(existing), set()
+    while remaining:
+        templates, source = await automatic_task_templates(min(15, remaining))
+        sources.add(source)
+        random.shuffle(templates)
+        inserted_this_batch = 0
+        for template in templates:
+            if not remaining:
+                break
+            title_key = str(template.get("title", "")).strip().casefold()
+            if not title_key or title_key in existing_titles:
+                continue
+            rank, reward = automatic_task_rank(template)
+            now = utcnow()
+            sequence += 1
+            common_doc = {
+                "_id": ObjectId(), "title": template["title"], "description": template["description"],
+                "project": "Daily Coding Challenge",
+                "priority": "High" if rank in {"S", "SS", "SSS"} else ("Medium" if rank in {"C", "B", "A"} else "Low"),
+                "difficulty_rank": rank, "programming_language": template.get("programming_language", "General"),
+                "credits_reward": reward, "late_penalty_points": 0, "task_state": "Active",
+                "task_state_reason": "", "recurrence": "daily", "status": "Open",
+                "due_date": today, "occurrence_date": today,
+                "created_by": founder["_id"] if founder else None,
+                "created_by_name": "TechNova Auto Task Engine",
+                "created_at": now, "updated_at": now, "auto_generated": True,
+                "generation_source": source,
+                "auto_generation_key": f"auto-daily-board:{today}:{sequence}",
+                "auto_complexity": template.get("complexity", 1),
+                "estimated_minutes": template.get("estimated_minutes", 60),
+            }
+            try:
+                result = await db.common_tasks.insert_one(common_doc)
+            except DuplicateKeyError:
+                continue
+            existing_titles.add(title_key)
+            created += 1
+            remaining -= 1
+            inserted_this_batch += 1
+            for recipient in recipients:
+                await create_notification(
+                    recipient, "New daily coding mission",
+                    f'{common_doc["title"]} is available on the shared Daily Task Board. Accept it if you want to work on it; it has not been assigned to you.',
+                    "common_task", common_task_id=str(result.inserted_id),
+                )
+            await audit(founder, "automatic_daily_board_task_published", today, {
+                "common_task_id": str(result.inserted_id), "source": source,
+                "rank": rank, "credits_reward": reward, "assigned_to_members": False,
+            })
+        if not inserted_this_batch:
+            break
+    return {"generated": created, "source": ", ".join(sorted(sources)) or "none",
+            **(await auto_task_generation_status())}
 
 
 async def migrate_daily_task_board_only_mode() -> dict:
@@ -821,10 +847,40 @@ async def database_stats(actor: dict = Depends(allow("Founder", "Core Management
 async def run_maintenance_now(actor: dict = Depends(allow("Founder"))):
     return {"message": "Maintenance cycle completed", **(await run_daily_maintenance())}
 
+@app.get("/api/auto-tasks/settings")
+async def get_auto_task_settings(actor: dict = Depends(allow("Founder", "Core Management"))):
+    return await auto_task_generation_status()
+
+
+@app.put("/api/auto-tasks/settings")
+async def update_auto_task_settings(body: dict, request: Request, actor: dict = Depends(allow("Founder"))):
+    mode = body.get("mode", "custom")
+    if mode not in {"custom", "unlimited"}:
+        raise HTTPException(422, "Mode must be custom or unlimited")
+    try:
+        daily_target = int(body.get("daily_target", 5))
+    except (TypeError, ValueError):
+        raise HTTPException(422, "Daily target must be a whole number")
+    if daily_target < 1 or daily_target > 50:
+        raise HTTPException(422, "Custom daily target must be between 1 and 50")
+    await db.app_settings.update_one(
+        {"_id": "auto_daily_task_config"},
+        {"$set": {"mode": mode, "daily_target": daily_target, "updated_at": utcnow(), "updated_by": actor["_id"]}},
+        upsert=True,
+    )
+    await audit(actor, "auto_daily_task_settings_updated", "auto_daily_task_config", {
+        "mode": mode, "daily_target": daily_target, "unlimited_daily_cap": 20,
+    }, request)
+    return await auto_task_generation_status()
+
+
 @app.post("/api/auto-tasks/generate")
-async def generate_auto_tasks_now(actor: dict = Depends(allow("Founder"))):
+async def generate_auto_tasks_now(request: Request, actor: dict = Depends(allow("Founder"))):
     result = await generate_automatic_daily_tasks()
-    return {"message": "Daily coding mission published to the shared board", **result}
+    await audit(actor, "auto_daily_tasks_generate_requested", result.get("date", ""), {
+        "generated": result.get("generated", 0), "mode": result.get("mode"),
+    }, request)
+    return {"message": "Daily mission generation run completed", **result}
 
 @app.post("/api/auth/register", status_code=201)
 @limiter.limit("8/hour")
