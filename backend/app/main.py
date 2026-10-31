@@ -2318,9 +2318,17 @@ async def hub_list(collection: str, user: dict = Depends(get_current_user)):
 async def hub_create(collection: str, request: Request, user: dict = Depends(get_current_user)):
     target=HUB_COLLECTIONS.get(collection)
     if target is None: raise HTTPException(404,"Hub section not found")
-    if user.get("role") not in HUB_STAFF and collection!="discussions":
+    if user.get("role") not in HUB_STAFF and collection not in {"discussions","messages"}:
         raise HTTPException(403,"Only club management can publish this item")
     data=await request.json()
+    if collection=="mentorship":
+        mentor=str(data.get("mentor","")).strip()[:120]
+        goal=str(data.get("goal","")).strip()[:1000]
+        if not mentor or not goal: raise HTTPException(422,"Mentor name and learning goal are required")
+        doc={"user_id":str(user["_id"]),"member_name":user.get("name","Member"),"mentor":mentor,"goal":goal,"status":"Pending","created_at":utcnow()}
+        result=await db.hub_mentorship.insert_one(doc)
+        await audit(user,"hub_mentorship_requested",str(result.inserted_id),{"mentor":mentor},request)
+        return {"ok":True}
     if collection=="messages":
         recipient_id=str(data.get("recipient_id","")).strip()
         message=str(data.get("message","")).strip()
