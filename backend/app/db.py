@@ -1,3 +1,8 @@
+"""MongoDB client and database index setup for the TechNova backend.
+
+All route and service modules share the same configured async client/database.
+"""
+
 from motor.motor_asyncio import AsyncIOMotorClient
 from .config import settings
 
@@ -5,6 +10,7 @@ client = AsyncIOMotorClient(settings.mongodb_uri, serverSelectionTimeoutMS=8000)
 db = client[settings.database_name]
 
 async def ensure_indexes():
+    """Create the unique and query indexes required by portal workflows."""
     await db.users.create_index("email", unique=True)
     await db.users.create_index("member_id", unique=True)
     await db.cards.create_index("token_hash", unique=True, sparse=True)
