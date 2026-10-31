@@ -18,6 +18,7 @@ import re
 import math
 import json
 import random
+from secrets import token_urlsafe
 import urllib.request
 import urllib.error
 from zoneinfo import ZoneInfo
@@ -2281,7 +2282,7 @@ def hub_clean(doc):
 async def hub_profile(user: dict = Depends(get_current_user)):
     uid=user["_id"]
     done=await db.tasks.count_documents({"assignee_id":uid,"status":"Done"})
-    review=await db.tasks.count_documents({"assignee_id":uid,"status":"In review"})
+    review=await db.tasks.count_documents({"assignee_id":uid,"status":"Review"})
     credits=await member_credit_balance(uid)
     xp=done*100+review*25
     level=max(1,int((xp/100)**0.5)+1)
@@ -2357,5 +2358,81 @@ async def hub_archive(collection: str,item_id: str,request: Request,user: dict=D
     result=await target.update_one({"_id":oid(item_id)},{"$set":{"status":"Archived","archived_at":utcnow(),"archived_by":user["_id"]}})
     if not result.matched_count: raise HTTPException(404,"Record not found")
     await audit(user,f"hub_{collection}_archived",item_id,{},request)
+    return {"ok":True}
+
+
+# Attendance, event registration, reward requests and challenge review
+@app.get("/api/hub/attendance")
+async def hub_attendance_list(user: dict = Depends(get_current_user)):
+    docs=await db.hub_attendance.find({"status":"Open"}).sort("created_at",-1).to_list(100)
+    return [{"id":str(x["_id"]),"title":x["title"],"code":x["code"] if user.get("role") in HUB_STAFF else None,"created_at":x.get("created_at"),"attendee_count":len(x.get("attendees",[])),"checked_in":str(user["_id"]) in x.get("attendees",[])} for x in docs]
+
+@app.post("/api/hub/attendance")
+async def hub_attendance_create(request: Request,user: dict=Depends(allow("Founder","Core Management","Faculty"))):
+    data=await request.json()
+    title=str(data.get("title","")).strip()[:120]
+    if len(title)<3: raise HTTPException(422,"Session title is required")
+    code=token_urlsafe(7)
+    doc={"title":title,"code":code,"status":"Open","created_by":user["_id"],"created_at":utcnow(),"attendees":[]}
+    result=await db.hub_attendance.insert_one(doc)
+    await audit(user,"hub_attendance_opened",str(result.inserted_id),{"title":title},request)
+    return {"id":str(result.inserted_id),"title":title,"code":code,"status":"Open"}
+
+@app.post("/api/hub/attendance/check-in")
+async def hub_attendance_checkin(request: Request,user: dict=Depends(get_current_user)):
+    data=await request.json(); code=str(data.get("code","")).strip()
+    session=await db.hub_attendance.find_one({"code":code,"status":"Open"})
+    if not session: raise HTTPException(404,"Invalid or closed attendance code")
+    result=await db.hub_attendance.update_one({"_id":session["_id"],"attendees":{"$ne":str(user["_id"])}},{"$addToSet":{"attendees":str(user["_id"])}})
+    if not result.modified_count: raise HTTPException(409,"You have already checked in")
+    await audit(user,"hub_attendance_checkin",str(session["_id"]),{"title":session["title"]},request)
+    return {"ok":True,"message":"Attendance recorded"}
+
+@app.post("/api/hub/events/{item_id}/rsvp")
+async def hub_event_rsvp(item_id: str,request: Request,user: dict=Depends(get_current_user)):
+    event=await db.hub_events.find_one({"_id":oid(item_id),"status":{"$ne":"Archived"}})
+    if not event: raise HTTPException(404,"Event not found")
+    await db.hub_events.update_one({"_id":event["_id"]},{"$addToSet":{"rsvps":str(user["_id"])}})
+    return {"ok":True,"message":"Your event registration is saved"}
+
+@app.get("/api/hub/rewards/requests")
+async def hub_reward_requests(user: dict=Depends(get_current_user)):
+    query={} if user.get("role") in HUB_STAFF else {"user_id":str(user["_id"])}
+    docs=await db.hub_reward_requests.find(query).sort("created_at",-1).to_list(200)
+    return [{"id":str(x["_id"]),"reward_title":x["reward_title"],"member_name":x.get("member_name"),"status":x.get("status"),"created_at":x.get("created_at"),"note":x.get("note","")} for x in docs]
+
+@app.post("/api/hub/rewards/{item_id}/request")
+async def hub_reward_request(item_id: str,request: Request,user: dict=Depends(get_current_user)):
+    reward=await db.hub_rewards.find_one({"_id":oid(item_id),"status":{"$ne":"Archived"}})
+    if not reward: raise HTTPException(404,"Reward not found")
+    existing=await db.hub_reward_requests.find_one({"reward_id":reward["_id"],"user_id":str(user["_id"]),"status":"Pending"})
+    if existing: raise HTTPException(409,"You already have a pending request for this reward")
+    doc={"reward_id":reward["_id"],"reward_title":reward["title"],"user_id":str(user["_id"]),"member_name":user.get("name","Member"),"status":"Pending","note":"","created_at":utcnow()}
+    await db.hub_reward_requests.insert_one(doc)
+    await audit(user,"hub_reward_requested",item_id,{"title":reward["title"]},request)
+    return {"ok":True,"message":"Reward request sent to club management"}
+
+@app.post("/api/hub/rewards/requests/{request_id}/decision")
+async def hub_reward_decision(request_id: str,request: Request,user: dict=Depends(allow("Founder","Core Management"))):
+    data=await request.json(); decision=str(data.get("decision",""))
+    if decision not in {"Approved","Declined"}: raise HTTPException(422,"Choose Approved or Declined")
+    note=str(data.get("note","")).strip()[:500]
+    result=await db.hub_reward_requests.update_one({"_id":oid(request_id),"status":"Pending"},{"$set":{"status":decision,"note":note,"reviewed_by":user["_id"],"reviewed_at":utcnow()}})
+    if not result.modified_count: raise HTTPException(409,"Request is no longer pending")
+    await audit(user,"hub_reward_"+decision.lower(),request_id,{"note":note},request)
+    return {"ok":True}
+
+@app.post("/api/hub/challenges/{item_id}/review")
+async def hub_challenge_review(item_id: str,request: Request,user: dict=Depends(allow("Founder","Core Management","Faculty"))):
+    data=await request.json()
+    member_id=str(data.get("user_id","")).strip()
+    decision=str(data.get("decision",""))
+    feedback=str(data.get("feedback","")).strip()[:1000]
+    if decision not in {"Accepted","Needs changes"}: raise HTTPException(422,"Invalid review decision")
+    challenge=await db.hub_challenges.find_one({"_id":oid(item_id)})
+    if not challenge: raise HTTPException(404,"Challenge not found")
+    result=await db.hub_challenges.update_one({"_id":challenge["_id"],"submissions.user_id":member_id},{"$set":{"submissions.$.review_status":decision,"submissions.$.review_feedback":feedback,"submissions.$.reviewed_at":utcnow(),"submissions.$.reviewed_by":user.get("name","Staff")}})
+    if not result.modified_count: raise HTTPException(404,"Submission not found")
+    await audit(user,"hub_challenge_reviewed",item_id,{"user_id":member_id,"decision":decision},request)
     return {"ok":True}
 
