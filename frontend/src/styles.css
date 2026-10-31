@@ -7338,3 +7338,111 @@ td, th {
 .task-detail-member-lists { margin-top:14px; padding:12px; border:1px solid rgba(116,148,187,.15); border-radius:10px; background:rgba(5,15,27,.3); }
 .task-detail-member-lists p { margin:5px 0; color:#b7c9db; font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
 .task-detail-member-lists b { color:#8198b1; }
+
+
+/* Digital ID Studio — balanced desktop split and clean responsive alignment */
+.content:has(.idlayout) { max-width: 1500px; }
+.content:has(.idlayout) > .title {
+  align-items:center; margin-bottom:20px; gap:20px;
+}
+.content:has(.idlayout) > .title h1 { margin-top:6px; }
+.content:has(.idlayout) > .title > button { flex:0 0 auto; min-height:40px; }
+.card-role-tabs {
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+  margin:0 0 14px; padding:7px;
+  border:1px solid rgba(116,148,187,.16); border-radius:12px;
+  background:rgba(9,19,33,.78);
+}
+.card-role-tabs button {
+  display:inline-flex; align-items:center; gap:8px;
+  min-height:36px; padding:8px 13px;
+  border:1px solid transparent; border-radius:8px;
+  color:#9fb3ca; background:transparent; font-size:11px; font-weight:600;
+  cursor:pointer; transition:background .18s,border-color .18s,color .18s;
+}
+.card-role-tabs button span {
+  display:inline-grid; place-items:center; min-width:21px; height:21px;
+  padding:0 5px; border-radius:20px; color:#8ddff0;
+  background:rgba(66,232,255,.1); font-size:9px;
+}
+.card-role-tabs button.active {
+  color:#eaf8ff; border-color:rgba(66,232,255,.3);
+  background:linear-gradient(120deg,rgba(34,143,172,.2),rgba(53,77,125,.2));
+  box-shadow:inset 0 0 0 1px rgba(66,232,255,.06);
+}
+.idlayout {
+  grid-template-columns:minmax(0,1.08fr) minmax(330px,1fr);
+  align-items:stretch; gap:18px;
+}
+.idcard {
+  width:100%; min-width:0; min-height:430px;
+  padding:22px; border-radius:18px;
+  background-image:
+    linear-gradient(135deg,rgba(55,184,218,.06) 25%,transparent 25%,transparent 50%,rgba(55,184,218,.06) 50%,rgba(55,184,218,.06) 75%,transparent 75%);
+  background-size:34px 34px;
+  background-color:#091522;
+}
+.idcard:not(.coreCard):not(.memberCard) {
+  background-color:#091522;
+  background-image:radial-gradient(ellipse at 75% 8%,rgba(37,122,163,.42),transparent 52%),repeating-linear-gradient(135deg,rgba(90,185,218,.045) 0 1px,transparent 1px 22px);
+}
+.cardbrand { justify-content:flex-start; gap:11px; min-height:48px; }
+.idcard.hasOwnQr .cardbrand { padding-left:100px; min-height:86px; }
+.cardbrand b { font-size:20px; letter-spacing:-.5px; }
+.cardbrand small { font-size:7px; letter-spacing:1.25px; }
+.cardperson { margin:22px 0 20px; gap:14px; }
+.photo { width:76px; height:82px; flex:0 0 76px; }
+.cardperson h2 { font-size:clamp(16px,1.5vw,20px); overflow-wrap:anywhere; }
+.carddata { padding-top:10px; }
+.carddata p { align-items:flex-start; margin:0; padding:10px 0; border-bottom:1px solid rgba(116,148,187,.11); gap:14px; }
+.carddata p:last-child { border-bottom:0; }
+.carddata small { flex:0 0 72px; font-size:9px; letter-spacing:.04em; }
+.carddata b { min-width:0; max-width:72%; font-size:10px; line-height:1.5; overflow-wrap:anywhere; }
+.cardtag { left:22px; right:22px; bottom:16px; padding-top:10px; font-size:8px; }
+.qrpanel {
+  min-width:0; min-height:430px; padding:20px;
+  border:1px solid rgba(116,148,187,.17); border-radius:16px;
+  background:linear-gradient(155deg,rgba(15,29,47,.96),rgba(8,17,30,.96));
+  display:flex; flex-direction:column; align-items:stretch;
+}
+.qrpanel h3 { margin:0 0 6px; font-size:14px; }
+.qrpanel > p { margin:0 0 15px; font-size:10px; line-height:1.5; }
+.picker { padding:0; max-height:290px; overflow-y:auto; }
+.picker button { padding:10px; gap:10px; border:1px solid rgba(116,148,187,.12); border-radius:10px; margin-bottom:7px; }
+.picker button.picked { border-color:rgba(66,232,255,.42); background:rgba(30,77,103,.35); }
+.picker button > div:nth-child(2) { min-width:0; }
+.picker b { font-size:11px; }
+.picker small { line-height:1.4; overflow-wrap:anywhere; }
+.cardcontrols { padding:12px 0 0; gap:8px; }
+.cardcontrols button { min-height:38px; font-size:10px; }
+.qrwrap { padding:14px 0 0; margin-top:14px; align-items:center; }
+.qrwrap > div { min-width:0; }
+.qrwrap code { max-height:50px; overflow:auto; }
+.member-idlayout { grid-template-columns:minmax(0,680px); }
+@media (max-width:1050px) {
+  .idlayout { grid-template-columns:minmax(0,1fr); }
+  .idcard { max-width:720px; }
+  .qrpanel { min-height:0; }
+  .picker { max-height:260px; }
+}
+@media (max-width:620px) {
+  .content:has(.idlayout) > .title { align-items:flex-start; flex-direction:column; }
+  .card-role-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+  .card-role-tabs button { justify-content:space-between; padding:8px 9px; font-size:10px; }
+  .idcard { min-height:410px; padding:15px; }
+  .idcard.hasOwnQr .cardbrand { padding-left:82px; min-height:75px; }
+  .id-qr-corner { top:12px; left:12px; width:72px; }
+  .id-qr-corner svg { width:60px; height:60px; }
+  .cardperson { margin:18px 0 14px; }
+  .photo { width:64px; height:70px; flex-basis:64px; }
+  .carddata p { padding:8px 0; }
+  .carddata small { flex-basis:58px; }
+  .carddata b { max-width:calc(100% - 68px); font-size:9px; }
+  .cardtag { left:15px; right:15px; bottom:12px; font-size:7px; }
+  .qrpanel { padding:15px; }
+  .cardcontrols { flex-direction:column; }
+  .cardcontrols button { width:100%; justify-content:center; }
+}
+@media print {
+  .card-role-tabs { display:none !important; }
+}
