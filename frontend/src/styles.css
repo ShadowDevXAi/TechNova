@@ -7998,7 +7998,7 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
+  touch-action: pan-x pan-y;
   scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: rgba(112, 229, 255, .48) rgba(8, 14, 25, .35);
