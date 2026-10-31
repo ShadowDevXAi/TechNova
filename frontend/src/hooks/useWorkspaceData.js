@@ -61,10 +61,14 @@ export default function useWorkspaceData({
       if (me.role === "Member") setSelected(me);
       else if (!selected && members.length) setSelected(members[0]);
     } catch (error) {
-      localStorage.removeItem("tn_token");
-      setToken("");
-      setUser(null);
-      setError(error.message);
+      // Only an authentication failure should sign the member out. A sleeping
+      // Render service, network outage or 500 must not destroy a valid session.
+      if (error.status === 401) {
+        localStorage.removeItem("tn_token");
+        setToken("");
+        setUser(null);
+      }
+      setError(error.message || "Unable to load workspace data.");
     }
   };
 
