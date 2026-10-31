@@ -2234,8 +2234,8 @@ function App() {
               </div>
               <div className="task-status-toolbar">
                 <div className="task-status-heading">
-                  <b>Task status</b>
-                  <small>Live refresh every 15 seconds</small>
+                  <b>{isAdmin ? "Club-wide task status" : "My task status"}</b>
+                  <small>{isAdmin ? "Includes tasks assigned to every member and team." : "Live refresh every 15 seconds"}</small>
                 </div>
                 <div className="task-status-tabs" role="group" aria-label="Filter tasks by status">
                   {[
@@ -2281,8 +2281,8 @@ function App() {
               </div>
               <div className="panel tablepanel">
                 <div className="panelhead">
-                  <b>Task board</b>
-                  <small>Saved in MongoDB · refreshes automatically every 15 seconds</small>
+                  <b>{isAdmin ? "All club tasks" : "My task board"}</b>
+                  <small>{isAdmin ? "Founder and Core Management can view every active assigned task across the club." : "Your assigned tasks · saved in MongoDB and refreshed automatically."} · {filteredTaskRows.length} shown</small>
                 </div>
                 <div className="overflow">
                   <table>
