@@ -6904,3 +6904,90 @@ td, th {
   .task-operations-content { padding:9px; }
   .kanban-lane { flex-basis:86vw; min-width:270px; }
 }
+
+
+/* Compact visual density for the complete Tasks & Projects workspace */
+.task-page-compact { font-size: 12px; }
+.task-page-compact .title { margin-bottom: 15px; align-items:center; }
+.task-page-compact .title h1 { font-size:25px; margin:5px 0 4px; letter-spacing:-.7px; }
+.task-page-compact .title p { font-size:10px; }
+.task-page-compact .title label { font-size:8px; }
+.task-page-compact .primary,
+.task-page-compact .secondary { padding:8px 10px; font-size:9px; border-radius:7px; }
+.task-page-compact .task-status-toolbar { margin:2px 0 9px; padding:10px 13px; gap:10px; }
+.task-page-compact .task-status-heading b { font-size:11px; }
+.task-page-compact .task-status-heading small { font-size:8px; }
+.task-page-compact .task-filter-chip { min-height:27px; padding:4px 8px; font-size:8px; gap:5px; }
+.task-page-compact .task-filter-chip span { min-width:15px; height:15px; font-size:7px; }
+.task-page-compact .stats.compact.four { gap:8px; margin-bottom:10px; }
+.task-page-compact .stats.compact.four .stat { min-height:62px; padding:9px 11px; gap:3px; }
+.task-page-compact .stats.compact.four .stat strong { font-size:19px; }
+.task-page-compact .stats.compact.four .stat small { font-size:8px; }
+.task-page-compact .kanban-task-board { border-radius:11px; }
+.task-page-compact .kanban-board-heading { padding:12px 15px 9px; }
+.task-page-compact .kanban-board-heading b { font-size:11px; }
+.task-page-compact .kanban-board-heading small { font-size:8px; margin-top:3px; }
+.task-page-compact .kanban-scroll-hint { padding:0 15px 6px; font-size:8px; }
+.task-page-compact .kanban-lanes { gap:10px; padding:6px 13px 13px; }
+.task-page-compact .kanban-lane { flex-basis:clamp(260px,calc((100% - 20px)/3),315px); min-width:260px; max-height:590px; gap:9px; padding:9px; border-radius:12px; }
+.task-page-compact .kanban-lane-heading { padding:2px 2px 7px; gap:7px; }
+.task-page-compact .kanban-lane-heading b { font-size:10px; }
+.task-page-compact .kanban-lane-count { min-width:19px; height:19px; font-size:8px; }
+.task-page-compact .kanban-lane-cards { gap:8px; }
+.task-page-compact .kanban-task-card { padding:11px; border-radius:10px; }
+.task-page-compact .kanban-task-top > small { font-size:8px; }
+.task-page-compact .kanban-task-card h3 { font-size:11px; margin:8px 0 5px; }
+.task-page-compact .kanban-task-card > p { font-size:9px; line-height:1.5; margin-bottom:8px; }
+.task-page-compact .kanban-task-tags { gap:5px; margin-bottom:8px; }
+.task-page-compact .kanban-task-tags > span:not(.difficulty-badge):not(.schedule-state) { font-size:8px; }
+.task-page-compact .kanban-task-details { padding:8px; gap:7px; }
+.task-page-compact .kanban-task-details span { font-size:8px; gap:3px; }
+.task-page-compact .kanban-task-details b { font-size:7px; }
+.task-page-compact .kanban-card-actions { gap:7px; margin-top:9px; padding-top:7px; }
+.task-page-compact .kanban-card-actions button,
+.task-page-compact .kanban-card-actions .filebtn { font-size:8px; }
+.task-page-compact .common-task-board { border-radius:11px; }
+.task-page-compact .common-task-board > .panelhead { padding:12px 15px; }
+.task-page-compact .common-task-board > .panelhead b { font-size:11px; }
+.task-page-compact .common-task-board > .panelhead small { font-size:8px; }
+.task-page-compact .common-task-grid { gap:10px; padding:13px; max-height:560px; }
+.task-page-compact .common-task-card { padding:12px; border-radius:12px; }
+.task-page-compact .common-task-card h3 { font-size:11px; margin:10px 0 6px; min-height:29px; }
+.task-page-compact .common-task-card p { font-size:9px; line-height:1.5; min-height:46px; margin-bottom:9px; }
+.task-page-compact .common-task-progress { padding:10px; gap:9px; }
+.task-page-compact .common-task-progress b { font-size:9px; }
+.task-page-compact .common-task-progress small { font-size:8px; }
+.task-page-compact .common-task-actions { margin-top:10px; gap:6px; }
+.task-page-compact .common-task-actions button { min-height:32px; padding:0 10px; font-size:8px; }
+.task-page-compact .task-operations-disclosure { margin-top:12px; border-radius:11px; }
+.task-page-compact .task-operations-disclosure > summary { min-height:53px; padding:10px 13px; }
+.task-page-compact .task-operations-disclosure > summary b { font-size:11px; }
+.task-page-compact .task-operations-disclosure > summary small { font-size:8px; }
+.task-page-compact .task-operations-content { gap:10px; padding:10px; }
+.task-page-compact .review-queue-panel .panelhead,
+.task-page-compact .daily-schedule-panel .panelhead { padding:11px 13px; }
+.task-page-compact .auto-task-controls { gap:10px; padding:12px; margin-top:10px; }
+.task-page-compact .auto-task-metrics { gap:8px; }
+.task-page-compact .auto-task-metrics span { padding:9px; }
+.task-page-compact .auto-task-metrics b { font-size:17px; }
+.task-page-compact .auto-task-metrics small,
+.task-page-compact .auto-task-safety-note { font-size:8px; }
+.task-page-compact .auto-task-setting-row label { font-size:8px; }
+.task-page-compact .auto-task-setting-row select,
+.task-page-compact .auto-task-setting-row input { min-height:35px; padding:7px 9px; font-size:9px; }
+.task-page-compact .auto-task-actions button { min-height:32px; padding:7px 10px; font-size:8px; }
+@media (max-width:900px) {
+  .task-page-compact .kanban-lane { flex-basis:clamp(255px,44%,300px); min-width:255px; }
+}
+@media (max-width:600px) {
+  .task-page-compact .title h1 { font-size:22px; }
+  .task-page-compact .stats.compact.four { gap:7px; }
+  .task-page-compact .stats.compact.four .stat { min-height:56px; padding:8px; }
+  .task-page-compact .kanban-lane { flex-basis:82vw; min-width:255px; }
+  .task-page-compact .common-task-grid { padding:9px; gap:8px; }
+  .task-page-compact .common-task-card h3,
+  .task-page-compact .common-task-card p { min-height:0; }
+  .task-page-compact .auto-task-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .task-page-compact .auto-task-metrics span { padding:7px; }
+  .task-page-compact .auto-task-metrics b { font-size:14px; }
+}
