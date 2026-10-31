@@ -432,6 +432,13 @@ async def migrate_daily_task_board_only_mode() -> dict:
     now = utcnow()
     penalties_removed = await db.credit_penalties.count_documents({})
     await db.credit_penalties.delete_many({})
+    old_penalty_notifications = await db.notifications.delete_many({
+        "$or": [
+            {"type": "credit_penalty"},
+            {"title": "Warning: three task deadlines missed"},
+            {"title": "Automatic 24-hour club suspension"},
+        ]
+    })
 
     auto_suspended = await db.users.find({
         "role": "Member", "automatic_discipline": True,
@@ -488,6 +495,7 @@ async def migrate_daily_task_board_only_mode() -> dict:
     )
     return {
         "previous_penalties_removed": penalties_removed,
+        "old_penalty_notifications_removed": old_penalty_notifications.deleted_count,
         "old_auto_tasks_archived": archived.modified_count,
         "auto_suspensions_reversed": restored.modified_count,
     }
@@ -498,7 +506,7 @@ async def run_daily_maintenance() -> dict:
     now = utcnow()
     local_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     today_key = local_today.isoformat()
-    await migrate_daily_task_board_only_mode()
+    discipline_cleanup = await migrate_daily_task_board_only_mode()
     expired_members = await db.users.find({
         "status": "Suspended", "suspension_temporary": True,
         "suspension_until": {"$lte": now},
@@ -575,6 +583,7 @@ async def run_daily_maintenance() -> dict:
         "automatic_daily_tasks_generated": automatic_daily["generated"],
         "automatic_task_source": automatic_daily["source"],
         "daily_missions_closed": closed_daily_missions.modified_count,
+        "discipline_cleanup": discipline_cleanup,
         "late_penalties_applied": 0,
         "members_warned_for_missed_tasks": 0,
         "members_auto_suspended": 0,
