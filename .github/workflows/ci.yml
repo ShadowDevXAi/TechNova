@@ -23,8 +23,20 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
       - name: Compile backend modules
         run: python -m compileall -q backend/app
+      - name: Import API and validate route configuration
+        working-directory: backend
+        env:
+          MONGODB_URI: mongodb://127.0.0.1:27017/technova_ci
+          JWT_SECRET: technova-ci-only-secret-key-with-more-than-32-characters
+          BOOTSTRAP_FOUNDER_NAME: CI Founder
+          BOOTSTRAP_FOUNDER_EMAIL: ci-founder@example.com
+          BOOTSTRAP_FOUNDER_PASSWORD: ci-only-not-a-real-password-123
+        run: |
+          python -c "from app.main import app; from app.routes.hub import HUB_COLLECTIONS, HUB_STAFF; expected = {'projects', 'challenges', 'events', 'resources', 'discussions', 'rewards', 'attendance', 'polls', 'mentorship', 'messages', 'certificates'}; assert set(HUB_COLLECTIONS) == expected; assert {'Founder', 'Core Management', 'Faculty'} == HUB_STAFF; print('API imports and Hub route configuration are valid.')"
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
