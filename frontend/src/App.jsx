@@ -2038,7 +2038,13 @@ function App() {
                   </div>
                   <span className="common-task-count">{filteredTaskRows.length} tasks</span>
                 </div>
-                <div className="kanban-scroll-hint"><span>← Scroll horizontally to explore task stages →</span></div>
+                <div className="kanban-mobile-nav">
+                  <span>Swipe to view all stages</span>
+                  <div>
+                    <button type="button" aria-label="Previous task column" onClick={(e) => e.currentTarget.closest(".kanban-task-board")?.querySelector(".kanban-lanes")?.scrollBy({ left: -260, behavior: "smooth" })}>‹</button>
+                    <button type="button" aria-label="Next task column" onClick={(e) => e.currentTarget.closest(".kanban-task-board")?.querySelector(".kanban-lanes")?.scrollBy({ left: 260, behavior: "smooth" })}>›</button>
+                  </div>
+                </div>
                 <div className="kanban-lanes">
                   {[
                     { key: "Todo", title: "To do", tone: "todo" },
