@@ -2263,7 +2263,7 @@ async def list_audit(limit: int = 50, user: dict = Depends(allow("Founder"))):
 HUB_COLLECTIONS = {
     "projects": db.hub_projects, "challenges": db.hub_challenges,
     "events": db.hub_events, "resources": db.hub_resources,
-    "discussions": db.hub_discussions, "rewards": db.hub_rewards,
+    "discussions": db.hub_discussions, "rewards": db.hub_rewards, "attendance": db.hub_attendance,
 }
 HUB_STAFF = {"Founder", "Core Management", "Faculty"}
 
@@ -2296,6 +2296,9 @@ async def hub_profile(user: dict = Depends(get_current_user)):
 async def hub_list(collection: str, user: dict = Depends(get_current_user)):
     target=HUB_COLLECTIONS.get(collection)
     if target is None: raise HTTPException(404,"Hub section not found")
+    if collection=="attendance":
+        docs=await db.hub_attendance.find({"status":"Open"}).sort("created_at",-1).to_list(100)
+        return [{"id":str(x["_id"]),"title":x["title"],"description":"","status":x["status"],"category":"Attendance","url":"","created_by":"","created_at":x.get("created_at"),"due_date":"","points":0,"members":[],"comments":[],"code":x["code"] if user.get("role") in HUB_STAFF else None,"attendee_count":len(x.get("attendees",[])),"checked_in":str(user["_id"]) in x.get("attendees",[])} for x in docs]
     query={"status":{"$ne":"Archived"}}
     if collection=="projects" and user.get("role")=="Member":
         query={"$and":[{"status":{"$ne":"Archived"}},{"$or":[{"visibility":"Club"},{"members":str(user["_id"])}]}]}
@@ -2309,6 +2312,14 @@ async def hub_create(collection: str, request: Request, user: dict = Depends(get
     if user.get("role") not in HUB_STAFF and collection!="discussions":
         raise HTTPException(403,"Only club management can publish this item")
     data=await request.json()
+    if collection=="attendance":
+        title=str(data.get("title","")).strip()[:120]
+        if len(title)<3: raise HTTPException(422,"Session title is required")
+        code=token_urlsafe(7)
+        doc={"title":title,"code":code,"status":"Open","created_by":user["_id"],"created_at":utcnow(),"attendees":[]}
+        result=await db.hub_attendance.insert_one(doc)
+        await audit(user,"hub_attendance_opened",str(result.inserted_id),{"title":title},request)
+        return {"id":str(result.inserted_id),"title":title,"code":code,"status":"Open"}
     title=str(data.get("title","")).strip()[:120]
     if len(title)<3: raise HTTPException(422,"Title must contain at least 3 characters")
     url=str(data.get("url","")).strip()[:500]
