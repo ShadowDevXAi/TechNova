@@ -46,7 +46,8 @@ def task_credit_value(task: dict) -> int:
     return TASK_CREDIT_VALUES.get(task.get("difficulty_rank", "F"), TASK_CREDIT_VALUES["F"])
 
 def member_rank(credits: int) -> str:
-    return next(rank for rank, threshold in MEMBER_RANK_THRESHOLDS if credits >= threshold)
+    # Negative balances are valid after penalties; F is the minimum rank.
+    return next((rank for rank, threshold in MEMBER_RANK_THRESHOLDS if credits >= threshold), "F")
 
 def oid(value: str) -> ObjectId:
     if not ObjectId.is_valid(value):
