@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   LayoutDashboard,
   Users,
@@ -2144,7 +2145,7 @@ function App() {
                 </div>
                 {!tasks.length && <div className="empty">No tasks created yet.</div>}
               </div>
-              {selectedTaskDetail && (
+              {selectedTaskDetail && createPortal((
                 <div className="task-detail-backdrop" onClick={() => setSelectedTaskDetail(null)}>
                   <section className="task-detail-modal" role="dialog" aria-modal="true" aria-labelledby="task-detail-title" onClick={(e) => e.stopPropagation()}>
                     <header className="task-detail-header">
@@ -2196,7 +2197,7 @@ function App() {
                     <footer className="task-detail-footer"><button type="button" onClick={() => setSelectedTaskDetail(null)}>Close details</button></footer>
                   </section>
                 </div>
-              )}
+              ), document.body)}
                             <div className="panel common-task-board">
                 <div className="panelhead">
                   <div>
