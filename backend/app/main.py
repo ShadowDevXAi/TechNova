@@ -2256,3 +2256,106 @@ async def list_audit(limit: int = 50, user: dict = Depends(allow("Founder"))):
         "created_at": x.get("created_at"),
         "details": x.get("details", {}),
     } for x in docs]
+
+
+# TechNova Hub: authenticated collaboration modules
+HUB_COLLECTIONS = {
+    "projects": db.hub_projects, "challenges": db.hub_challenges,
+    "events": db.hub_events, "resources": db.hub_resources,
+    "discussions": db.hub_discussions, "rewards": db.hub_rewards,
+}
+HUB_STAFF = {"Founder", "Core Management", "Faculty"}
+
+def hub_clean(doc):
+    return {k: (str(v) if k == "_id" else v) for k,v in {
+        "_id":doc["_id"],"type":doc.get("type",""),"title":doc.get("title",""),
+        "description":doc.get("description",""),"status":doc.get("status","Open"),
+        "category":doc.get("category",""),"url":doc.get("url",""),
+        "team":doc.get("team",""),"created_by":doc.get("created_by_name",""),
+        "created_at":doc.get("created_at"),"due_date":doc.get("due_date"),
+        "points":doc.get("points",0),"members":doc.get("members",[]),
+        "comments":doc.get("comments",[]),
+    }.items()}
+
+@app.get("/api/hub/profile")
+async def hub_profile(user: dict = Depends(get_current_user)):
+    uid=user["_id"]
+    done=await db.tasks.count_documents({"assignee_id":uid,"status":"Done"})
+    review=await db.tasks.count_documents({"assignee_id":uid,"status":"In review"})
+    credits=await member_credit_balance(uid)
+    xp=done*100+review*25
+    level=max(1,int((xp/100)**0.5)+1)
+    achievements=[]
+    for threshold,title,desc,icon in [(1,"First Mission","Complete your first task","🎯"),(10,"Task Machine","Complete 10 tasks","⚡"),(25,"Consistent Builder","Complete 25 tasks","🛠️")]:
+        if done>=threshold: achievements.append({"title":title,"description":desc,"icon":icon})
+    if credits>=100: achievements.append({"title":"Credit Century","description":"Earn 100 credits","icon":"🏅"})
+    return {"xp":xp,"level":level,"next_level_xp":level*level*100,"completed_tasks":done,"pending_reviews":review,"credits":credits,"achievements":achievements}
+
+@app.get("/api/hub/{collection}")
+async def hub_list(collection: str, user: dict = Depends(get_current_user)):
+    target=HUB_COLLECTIONS.get(collection)
+    if target is None: raise HTTPException(404,"Hub section not found")
+    query={"status":{"$ne":"Archived"}}
+    if collection=="projects" and user.get("role")=="Member":
+        query={"$and":[{"status":{"$ne":"Archived"}},{"$or":[{"visibility":"Club"},{"members":str(user["_id"])}]}]}
+    docs=await target.find(query).sort("created_at",-1).to_list(200)
+    return [hub_clean(x) for x in docs]
+
+@app.post("/api/hub/{collection}",status_code=201)
+async def hub_create(collection: str, request: Request, user: dict = Depends(get_current_user)):
+    target=HUB_COLLECTIONS.get(collection)
+    if target is None: raise HTTPException(404,"Hub section not found")
+    if user.get("role") not in HUB_STAFF and collection!="discussions":
+        raise HTTPException(403,"Only club management can publish this item")
+    data=await request.json()
+    title=str(data.get("title","")).strip()[:120]
+    if len(title)<3: raise HTTPException(422,"Title must contain at least 3 characters")
+    url=str(data.get("url","")).strip()[:500]
+    if url and not re.match(r"^https?://",url,re.I): raise HTTPException(422,"Use a valid http or https link")
+    doc={"type":collection,"title":title,"description":str(data.get("description","")).strip()[:4000],
+         "status":"Open","category":str(data.get("category","")).strip()[:60],"url":url,
+         "team":str(data.get("team","")).strip()[:80],"visibility":"Club","created_by":user["_id"],
+         "created_by_name":user.get("name","Member"),"created_at":utcnow(),"due_date":str(data.get("due_date",""))[:40],
+         "points":max(0,min(int(data.get("points",0) or 0),1000)),"members":[str(user["_id"])],"comments":[],"submissions":[]}
+    res=await target.insert_one(doc)
+    await audit(user,f"hub_{collection}_created",str(res.inserted_id),{"title":title},request)
+    return hub_clean({"_id":res.inserted_id,**doc})
+
+@app.post("/api/hub/projects/{item_id}/join")
+async def hub_join_project(item_id: str, request: Request, user: dict = Depends(get_current_user)):
+    project=await db.hub_projects.find_one({"_id":oid(item_id),"status":{"$ne":"Archived"}})
+    if not project: raise HTTPException(404,"Project not found")
+    await db.hub_projects.update_one({"_id":project["_id"]},{"$addToSet":{"members":str(user["_id"])}})
+    await audit(user,"hub_project_joined",item_id,{"title":project.get("title")},request)
+    return {"ok":True}
+
+@app.post("/api/hub/challenges/{item_id}/submit")
+async def hub_submit_challenge(item_id: str, request: Request, user: dict = Depends(get_current_user)):
+    challenge=await db.hub_challenges.find_one({"_id":oid(item_id),"status":{"$ne":"Archived"}})
+    if not challenge: raise HTTPException(404,"Challenge not found")
+    data=await request.json(); code=str(data.get("code",""))
+    if not code.strip() or len(code)>50000: raise HTTPException(422,"Code is required and limited to 50 KB")
+    entry={"user_id":str(user["_id"]),"member_name":user.get("name","Member"),"language":str(data.get("language",""))[:40],"code":code,"submitted_at":utcnow(),"review_status":"Submitted"}
+    await db.hub_challenges.update_one({"_id":challenge["_id"]},{"$push":{"submissions":entry}})
+    await audit(user,"hub_challenge_submitted",item_id,{"language":entry["language"]},request)
+    return {"ok":True,"message":"Code saved for review. Secure code execution is not configured."}
+
+@app.post("/api/hub/discussions/{item_id}/comment")
+async def hub_discussion_comment(item_id: str, request: Request, user: dict = Depends(get_current_user)):
+    doc=await db.hub_discussions.find_one({"_id":oid(item_id)})
+    if not doc: raise HTTPException(404,"Discussion not found")
+    data=await request.json(); message=str(data.get("message","")).strip()
+    if not message or len(message)>2000: raise HTTPException(422,"Comment must be 1–2000 characters")
+    comment={"user_id":str(user["_id"]),"name":user.get("name","Member"),"role":user.get("role","Member"),"message":message,"created_at":utcnow()}
+    await db.hub_discussions.update_one({"_id":doc["_id"]},{"$push":{"comments":comment}})
+    return {"ok":True}
+
+@app.post("/api/hub/{collection}/{item_id}/archive")
+async def hub_archive(collection: str,item_id: str,request: Request,user: dict=Depends(allow("Founder","Core Management"))):
+    target=HUB_COLLECTIONS.get(collection)
+    if target is None: raise HTTPException(404,"Hub section not found")
+    result=await target.update_one({"_id":oid(item_id)},{"$set":{"status":"Archived","archived_at":utcnow(),"archived_by":user["_id"]}})
+    if not result.matched_count: raise HTTPException(404,"Record not found")
+    await audit(user,f"hub_{collection}_archived",item_id,{},request)
+    return {"ok":True}
+
