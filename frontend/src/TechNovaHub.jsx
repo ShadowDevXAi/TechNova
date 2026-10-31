@@ -50,7 +50,7 @@ export default function TechNovaHub({token,user}) {
         call("/hub/rewards/requests"),
         call("/hub/mentorship/requests"),
         call("/hub/messages"),
-        call("/members"),
+        call("/hub/members/active"),
         call("/hub/certificates")
       ]);
       setProfile(p);
