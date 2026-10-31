@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { BriefcaseBusiness, Code2, CalendarDays, BookOpen, MessageSquare, Gift, Plus, ExternalLink, Trophy, Zap, Users, Send, Archive } from "lucide-react";
+import { BriefcaseBusiness, Code2, CalendarDays, BookOpen, MessageSquare, Gift, Plus, ExternalLink, Trophy, Zap, Users, Send, Archive, ClipboardCheck } from "lucide-react";
 
 const API = (import.meta.env.VITE_API_BASE_URL || "https://technova-5h0g.onrender.com").replace(/\/$/, "");
 const sections = [
   ["projects","Projects",BriefcaseBusiness],["challenges","Coding Arena",Code2],
   ["events","Events",CalendarDays],["resources","Library",BookOpen],
-  ["discussions","Community",MessageSquare],["rewards","Rewards",Gift],
+  ["discussions","Community",MessageSquare],["rewards","Rewards",Gift],["attendance","Attendance",ClipboardCheck],
 ];
 const emptyForm = {title:"",description:"",category:"",url:"",due_date:"",points:0};
 
@@ -21,6 +21,9 @@ export default function TechNovaHub({token,user}) {
   const [code,setCode]=useState({});
   const [language,setLanguage]=useState("C");
   const [comment,setComment]=useState({});
+  const [attendanceCode,setAttendanceCode]=useState("");
+  const [sessionTitle,setSessionTitle]=useState("");
+  const [rewardRequests,setRewardRequests]=useState([]);
   const staff=["Founder","Core Management","Faculty"].includes(user?.role);
   const call=async(path,opts={})=>{
     const res=await fetch(API+"/api"+path,{...opts,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token,...(opts.headers||{})}});
@@ -33,10 +36,14 @@ export default function TechNovaHub({token,user}) {
     try {
       const [p,...lists]=await Promise.all([
         call("/hub/profile"),
-        ...sections.map(([key])=>call("/hub/"+key))
+        ...sections.filter(([key])=>key!=="attendance").map(([key])=>call("/hub/"+key)),
+        call("/hub/attendance"),
+        call("/hub/rewards/requests")
       ]);
       setProfile(p);
-      setData(Object.fromEntries(sections.map(([key],i)=>[key,lists[i]])));
+      const listSections=sections.filter(([key])=>key!=="attendance");
+      setData({...Object.fromEntries(listSections.map(([key],i)=>[key,lists[i]])),attendance:lists[listSections.length]});
+      setRewardRequests(lists[listSections.length+1]);
     } catch(e){setError(e.message);}
   };
   useEffect(()=>{if(token)refresh();},[token]);
@@ -58,6 +65,11 @@ export default function TechNovaHub({token,user}) {
     catch(e){setError(e.message);}
   };
   const items=data[section]||[];
+  const checkIn=async(e)=>{e.preventDefault();try{await call("/hub/attendance/check-in",{method:"POST",body:JSON.stringify({code:attendanceCode})});setAttendanceCode("");setMessage("Attendance recorded.");await refresh();}catch(e){setError(e.message);}};
+  const openAttendance=async(e)=>{e.preventDefault();try{const session=await call("/hub/attendance",{method:"POST",body:JSON.stringify({title:sessionTitle})});setSessionTitle("");setMessage("Session opened. Share code: "+session.code);await refresh();}catch(e){setError(e.message);}};
+  const rsvp=async(id)=>{try{await call("/hub/events/"+id+"/rsvp",{method:"POST"});setMessage("Event registration saved.");await refresh();}catch(e){setError(e.message);}};
+  const requestReward=async(id)=>{try{await call("/hub/rewards/"+id+"/request",{method:"POST"});setMessage("Reward request sent.");await refresh();}catch(e){setError(e.message);}};
+  const decideReward=async(id,decision)=>{try{await call("/hub/rewards/requests/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
   const canCreate=staff||section==="discussions";
   return <main className="hub-page">
     <div className="hub-hero">
@@ -74,7 +86,11 @@ export default function TechNovaHub({token,user}) {
       {canCreate&&<button className="primary hub-add" onClick={()=>setShowForm(v=>!v)}><Plus size={16}/> Create</button>}
     </div>
     {error&&<div className="hub-alert error">{error}</div>}{message&&<div className="hub-alert">{message}</div>}
-    {showForm&&<form className="hub-create" onSubmit={create}><h3>Create {sections.find(x=>x[0]===section)?.[1]}</h3>
+    {section==="attendance"&&<div className="hub-create">
+      {staff&&<form onSubmit={openAttendance}><h3>Open attendance session</h3><input required minLength="3" placeholder="Meeting / workshop title" value={sessionTitle} onChange={e=>setSessionTitle(e.target.value)}/><button className="primary">Generate check-in code</button></form>}
+      <form onSubmit={checkIn}><h3>Member check-in</h3><input required placeholder="Enter code shared by management" value={attendanceCode} onChange={e=>setAttendanceCode(e.target.value)}/><button className="primary">Confirm attendance</button></form>
+    </div>}
+    {showForm&&section!=="attendance"&&<form className="hub-create" onSubmit={create}><h3>Create {sections.find(x=>x[0]===section)?.[1]}</h3>
       <input required minLength="3" placeholder="Title" value={form.title} onChange={e=>setForm(v=>({...v,title:e.target.value}))}/>
       <textarea placeholder="Description and details" rows="3" value={form.description} onChange={e=>setForm(v=>({...v,description:e.target.value}))}/>
       <div className="hub-form-grid"><input placeholder="Category / technology" value={form.category} onChange={e=>setForm(v=>({...v,category:e.target.value}))}/><input placeholder="Resource / GitHub URL (optional)" type="url" value={form.url} onChange={e=>setForm(v=>({...v,url:e.target.value}))}/><input type="date" value={form.due_date} onChange={e=>setForm(v=>({...v,due_date:e.target.value}))}/>{section==="challenges"&&<input type="number" min="0" max="1000" placeholder="Points" value={form.points} onChange={e=>setForm(v=>({...v,points:Number(e.target.value)}))}/>}</div>
@@ -84,10 +100,14 @@ export default function TechNovaHub({token,user}) {
       <div className="hub-card-top"><span>{item.category||sections.find(x=>x[0]===section)?.[1]}</span><small>{item.status}</small></div><h3>{item.title}</h3><p>{item.description||"No description provided."}</p>
       <div className="hub-meta">{item.created_by&&<span>By {item.created_by}</span>}{item.due_date&&<span>Due {item.due_date}</span>}{item.points>0&&<span>{item.points} points</span>}{section==="projects"&&<span><Users size={13}/> {item.members?.length||0} members</span>}</div>
       {section==="projects"&&<button className="secondary" onClick={()=>join(item.id)}>Join project</button>}
+      {section==="events"&&<button className="secondary" onClick={()=>rsvp(item.id)}>Register for event</button>}
+      {section==="rewards"&&<button className="secondary" onClick={()=>requestReward(item.id)}>Request reward</button>}
+      {section==="attendance"&&<div className="hub-meta"><span>{item.attendee_count} checked in</span><span>{item.checked_in?"You are checked in":"Check in with session code"}</span>{staff&&item.code&&<b>Code: {item.code}</b>}</div>}
       {section==="challenges"&&<div className="hub-submit"><select value={language} onChange={e=>setLanguage(e.target.value)}><option>C</option><option>C++</option><option>Python</option><option>Java</option><option>JavaScript</option></select><textarea rows="5" placeholder="Paste your solution code…" value={code[item.id]||""} onChange={e=>setCode(v=>({...v,[item.id]:e.target.value}))}/><button className="primary" onClick={()=>submit(item.id)}>Submit solution</button><small>Submissions are stored for review. No code is executed on the server.</small></div>}
       {section==="discussions"&&<div className="hub-comments">{(item.comments||[]).map((c,i)=><p key={i}><b>{c.name}:</b> {c.message}</p>)}<div><input placeholder="Add a comment…" value={comment[item.id]||""} onChange={e=>setComment(v=>({...v,[item.id]:e.target.value}))}/><button onClick={()=>addComment(item.id)} aria-label="Send comment"><Send size={15}/></button></div></div>}
       {item.url&&<a className="hub-link" href={item.url} target="_blank" rel="noreferrer">Open link <ExternalLink size={14}/></a>}
     </article>)}</div>
+    {section==="rewards"&&<section className="hub-achievements"><h3>Reward request history</h3>{rewardRequests.length===0?<small>No reward requests yet.</small>:rewardRequests.map(r=><article key={r.id}><b>{r.reward_title}</b><small>{r.member_name||"Member"} · {r.status}</small>{staff&&r.status==="Pending"&&<span><button className="secondary" onClick={()=>decideReward(r.id,"Approved")}>Approve</button> <button className="secondary" onClick={()=>decideReward(r.id,"Declined")}>Decline</button></span>}</article>)}</section>}
     <div className="hub-footnote"><Zap size={15}/> XP is calculated from approved task completions. Online code execution, AI assistance and GitHub account linking need separately configured secure providers.</div>
   </main>;
 }
