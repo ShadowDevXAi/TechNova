@@ -2265,6 +2265,7 @@ HUB_COLLECTIONS = {
     "events": db.hub_events, "resources": db.hub_resources,
     "discussions": db.hub_discussions, "rewards": db.hub_rewards, "attendance": db.hub_attendance,
     "polls": db.hub_polls, "mentorship": db.hub_mentorship,
+    "messages": db.hub_messages, "certificates": db.hub_certificates,
 }
 HUB_STAFF = {"Founder", "Core Management", "Faculty"}
 
@@ -2297,6 +2298,13 @@ async def hub_profile(user: dict = Depends(get_current_user)):
 async def hub_list(collection: str, user: dict = Depends(get_current_user)):
     target=HUB_COLLECTIONS.get(collection)
     if target is None: raise HTTPException(404,"Hub section not found")
+    if collection=="messages":
+        uid=str(user["_id"])
+        docs=await db.hub_messages.find({"$or":[{"sender_id":uid},{"recipient_id":uid}]}).sort("created_at",-1).to_list(200)
+        return [{"id":str(x["_id"]),"sender":x["sender_name"],"recipient":x["recipient_name"],"sender_id":x["sender_id"],"recipient_id":x["recipient_id"],"message":x["message"],"created_at":x["created_at"]} for x in docs]
+    if collection=="certificates":
+        docs=await db.hub_certificates.find({"user_id":str(user["_id"])}).to_list(50)
+        return [{"id":str(x["_id"]),"name":x["name"],"code":x["code"],"completed_tasks":x["completed_tasks"],"issued_at":x["issued_at"]} for x in docs]
     if collection=="attendance":
         docs=await db.hub_attendance.find({"status":"Open"}).sort("created_at",-1).to_list(100)
         return [{"id":str(x["_id"]),"title":x["title"],"description":"","status":x["status"],"category":"Attendance","url":"","created_by":"","created_at":x.get("created_at"),"due_date":"","points":0,"members":[],"comments":[],"code":x["code"] if user.get("role") in HUB_STAFF else None,"attendee_count":len(x.get("attendees",[])),"checked_in":str(user["_id"]) in x.get("attendees",[])} for x in docs]
@@ -2313,6 +2321,16 @@ async def hub_create(collection: str, request: Request, user: dict = Depends(get
     if user.get("role") not in HUB_STAFF and collection!="discussions":
         raise HTTPException(403,"Only club management can publish this item")
     data=await request.json()
+    if collection=="messages":
+        recipient_id=str(data.get("recipient_id","")).strip()
+        message=str(data.get("message","")).strip()
+        if not recipient_id or not message or len(message)>2000: raise HTTPException(422,"Choose a member and write a message up to 2000 characters")
+        recipient=await db.users.find_one({"_id":oid(recipient_id),"status":"Active"})
+        if not recipient: raise HTTPException(404,"Active recipient not found")
+        doc={"sender_id":str(user["_id"]),"sender_name":user.get("name","Member"),"recipient_id":str(recipient["_id"]),"recipient_name":recipient.get("name","Member"),"message":message,"created_at":utcnow()}
+        await db.hub_messages.insert_one(doc)
+        await create_notification(recipient,"New TechNova message",f'{user.get("name","A member")} sent you a message.')
+        return {"ok":True}
     if collection=="attendance":
         title=str(data.get("title","")).strip()[:120]
         if len(title)<3: raise HTTPException(422,"Session title is required")
