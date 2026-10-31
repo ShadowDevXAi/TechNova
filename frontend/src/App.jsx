@@ -2167,12 +2167,14 @@ function App() {
                   {commonTasks.map((item) => (
                     <article className="common-task-card" key={item.id}>
                       <div className="common-task-meta">
-                        <span className="pill">{item.priority}</span>
-                        {item.task_state === "Suspended" && <span className="schedule-state paused">Paused</span>}
-                        {item.recurrence === "daily" && <span className="schedule-state active">Daily mission</span>}
-                        {item.auto_generated && <span className="schedule-state active">{(item.generation_source || "").toLowerCase().includes("gemini") ? "Gemini AI" : "Auto-generated"}</span>}
-                        <span className={"difficulty-badge rank-" + (item.difficulty_rank || "F").toLowerCase()}>{item.difficulty_rank || "F"} · {item.credits_reward || 5} CR</span>
-                        <small>{item.project} · {item.programming_language || "General"}</small>
+                        <div className="common-task-badges">
+                          <span className="pill">{item.priority}</span>
+                          <span className={"difficulty-badge rank-" + (item.difficulty_rank || "F").toLowerCase()}>{item.difficulty_rank || "F"} · {item.credits_reward || 5} CR</span>
+                          {item.task_state === "Suspended" && <span className="schedule-state paused">Paused</span>}
+                          {item.recurrence === "daily" && <span className="schedule-state active">Daily mission</span>}
+                          {item.auto_generated && <span className="schedule-state active">{(item.generation_source || "").toLowerCase().includes("gemini") ? "Gemini AI" : "Auto-generated"}</span>}
+                        </div>
+                        <small className="common-task-category">{item.project || "Club projects"} <span>·</span> {item.programming_language || "General"}</small>
                       </div>
                       <h3>{item.title}</h3>
                       <p>{item.description || "No additional description provided."}</p>
