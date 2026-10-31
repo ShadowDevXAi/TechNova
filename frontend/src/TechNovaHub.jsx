@@ -70,7 +70,8 @@ export default function TechNovaHub({token,user}) {
   const rsvp=async(id)=>{try{await call("/hub/events/"+id+"/rsvp",{method:"POST"});setMessage("Event registration saved.");await refresh();}catch(e){setError(e.message);}};
   const requestReward=async(id)=>{try{await call("/hub/rewards/"+id+"/request",{method:"POST"});setMessage("Reward request sent.");await refresh();}catch(e){setError(e.message);}};
   const decideReward=async(id,decision)=>{try{await call("/hub/rewards/requests/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
-  const canCreate=staff||section==="discussions";
+  const reviewChallenge=async(item,userId,decision)=>{try{await call("/hub/challenges/"+item.id+"/review",{method:"POST",body:JSON.stringify({user_id:userId,decision,feedback:decision==="Accepted"?"Approved by club management":"Please revise and resubmit."})});setMessage("Challenge submission reviewed.");await refresh();}catch(e){setError(e.message);}};
+  const canCreate=(staff&&section!=="attendance")||section==="discussions";
   return <main className="hub-page">
     <div className="hub-hero">
       <div><span className="hub-eyebrow">TECHNOVA ECOSYSTEM</span><h1>Club Hub</h1><p>Build projects, sharpen skills, learn together and grow as a developer.</p></div>
@@ -103,6 +104,7 @@ export default function TechNovaHub({token,user}) {
       {section==="events"&&<button className="secondary" onClick={()=>rsvp(item.id)}>Register for event</button>}
       {section==="rewards"&&<button className="secondary" onClick={()=>requestReward(item.id)}>Request reward</button>}
       {section==="attendance"&&<div className="hub-meta"><span>{item.attendee_count} checked in</span><span>{item.checked_in?"You are checked in":"Check in with session code"}</span>{staff&&item.code&&<b>Code: {item.code}</b>}</div>}
+      {section==="challenges"&&staff&&(item.submissions||[]).map((sub,i)=><div className="hub-review" key={i}><b>{sub.member_name} · {sub.language}</b><small>{sub.review_status}</small><pre>{sub.code}</pre>{sub.review_feedback&&<p>{sub.review_feedback}</p>}<div><button className="secondary" onClick={()=>reviewChallenge(item,sub.user_id,"Accepted")}>Accept</button><button className="secondary" onClick={()=>reviewChallenge(item,sub.user_id,"Needs changes")}>Request changes</button></div></div>)}
       {section==="challenges"&&<div className="hub-submit"><select value={language} onChange={e=>setLanguage(e.target.value)}><option>C</option><option>C++</option><option>Python</option><option>Java</option><option>JavaScript</option></select><textarea rows="5" placeholder="Paste your solution code…" value={code[item.id]||""} onChange={e=>setCode(v=>({...v,[item.id]:e.target.value}))}/><button className="primary" onClick={()=>submit(item.id)}>Submit solution</button><small>Submissions are stored for review. No code is executed on the server.</small></div>}
       {section==="discussions"&&<div className="hub-comments">{(item.comments||[]).map((c,i)=><p key={i}><b>{c.name}:</b> {c.message}</p>)}<div><input placeholder="Add a comment…" value={comment[item.id]||""} onChange={e=>setComment(v=>({...v,[item.id]:e.target.value}))}/><button onClick={()=>addComment(item.id)} aria-label="Send comment"><Send size={15}/></button></div></div>}
       {item.url&&<a className="hub-link" href={item.url} target="_blank" rel="noreferrer">Open link <ExternalLink size={14}/></a>}
