@@ -2152,7 +2152,15 @@ function App() {
                         <span><b>Reward</b>{selectedTaskDetail.status === "Done" ? (selectedTaskDetail.credits_awarded || 0) : (selectedTaskDetail.credits_reward || 5)} credits</span>
                         <span><b>Project</b>{selectedTaskDetail.project || "Club project"}</span>
                         <span><b>Language</b>{selectedTaskDetail.programming_language || "General"}</span>
+                        {selectedTaskDetail.accepted_count !== undefined && <span><b>Accepted</b>{selectedTaskDetail.accepted_count ?? selectedTaskDetail.accepted_members?.length ?? 0} members</span>}
+                        {selectedTaskDetail.completed_count !== undefined && <span><b>Completed</b>{selectedTaskDetail.completed_count ?? selectedTaskDetail.completed_members?.length ?? 0} members</span>}
                       </div>
+                      {(selectedTaskDetail.accepted_members?.length > 0 || selectedTaskDetail.completed_members?.length > 0) && (
+                        <div className="task-detail-member-lists">
+                          {selectedTaskDetail.accepted_members?.length > 0 && <p><b>Accepted by:</b> {selectedTaskDetail.accepted_members.join(", ")}</p>}
+                          {selectedTaskDetail.completed_members?.length > 0 && <p><b>Completed by:</b> {selectedTaskDetail.completed_members.join(", ")}</p>}
+                        </div>
+                      )}
                       {selectedTaskDetail.review_feedback && <div className="kanban-feedback">Review feedback: {selectedTaskDetail.review_feedback}</div>}
                       {selectedTaskDetail.task_state === "Suspended" && <div className="kanban-paused-note">This task is paused by management.</div>}
                       {selectedTaskDetail.status === "Done" && selectedTaskDetail.completion_confirmed_by_name && <p className="kanban-confirmed">Confirmed by {selectedTaskDetail.completion_confirmed_by_name}</p>}
@@ -2171,7 +2179,7 @@ function App() {
                 </div>
                 <div className="common-task-grid">
                   {commonTasks.map((item) => (
-                    <article className="common-task-card" key={item.id}>
+                    <article className="common-task-card" key={item.id} role="button" tabIndex={0} aria-label={`View details for ${item.title}`} onClick={() => setSelectedTaskDetail(item)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedTaskDetail(item); } }}>
                       <div className="common-task-meta">
                         <div className="common-task-badges">
                           <span className="pill">{item.priority}</span>
@@ -2208,7 +2216,7 @@ function App() {
                         </div>
                       </div>
                       {user.role === "Member" && item.task_state !== "Suspended" && !item.response_status && (
-                        <div className="common-task-actions">
+                        <div className="common-task-actions" onClick={(e) => e.stopPropagation()}>
                           <button className="primary" onClick={() => respondToCommonTask(item, "accepted")}>
                             <Check size={14} /> Accept task
                           </button>
@@ -2225,7 +2233,7 @@ function App() {
                       {isAdmin && (
                         <>
                           <small className="common-task-creator">Posted by {item.created_by_name}</small>
-                          <div className="common-task-actions">
+                          <div className="common-task-actions" onClick={(e) => e.stopPropagation()}>
                             <button className="secondary" onClick={() => manageCommonTask(item, item.task_state === "Suspended" ? "resume" : "pause")}>{item.task_state === "Suspended" ? "Resume mission" : "Pause mission"}</button>
                             <button className="textbtn danger" onClick={() => manageCommonTask(item, "delete")}>Archive</button>
                           </div>
