@@ -1959,7 +1959,238 @@ function App() {
                     Assign work, track progress, and keep project delivery visible.
                   </p>
                 </div>
-                {isAdmin && (
+  
+                            <div className="task-status-toolbar">
+                <div className="task-status-heading">
+                  <b>{isAdmin ? "Club-wide task status" : "My task status"}</b>
+                  <small>{isAdmin ? "Includes tasks assigned to every member and team." : "Live refresh every 15 seconds"}</small>
+                </div>
+                <div className="task-status-tabs" role="group" aria-label="Filter tasks by status">
+                  {[
+                    ["All", "All tasks"],
+                    ["Todo", "To do"],
+                    ["In progress", "In progress"],
+                    ["Review", "In review"],
+                    ["Done", "Completed"],
+                  ].map(([value, label]) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={"task-filter-chip " + (taskStatusFilter === value ? "active" : "")}
+                      aria-pressed={taskStatusFilter === value}
+                      onClick={() => setTaskStatusFilter(value)}
+                    >
+                      {label}<span>{taskStatusCounts[value]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+                            <div className="stats compact four">
+                {[
+                  ["All tasks", tasks.length],
+                  [
+                    "In progress",
+                    tasks.filter((t) => t.status === "In progress").length,
+                  ],
+                  [
+                    "In review",
+                    tasks.filter((t) => t.status === "Review").length,
+                  ],
+                  [
+                    "Completed",
+                    tasks.filter((t) => t.status === "Done").length,
+                  ],
+                ].map((x) => (
+                  <div className="stat" key={x[0]}>
+                    <small>{x[0]}</small>
+                    <strong>{x[1]}</strong>
+                  </div>
+                ))}
+              </div>
+
+                            <div className="panel kanban-task-board">
+                <div className="panelhead kanban-board-heading">
+                  <div>
+                    <b>{isAdmin ? "All club tasks" : "My task board"}</b>
+                    <small>{isAdmin ? "Club-wide task overview · Founder and Core Management" : "Your assigned tasks"} · {filteredTaskRows.length} visible / {tasks.length} total</small>
+                  </div>
+                  <span className="common-task-count">{filteredTaskRows.length} tasks</span>
+                </div>
+                <div className="kanban-scroll-hint"><span>← Scroll horizontally to explore task stages →</span></div>
+                <div className="kanban-lanes">
+                  {[
+                    { key: "Todo", title: "To do", tone: "todo" },
+                    { key: "In progress", title: "Doing", tone: "doing" },
+                    { key: "Review", title: "In review", tone: "review" },
+                    { key: "Done", title: "Done", tone: "done" },
+                  ].map((lane) => {
+                    const laneTasks = filteredTaskRows.filter((task) => task.status === lane.key);
+                    return (
+                      <section className={"kanban-lane lane-" + lane.tone} key={lane.key}>
+                        <header className="kanban-lane-heading">
+                          <span className="kanban-lane-dot" />
+                          <b>{lane.title}</b>
+                          <span className="kanban-lane-count">{laneTasks.length}</span>
+                        </header>
+                        <div className="kanban-lane-cards">
+                          {laneTasks.map((t) => (
+                            <article className="kanban-task-card" key={t.id}>
+                              <div className="kanban-task-top">
+                                <small>{t.id.slice(-6)} · {t.project || "Club project"}</small>
+                                <span className={"pill " + (t.priority || "Medium").toLowerCase()}>{t.priority || "Medium"}</span>
+                              </div>
+                              <h3>{t.title}</h3>
+                              {t.description && <p>{t.description}</p>}
+                              <div className="kanban-task-tags">
+                                <span className={"difficulty-badge rank-" + (t.difficulty_rank || "F").toLowerCase()}>{t.difficulty_rank || "F"} rank</span>
+                                <span>{t.programming_language || "General"}</span>
+                                {t.recurrence === "daily" && <span className="schedule-state active">Daily</span>}
+                                {t.auto_generated && <span className="schedule-state active">Auto-generated</span>}
+                                {t.task_state === "Suspended" && <span className="schedule-state paused">Paused</span>}
+                              </div>
+                              <div className="kanban-task-details">
+                                <span><b>Assigned to</b>{t.assignee_name || "Unassigned"}</span>
+                                <span><b>Due date</b>{t.due_date || "Not set"}</span>
+                                <span><b>Reward</b>{t.status === "Done" ? (t.credits_awarded || 0) : (t.credits_reward || 5)} credits</span>
+                              </div>
+                              {t.review_feedback && <div className="kanban-feedback">Feedback: {t.review_feedback}</div>}
+                              {t.status === "Done" && t.completion_confirmed_by_name && <small className="kanban-confirmed">Confirmed by {t.completion_confirmed_by_name}</small>}
+                              {t.task_state === "Suspended" && <div className="kanban-paused-note">Paused by management</div>}
+                              {user.role === "Member" && t.assignee_id === user.id && t.status !== "Done" && t.task_state !== "Suspended" && (
+                                <label className="kanban-status-control">Update progress
+                                  <select
+                                    value={t.status}
+                                    onChange={(e) => {
+                                      const nextStatus = e.target.value;
+                                      if (nextStatus === "Review") openTaskSubmission(t);
+                                      else updateTask(t, { status: nextStatus });
+                                    }}
+                                  >
+                                    {t.status === "Todo" && <option value="Todo">To do</option>}
+                                    {t.status === "Todo" && <option value="In progress">In progress</option>}
+                                    {t.status === "In progress" && <option value="In progress">In progress</option>}
+                                    {t.status === "In progress" && <option value="Review">Submit for review</option>}
+                                    {t.status === "Review" && <option value="Review">In review</option>}
+                                    {t.status === "Review" && <option value="In progress">Return to work</option>}
+                                  </select>
+                                </label>
+                              )}
+                              <div className="kanban-card-actions">
+                                <button className="textbtn" onClick={async () => {
+                                  const comment = prompt("Add a task comment");
+                                  if (comment) {
+                                    try {
+                                      await api(`/tasks/${t.id}/comments`, token, { method: "POST", body: JSON.stringify({ text: comment }) });
+                                      notify("Comment added");
+                                    } catch (e) { fail(e); }
+                                  }
+                                }}>Comment</button>
+                                <label className="filebtn">Attach
+                                  <input type="file" hidden onChange={(e) => e.target.files?.[0] && uploadAttachment(t.id, e.target.files[0])} />
+                                </label>
+                                {isAdmin && (
+                                  <>
+                                    <button className="textbtn" onClick={() => toggleTaskPause(t)}>{t.task_state === "Suspended" ? "Resume" : "Pause"}</button>
+                                    <button className="textbtn danger" onClick={() => archiveTask(t)}>Archive</button>
+                                  </>
+                                )}
+                              </div>
+                            </article>
+                          ))}
+                          {!laneTasks.length && <div className="kanban-lane-empty">No tasks in this stage</div>}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+                {!tasks.length && <div className="empty">No tasks created yet.</div>}
+              </div>
+                            <div className="panel common-task-board">
+                <div className="panelhead">
+                  <div>
+                    <b>Daily Task Board · Open volunteer missions</b>
+                    <small>Daily AI missions are randomly generated here. Members may accept or decline; no one is assigned automatically.</small>
+                  </div>
+                  <span className="common-task-count">{commonTasks.length} open</span>
+                </div>
+                <div className="common-task-grid">
+                  {commonTasks.map((item) => (
+                    <article className="common-task-card" key={item.id}>
+                      <div className="common-task-meta">
+                        <div className="common-task-badges">
+                          <span className="pill">{item.priority}</span>
+                          <span className={"difficulty-badge rank-" + (item.difficulty_rank || "F").toLowerCase()}>{item.difficulty_rank || "F"} · {item.credits_reward || 5} CR</span>
+                          {item.task_state === "Suspended" && <span className="schedule-state paused">Paused</span>}
+                          {item.recurrence === "daily" && <span className="schedule-state active">Daily mission</span>}
+                          {item.auto_generated && <span className="schedule-state active">{(item.generation_source || "").toLowerCase().includes("gemini") ? "Gemini AI" : "Auto-generated"}</span>}
+                        </div>
+                        <small className="common-task-category">{item.project || "Club projects"} <span>·</span> {item.programming_language || "General"}</small>
+                      </div>
+                      <h3>{item.title}</h3>
+                      <p>{item.description || "No additional description provided."}</p>
+                      <small className="common-task-due">Due: {item.due_date || "No due date"}</small>
+                      <div className="common-task-progress">
+                        <div>
+                          <b>Accepted · {item.accepted_count ?? item.accepted_members?.length ?? 0}</b>
+                          <div className="common-task-member-list" aria-label="Members who accepted this task">
+                            {item.accepted_members?.length
+                              ? item.accepted_members.map((name, index) => (
+                                  <span className="member-name-chip accepted" key={name + "-" + index}>{name}</span>
+                                ))
+                              : <small>No one has accepted yet.</small>}
+                          </div>
+                        </div>
+                        <div>
+                          <b>Completed · {item.completed_count ?? item.completed_members?.length ?? 0}</b>
+                          <div className="common-task-member-list" aria-label="Members who completed this task">
+                            {item.completed_members?.length
+                              ? item.completed_members.map((name, index) => (
+                                  <span className="member-name-chip completed" key={name + "-" + index}>{name}</span>
+                                ))
+                              : <small>No one has completed this task yet.</small>}
+                          </div>
+                        </div>
+                      </div>
+                      {user.role === "Member" && item.task_state !== "Suspended" && !item.response_status && (
+                        <div className="common-task-actions">
+                          <button className="primary" onClick={() => respondToCommonTask(item, "accepted")}>
+                            <Check size={14} /> Accept task
+                          </button>
+                          <button className="secondary" onClick={() => respondToCommonTask(item, "declined")}>
+                            Reject mission
+                          </button>
+                        </div>
+                      )}
+                      {item.response_status && (
+                        <div className={"common-task-response " + item.response_status}>
+                          {item.response_status === "accepted" ? "✓ You accepted this task — it is in your task list." : "You rejected this mission."}
+                        </div>
+                      )}
+                      {isAdmin && (
+                        <>
+                          <small className="common-task-creator">Posted by {item.created_by_name}</small>
+                          <div className="common-task-actions">
+                            <button className="secondary" onClick={() => manageCommonTask(item, item.task_state === "Suspended" ? "resume" : "pause")}>{item.task_state === "Suspended" ? "Resume mission" : "Pause mission"}</button>
+                            <button className="textbtn danger" onClick={() => manageCommonTask(item, "delete")}>Archive</button>
+                          </div>
+                        </>
+                      )}
+                    </article>
+                  ))}
+                  {!commonTasks.length && (
+                    <div className="empty common-empty">No daily missions are available right now. The next random mission will appear automatically.</div>
+                  )}
+                </div>
+              </div>
+
+              <details className="task-operations-disclosure" open={reviewQueue.length > 0}>
+                <summary>
+                  <span><b>Management & automation</b><small>Completion approvals, recurring missions and AI generation settings</small></span>
+                  <span className="operations-summary-count">{reviewQueue.length} pending approvals</span>
+                </summary>
+                <div className="task-operations-content">
+                  {isAdmin && (
                   <button
                     className="primary"
                     onClick={() => {
@@ -1981,7 +2212,7 @@ function App() {
                   </button>
                 )}
               </div>
-              {isAdmin && (
+                  {isAdmin && (
                 <div className="panel review-queue-panel">
                   <div className="panelhead">
                     <div>
@@ -2155,227 +2386,8 @@ function App() {
                   </div>
                 </div>
               )}
-              <div className="panel common-task-board">
-                <div className="panelhead">
-                  <div>
-                    <b>Daily Task Board · Open volunteer missions</b>
-                    <small>Daily AI missions are randomly generated here. Members may accept or decline; no one is assigned automatically.</small>
-                  </div>
-                  <span className="common-task-count">{commonTasks.length} open</span>
                 </div>
-                <div className="common-task-grid">
-                  {commonTasks.map((item) => (
-                    <article className="common-task-card" key={item.id}>
-                      <div className="common-task-meta">
-                        <div className="common-task-badges">
-                          <span className="pill">{item.priority}</span>
-                          <span className={"difficulty-badge rank-" + (item.difficulty_rank || "F").toLowerCase()}>{item.difficulty_rank || "F"} · {item.credits_reward || 5} CR</span>
-                          {item.task_state === "Suspended" && <span className="schedule-state paused">Paused</span>}
-                          {item.recurrence === "daily" && <span className="schedule-state active">Daily mission</span>}
-                          {item.auto_generated && <span className="schedule-state active">{(item.generation_source || "").toLowerCase().includes("gemini") ? "Gemini AI" : "Auto-generated"}</span>}
-                        </div>
-                        <small className="common-task-category">{item.project || "Club projects"} <span>·</span> {item.programming_language || "General"}</small>
-                      </div>
-                      <h3>{item.title}</h3>
-                      <p>{item.description || "No additional description provided."}</p>
-                      <small className="common-task-due">Due: {item.due_date || "No due date"}</small>
-                      <div className="common-task-progress">
-                        <div>
-                          <b>Accepted · {item.accepted_count ?? item.accepted_members?.length ?? 0}</b>
-                          <div className="common-task-member-list" aria-label="Members who accepted this task">
-                            {item.accepted_members?.length
-                              ? item.accepted_members.map((name, index) => (
-                                  <span className="member-name-chip accepted" key={name + "-" + index}>{name}</span>
-                                ))
-                              : <small>No one has accepted yet.</small>}
-                          </div>
-                        </div>
-                        <div>
-                          <b>Completed · {item.completed_count ?? item.completed_members?.length ?? 0}</b>
-                          <div className="common-task-member-list" aria-label="Members who completed this task">
-                            {item.completed_members?.length
-                              ? item.completed_members.map((name, index) => (
-                                  <span className="member-name-chip completed" key={name + "-" + index}>{name}</span>
-                                ))
-                              : <small>No one has completed this task yet.</small>}
-                          </div>
-                        </div>
-                      </div>
-                      {user.role === "Member" && item.task_state !== "Suspended" && !item.response_status && (
-                        <div className="common-task-actions">
-                          <button className="primary" onClick={() => respondToCommonTask(item, "accepted")}>
-                            <Check size={14} /> Accept task
-                          </button>
-                          <button className="secondary" onClick={() => respondToCommonTask(item, "declined")}>
-                            Reject mission
-                          </button>
-                        </div>
-                      )}
-                      {item.response_status && (
-                        <div className={"common-task-response " + item.response_status}>
-                          {item.response_status === "accepted" ? "✓ You accepted this task — it is in your task list." : "You rejected this mission."}
-                        </div>
-                      )}
-                      {isAdmin && (
-                        <>
-                          <small className="common-task-creator">Posted by {item.created_by_name}</small>
-                          <div className="common-task-actions">
-                            <button className="secondary" onClick={() => manageCommonTask(item, item.task_state === "Suspended" ? "resume" : "pause")}>{item.task_state === "Suspended" ? "Resume mission" : "Pause mission"}</button>
-                            <button className="textbtn danger" onClick={() => manageCommonTask(item, "delete")}>Archive</button>
-                          </div>
-                        </>
-                      )}
-                    </article>
-                  ))}
-                  {!commonTasks.length && (
-                    <div className="empty common-empty">No daily missions are available right now. The next random mission will appear automatically.</div>
-                  )}
-                </div>
-              </div>
-              <div className="task-status-toolbar">
-                <div className="task-status-heading">
-                  <b>{isAdmin ? "Club-wide task status" : "My task status"}</b>
-                  <small>{isAdmin ? "Includes tasks assigned to every member and team." : "Live refresh every 15 seconds"}</small>
-                </div>
-                <div className="task-status-tabs" role="group" aria-label="Filter tasks by status">
-                  {[
-                    ["All", "All tasks"],
-                    ["Todo", "To do"],
-                    ["In progress", "In progress"],
-                    ["Review", "In review"],
-                    ["Done", "Completed"],
-                  ].map(([value, label]) => (
-                    <button
-                      type="button"
-                      key={value}
-                      className={"task-filter-chip " + (taskStatusFilter === value ? "active" : "")}
-                      aria-pressed={taskStatusFilter === value}
-                      onClick={() => setTaskStatusFilter(value)}
-                    >
-                      {label}<span>{taskStatusCounts[value]}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="stats compact four">
-                {[
-                  ["All tasks", tasks.length],
-                  [
-                    "In progress",
-                    tasks.filter((t) => t.status === "In progress").length,
-                  ],
-                  [
-                    "In review",
-                    tasks.filter((t) => t.status === "Review").length,
-                  ],
-                  [
-                    "Completed",
-                    tasks.filter((t) => t.status === "Done").length,
-                  ],
-                ].map((x) => (
-                  <div className="stat" key={x[0]}>
-                    <small>{x[0]}</small>
-                    <strong>{x[1]}</strong>
-                  </div>
-                ))}
-              </div>
-              <div className="panel kanban-task-board">
-                <div className="panelhead kanban-board-heading">
-                  <div>
-                    <b>{isAdmin ? "All club tasks" : "My task board"}</b>
-                    <small>{isAdmin ? "Club-wide task overview · Founder and Core Management" : "Your assigned tasks"} · {filteredTaskRows.length} visible / {tasks.length} total</small>
-                  </div>
-                  <span className="common-task-count">{filteredTaskRows.length} tasks</span>
-                </div>
-                <div className="kanban-scroll-hint"><span>← Scroll horizontally to explore task stages →</span></div>
-                <div className="kanban-lanes">
-                  {[
-                    { key: "Todo", title: "To do", tone: "todo" },
-                    { key: "In progress", title: "Doing", tone: "doing" },
-                    { key: "Review", title: "In review", tone: "review" },
-                    { key: "Done", title: "Done", tone: "done" },
-                  ].map((lane) => {
-                    const laneTasks = filteredTaskRows.filter((task) => task.status === lane.key);
-                    return (
-                      <section className={"kanban-lane lane-" + lane.tone} key={lane.key}>
-                        <header className="kanban-lane-heading">
-                          <span className="kanban-lane-dot" />
-                          <b>{lane.title}</b>
-                          <span className="kanban-lane-count">{laneTasks.length}</span>
-                        </header>
-                        <div className="kanban-lane-cards">
-                          {laneTasks.map((t) => (
-                            <article className="kanban-task-card" key={t.id}>
-                              <div className="kanban-task-top">
-                                <small>{t.id.slice(-6)} · {t.project || "Club project"}</small>
-                                <span className={"pill " + (t.priority || "Medium").toLowerCase()}>{t.priority || "Medium"}</span>
-                              </div>
-                              <h3>{t.title}</h3>
-                              {t.description && <p>{t.description}</p>}
-                              <div className="kanban-task-tags">
-                                <span className={"difficulty-badge rank-" + (t.difficulty_rank || "F").toLowerCase()}>{t.difficulty_rank || "F"} rank</span>
-                                <span>{t.programming_language || "General"}</span>
-                                {t.recurrence === "daily" && <span className="schedule-state active">Daily</span>}
-                                {t.auto_generated && <span className="schedule-state active">Auto-generated</span>}
-                                {t.task_state === "Suspended" && <span className="schedule-state paused">Paused</span>}
-                              </div>
-                              <div className="kanban-task-details">
-                                <span><b>Assigned to</b>{t.assignee_name || "Unassigned"}</span>
-                                <span><b>Due date</b>{t.due_date || "Not set"}</span>
-                                <span><b>Reward</b>{t.status === "Done" ? (t.credits_awarded || 0) : (t.credits_reward || 5)} credits</span>
-                              </div>
-                              {t.review_feedback && <div className="kanban-feedback">Feedback: {t.review_feedback}</div>}
-                              {t.status === "Done" && t.completion_confirmed_by_name && <small className="kanban-confirmed">Confirmed by {t.completion_confirmed_by_name}</small>}
-                              {t.task_state === "Suspended" && <div className="kanban-paused-note">Paused by management</div>}
-                              {user.role === "Member" && t.assignee_id === user.id && t.status !== "Done" && t.task_state !== "Suspended" && (
-                                <label className="kanban-status-control">Update progress
-                                  <select
-                                    value={t.status}
-                                    onChange={(e) => {
-                                      const nextStatus = e.target.value;
-                                      if (nextStatus === "Review") openTaskSubmission(t);
-                                      else updateTask(t, { status: nextStatus });
-                                    }}
-                                  >
-                                    {t.status === "Todo" && <option value="Todo">To do</option>}
-                                    {t.status === "Todo" && <option value="In progress">In progress</option>}
-                                    {t.status === "In progress" && <option value="In progress">In progress</option>}
-                                    {t.status === "In progress" && <option value="Review">Submit for review</option>}
-                                    {t.status === "Review" && <option value="Review">In review</option>}
-                                    {t.status === "Review" && <option value="In progress">Return to work</option>}
-                                  </select>
-                                </label>
-                              )}
-                              <div className="kanban-card-actions">
-                                <button className="textbtn" onClick={async () => {
-                                  const comment = prompt("Add a task comment");
-                                  if (comment) {
-                                    try {
-                                      await api(`/tasks/${t.id}/comments`, token, { method: "POST", body: JSON.stringify({ text: comment }) });
-                                      notify("Comment added");
-                                    } catch (e) { fail(e); }
-                                  }
-                                }}>Comment</button>
-                                <label className="filebtn">Attach
-                                  <input type="file" hidden onChange={(e) => e.target.files?.[0] && uploadAttachment(t.id, e.target.files[0])} />
-                                </label>
-                                {isAdmin && (
-                                  <>
-                                    <button className="textbtn" onClick={() => toggleTaskPause(t)}>{t.task_state === "Suspended" ? "Resume" : "Pause"}</button>
-                                    <button className="textbtn danger" onClick={() => archiveTask(t)}>Archive</button>
-                                  </>
-                                )}
-                              </div>
-                            </article>
-                          ))}
-                          {!laneTasks.length && <div className="kanban-lane-empty">No tasks in this stage</div>}
-                        </div>
-                      </section>
-                    );
-                  })}
-                </div>
-                {!tasks.length && <div className="empty">No tasks created yet.</div>}
-              </div>
+              </details>
             </>
           )}
 
