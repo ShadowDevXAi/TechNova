@@ -7763,7 +7763,7 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
 }
 @media (prefers-reduced-motion:reduce) { html,.overflow,.kanban-lanes { scroll-behavior:auto!important; } }
 
-/* Definitive task-board fix: swipe between status columns, keep cards vertical */
+/* Task board: swipe between status columns and horizontally scroll cards within every column */
 .task-page-compact .kanban-task-board { min-width:0; max-width:100%; overflow:hidden; }
 .task-page-compact .kanban-lanes {
   display:flex!important; flex-flow:row nowrap!important; align-items:stretch;
@@ -7779,14 +7779,18 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
   min-width:285px!important; max-width:350px!important; flex-shrink:0!important;
 }
 .task-page-compact .kanban-lane-cards {
-  display:flex!important; flex-direction:column!important; flex-wrap:nowrap!important;
-  width:100%!important; min-width:0!important; height:auto!important; max-height:590px!important;
-  overflow-x:hidden!important; overflow-y:auto!important;
-  -webkit-overflow-scrolling:touch; overscroll-behavior-y:contain; touch-action:pan-y!important;
+  display:flex!important; flex-flow:row nowrap!important; align-items:stretch!important;
+  width:100%!important; min-width:0!important; height:auto!important; max-height:none!important;
+  padding:0 2px 12px!important; gap:12px!important;
+  overflow-x:auto!important; overflow-y:hidden!important;
+  -webkit-overflow-scrolling:touch!important; overscroll-behavior-x:contain;
+  touch-action:pan-x!important; scroll-snap-type:x proximity!important;
+  scrollbar-width:thin; scrollbar-color:rgba(69,202,228,.5) rgba(8,20,34,.35);
 }
 .task-page-compact .kanban-lane-cards > .kanban-task-card,
 .task-page-compact .kanban-lane-cards > .kanban-lane-empty {
-  flex:0 0 auto!important; width:100%!important; min-width:0!important; max-width:100%!important;
+  flex:0 0 255px!important; width:255px!important; min-width:255px!important;
+  max-width:255px!important; scroll-snap-align:start!important;
 }
 @media (max-width:760px) {
   .task-page-compact .kanban-task-board { width:100%!important; min-width:0!important; }
@@ -7802,13 +7806,17 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
     height:auto!important; max-height:none!important; scroll-snap-align:start!important;
   }
   .task-page-compact .kanban-lane-cards {
-    max-height:none!important; overflow:visible!important;
-    touch-action:pan-y!important; padding:0!important;
+    display:flex!important; flex-flow:row nowrap!important;
+    width:100%!important; max-width:100%!important; min-width:0!important;
+    overflow-x:auto!important; overflow-y:hidden!important;
+    padding:0 2px 12px!important; gap:10px!important;
+    -webkit-overflow-scrolling:touch!important; overscroll-behavior-x:contain;
+    touch-action:pan-x!important; scroll-snap-type:x proximity!important;
   }
   .task-page-compact .kanban-lane-cards > .kanban-task-card,
   .task-page-compact .kanban-lane-cards > .kanban-lane-empty {
-    flex:0 0 auto!important; width:100%!important;
-    min-width:0!important; max-width:100%!important;
+    flex:0 0 235px!important; width:235px!important;
+    min-width:235px!important; max-width:235px!important;
   }
 }
 @media (max-width:390px) {
