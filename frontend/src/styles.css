@@ -6991,3 +6991,101 @@ td, th {
   .task-page-compact .auto-task-metrics span { padding:7px; }
   .task-page-compact .auto-task-metrics b { font-size:14px; }
 }
+
+
+/* Mobile repair: prevent clipped task content and make touch scrolling reliable */
+@media (max-width: 760px) {
+  html, body, #root { width:100%; max-width:100%; overflow-x:hidden; }
+  main { width:100%; min-width:0; overflow-x:hidden; }
+  .content { width:100%; min-width:0; max-width:100%; padding:14px 10px 24px; }
+  .task-page-compact,
+  .task-page-compact > * { min-width:0; max-width:100%; }
+  .task-page-compact .title {
+    flex-direction:row;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-bottom:12px;
+  }
+  .task-page-compact .title > div { min-width:0; flex:1 1 180px; }
+  .task-page-compact .title h1 { font-size:21px; line-height:1.2; }
+  .task-page-compact .title > button { flex:0 0 auto; }
+  .task-page-compact .task-status-toolbar { display:grid; grid-template-columns:1fr; width:100%; }
+  .task-page-compact .task-status-tabs {
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    width:100%;
+  }
+  .task-page-compact .task-filter-chip { min-width:0; justify-content:space-between; }
+  .task-page-compact .stats.compact.four {
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    width:100%;
+  }
+  .task-page-compact .kanban-task-board,
+  .task-page-compact .common-task-board,
+  .task-page-compact .task-operations-disclosure { width:100%; min-width:0; }
+  .task-page-compact .kanban-lanes {
+    display:flex !important;
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    overflow-x:scroll !important;
+    overflow-y:hidden !important;
+    -webkit-overflow-scrolling:touch;
+    touch-action:pan-x pan-y;
+    overscroll-behavior-x:contain;
+    scroll-snap-type:x mandatory;
+    padding:7px 10px 13px;
+    gap:10px;
+  }
+  .task-page-compact .kanban-lane {
+    flex:0 0 84% !important;
+    width:84%;
+    min-width:0 !important;
+    max-width:340px;
+    max-height:none !important;
+    height:auto;
+    scroll-snap-align:start;
+  }
+  .task-page-compact .kanban-lane-cards {
+    display:flex;
+    overflow:visible !important;
+    max-height:none !important;
+    min-height:0;
+    height:auto;
+    padding:0;
+    touch-action:pan-y;
+  }
+  .task-page-compact .kanban-task-card { width:100%; min-width:0; }
+  .task-page-compact .kanban-task-details { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .task-page-compact .kanban-card-actions { flex-wrap:wrap; }
+  .task-page-compact .common-task-grid {
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    width:100%;
+    max-height:none !important;
+    height:auto;
+    overflow:visible !important;
+    padding:9px;
+  }
+  .task-page-compact .common-task-card { width:100%; min-width:0; }
+  .task-page-compact .auto-task-setting-row { display:grid; grid-template-columns:1fr; }
+  .task-page-compact .auto-task-setting-row label { min-width:0; width:100%; }
+  .task-page-compact .auto-task-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .task-page-compact .auto-task-metrics span { min-width:0; overflow-wrap:anywhere; }
+  .task-page-compact .task-operations-content { min-width:0; }
+  .task-page-compact .task-operations-disclosure > summary { flex-wrap:wrap; }
+  .task-page-compact .operations-summary-count { margin-left:0; }
+  .task-page-compact .review-queue-panel,
+  .task-page-compact .daily-schedule-panel,
+  .task-page-compact .auto-task-controls { width:100%; min-width:0; }
+}
+@media (max-width: 390px) {
+  .task-page-compact .kanban-lane { flex-basis:90% !important; width:90%; }
+  .task-page-compact .auto-task-metrics { grid-template-columns:1fr; }
+  .task-page-compact .task-status-tabs { grid-template-columns:1fr 1fr; }
+  .task-page-compact .kanban-task-details { grid-template-columns:1fr 1fr; }
+}
