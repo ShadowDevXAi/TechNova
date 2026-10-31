@@ -11,6 +11,25 @@ from ..core import *  # Shared database, schemas, authorization and business hel
 
 router = APIRouter()
 
+# Hub collections and role names were originally declared beside the Hub endpoints.
+# Keep them in this router so collection lookups and staff-only views share one source.
+HUB_COLLECTIONS = {
+    "projects": db.hub_projects,
+    "challenges": db.hub_challenges,
+    "events": db.hub_events,
+    "resources": db.hub_resources,
+    "discussions": db.hub_discussions,
+    "rewards": db.hub_rewards,
+    "attendance": db.hub_attendance,
+    "polls": db.hub_polls,
+    "mentorship": db.hub_mentorship,
+    "messages": db.hub_messages,
+    "certificates": db.hub_certificates,
+}
+
+# Faculty can manage Hub content and review challenges alongside club management.
+HUB_STAFF = {"Founder", "Core Management", "Faculty"}
+
 # Purpose: hub clean handles the hub feature flow and returns its API result.
 def hub_clean(doc):
     return {k: (str(v) if k == "_id" else v) for k,v in {
