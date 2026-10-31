@@ -1,10 +1,15 @@
 """TechNova FastAPI application entry point.
 
-This file builds the FastAPI app, applies middleware and mounts feature routers.
-Business logic and endpoint handlers live in app.core and app.routes.*.
+The inner FastAPI app owns routes, lifespan and exception handling.
+The outer CORS wrapper also decorates unhandled 500 responses, not only normal
+route responses and preflight requests.
 """
-from fastapi import FastAPI
+import logging
+from uuid import uuid4
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -18,30 +23,64 @@ from .routes.teams import router as teams_router
 from .routes.cards import router as cards_router
 from .routes.hub import router as hub_router
 
-# Keep the API title/version stable for deployment health checks and clients.
-app = FastAPI(title="TechNova Club Portal API", version="1.0.0", lifespan=lifespan)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+logger = logging.getLogger("technova.api")
 
-# Allow local development and the deployed Render frontend; custom domains come from FRONTEND_ORIGINS.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=list(dict.fromkeys([
-        "http://localhost:5173",
-        "http://localhost:8080",
-        "https://technova-1-qx44.onrender.com",
-        *settings.origins(),
-    ])),
+# The inner FastAPI application owns the API routes and startup/shutdown lifecycle.
+api_app = FastAPI(
+    title="TechNova Club Portal API",
+    version="1.1.0",
+    lifespan=lifespan,
+)
+api_app.state.limiter = limiter
+api_app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@api_app.exception_handler(Exception)
+async def handle_unexpected_error(request: Request, exc: Exception):
+    """Log unexpected exceptions and return a safe, consistent JSON error."""
+    request_id = uuid4().hex[:12]
+    logger.exception(
+        "Unhandled API error %s for %s %s",
+        request_id,
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An unexpected server error occurred. Please try again.",
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
+    )
+
+
+# Mount feature routers without changing their existing /api endpoint paths.
+api_app.include_router(system_router)
+api_app.include_router(auth_router)
+api_app.include_router(members_router)
+api_app.include_router(tasks_router)
+api_app.include_router(teams_router)
+api_app.include_router(cards_router)
+api_app.include_router(hub_router)
+
+# Keep local development and the deployed Render frontend explicitly allowed.
+# Add custom frontend domains through FRONTEND_ORIGINS; never use a wildcard with credentials.
+ALLOWED_ORIGINS = list(dict.fromkeys([
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "https://technova-1-qx44.onrender.com",
+    *settings.origins(),
+]))
+
+# IMPORTANT: CORS is the outermost ASGI layer. Starlette's built-in ServerErrorMiddleware
+# can otherwise generate an unhandled 500 outside a normally-added CORS middleware.
+app = CORSMiddleware(
+    app=api_app,
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
+    max_age=600,
 )
-
-# Mount feature routers without changing their public /api endpoint paths.
-app.include_router(system_router)
-app.include_router(auth_router)
-app.include_router(members_router)
-app.include_router(tasks_router)
-app.include_router(teams_router)
-app.include_router(cards_router)
-app.include_router(hub_router)
