@@ -2264,6 +2264,7 @@ HUB_COLLECTIONS = {
     "projects": db.hub_projects, "challenges": db.hub_challenges,
     "events": db.hub_events, "resources": db.hub_resources,
     "discussions": db.hub_discussions, "rewards": db.hub_rewards, "attendance": db.hub_attendance,
+    "polls": db.hub_polls, "mentorship": db.hub_mentorship,
 }
 HUB_STAFF = {"Founder", "Core Management", "Faculty"}
 
@@ -2446,4 +2447,82 @@ async def hub_challenge_review(item_id: str,request: Request,user: dict=Depends(
     if not result.modified_count: raise HTTPException(404,"Submission not found")
     await audit(user,"hub_challenge_reviewed",item_id,{"user_id":member_id,"decision":decision},request)
     return {"ok":True}
+
+
+# Polls and mentorship requests
+@app.post("/api/hub/polls/{item_id}/vote")
+async def hub_poll_vote(item_id: str,request: Request,user: dict=Depends(get_current_user)):
+    poll=await db.hub_polls.find_one({"_id":oid(item_id),"status":{"$ne":"Archived"}})
+    if not poll: raise HTTPException(404,"Poll not found")
+    data=await request.json(); option=str(data.get("option","")).strip()
+    if option not in poll.get("options",[]): raise HTTPException(422,"Choose a valid poll option")
+    previous=await db.hub_polls.find_one({"_id":poll["_id"],"votes.user_id":str(user["_id"])})
+    if previous: raise HTTPException(409,"You have already voted")
+    await db.hub_polls.update_one({"_id":poll["_id"]},{"$push":{"votes":{"user_id":str(user["_id"]),"option":option,"voted_at":utcnow()}}})
+    return {"ok":True}
+
+@app.post("/api/hub/mentorship")
+async def hub_mentorship_request(request: Request,user: dict=Depends(get_current_user)):
+    data=await request.json(); mentor=str(data.get("mentor","")).strip()[:120]; goal=str(data.get("goal","")).strip()[:1000]
+    if not mentor or not goal: raise HTTPException(422,"Mentor name and learning goal are required")
+    doc={"user_id":str(user["_id"]),"member_name":user.get("name","Member"),"mentor":mentor,"goal":goal,"status":"Pending","created_at":utcnow()}
+    result=await db.hub_mentorship.insert_one(doc)
+    await audit(user,"hub_mentorship_requested",str(result.inserted_id),{"mentor":mentor},request)
+    return {"ok":True}
+
+@app.get("/api/hub/mentorship/requests")
+async def hub_mentorship_list(user: dict=Depends(get_current_user)):
+    query={} if user.get("role") in HUB_STAFF else {"user_id":str(user["_id"])}
+    docs=await db.hub_mentorship.find(query).sort("created_at",-1).to_list(200)
+    return [{"id":str(x["_id"]),"member_name":x["member_name"],"mentor":x["mentor"],"goal":x["goal"],"status":x["status"]} for x in docs]
+
+@app.post("/api/hub/mentorship/{request_id}/decision")
+async def hub_mentorship_decision(request_id: str,request: Request,user: dict=Depends(allow("Founder","Core Management","Faculty"))):
+    data=await request.json(); decision=str(data.get("decision",""))
+    if decision not in {"Approved","Declined"}: raise HTTPException(422,"Invalid decision")
+    result=await db.hub_mentorship.update_one({"_id":oid(request_id),"status":"Pending"},{"$set":{"status":decision,"reviewed_by":user["_id"],"reviewed_at":utcnow()}})
+    if not result.modified_count: raise HTTPException(409,"Request is no longer pending")
+    return {"ok":True}
+
+# Lightweight internal club inbox
+@app.get("/api/hub/messages")
+async def hub_messages_list(user: dict=Depends(get_current_user)):
+    uid=str(user["_id"])
+    docs=await db.hub_messages.find({"$or":[{"sender_id":uid},{"recipient_id":uid}]}).sort("created_at",-1).to_list(200)
+    return [{"id":str(x["_id"]),"sender":x["sender_name"],"recipient":x["recipient_name"],"sender_id":x["sender_id"],"recipient_id":x["recipient_id"],"message":x["message"],"created_at":x["created_at"]} for x in docs]
+
+@app.post("/api/hub/messages")
+async def hub_message_send(request: Request,user: dict=Depends(get_current_user)):
+    data=await request.json(); recipient_id=str(data.get("recipient_id","")).strip(); message=str(data.get("message","")).strip()
+    if not recipient_id or not message or len(message)>2000: raise HTTPException(422,"Choose a member and write a message up to 2000 characters")
+    recipient=await db.users.find_one({"_id":oid(recipient_id),"status":"Active"})
+    if not recipient: raise HTTPException(404,"Active recipient not found")
+    doc={"sender_id":str(user["_id"]),"sender_name":user.get("name","Member"),"recipient_id":str(recipient["_id"]),"recipient_name":recipient.get("name","Member"),"message":message,"created_at":utcnow()}
+    await db.hub_messages.insert_one(doc)
+    await create_notification(recipient,"New TechNova message",f'{user.get("name","A member")} sent you a message.')
+    return {"ok":True}
+
+# Completion certificate record and public verification
+@app.post("/api/hub/certificates/issue")
+async def hub_certificate_issue(request: Request,user: dict=Depends(get_current_user)):
+    completed=await db.tasks.count_documents({"assignee_id":user["_id"],"status":"Done"})
+    if completed<1: raise HTTPException(403,"Complete at least one approved task before requesting a certificate")
+    existing=await db.hub_certificates.find_one({"user_id":str(user["_id"])})
+    if existing: return {"id":str(existing["_id"]),"code":existing["code"],"name":existing["name"],"completed_tasks":existing["completed_tasks"]}
+    code="TN-"+token_urlsafe(9).upper()
+    doc={"user_id":str(user["_id"]),"name":user.get("name","Member"),"member_id":user.get("member_id",""),"completed_tasks":completed,"code":code,"issued_at":utcnow()}
+    result=await db.hub_certificates.insert_one(doc)
+    await audit(user,"hub_certificate_issued",str(result.inserted_id),{"code":code},request)
+    return {"id":str(result.inserted_id),"code":code,"name":doc["name"],"completed_tasks":completed}
+
+@app.get("/api/hub/certificates")
+async def hub_certificate_list(user: dict=Depends(get_current_user)):
+    docs=await db.hub_certificates.find({"user_id":str(user["_id"])}).to_list(50)
+    return [{"id":str(x["_id"]),"name":x["name"],"code":x["code"],"completed_tasks":x["completed_tasks"],"issued_at":x["issued_at"]} for x in docs]
+
+@app.get("/api/certificates/verify/{code}")
+async def hub_certificate_verify(code: str):
+    doc=await db.hub_certificates.find_one({"code":code.upper()})
+    if not doc: raise HTTPException(404,"Certificate not found")
+    return {"valid":True,"name":doc["name"],"member_id":doc["member_id"],"completed_tasks":doc["completed_tasks"],"issued_at":doc["issued_at"]}
 
