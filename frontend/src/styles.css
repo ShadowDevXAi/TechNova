@@ -7824,3 +7824,82 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
     flex-basis:86vw!important; width:86vw!important; min-width:235px!important;
   }
 }
+
+
+/* Mobile nested scrolling: status columns and their card rows scroll independently */
+@media (max-width:760px) {
+  .task-page-compact .kanban-task-board,
+  .task-page-compact .kanban-lanes,
+  .task-page-compact .kanban-lane {
+    min-width:0!important;
+  }
+  .task-page-compact .kanban-lanes {
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    touch-action:pan-x pan-y!important;
+    -webkit-overflow-scrolling:touch!important;
+  }
+  .task-page-compact .kanban-lane {
+    display:flex!important;
+    flex:0 0 84vw!important;
+    flex-direction:column!important;
+    width:84vw!important;
+    min-width:250px!important;
+    max-width:340px!important;
+    overflow:hidden!important;
+  }
+  .task-page-compact .kanban-lane-cards {
+    display:flex!important;
+    flex-direction:row!important;
+    flex-wrap:nowrap!important;
+    align-items:stretch!important;
+    justify-content:flex-start!important;
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    overflow-x:scroll!important;
+    overflow-y:hidden!important;
+    overscroll-behavior-x:contain!important;
+    -webkit-overflow-scrolling:touch!important;
+    touch-action:pan-x!important;
+    scrollbar-width:thin!important;
+    scrollbar-color:rgba(69,202,228,.7) rgba(8,20,34,.45)!important;
+    padding:4px 4px 14px!important;
+    gap:10px!important;
+  }
+  .task-page-compact .kanban-lane-cards > .kanban-task-card,
+  .task-page-compact .kanban-lane-cards > .kanban-lane-empty {
+    display:flex!important;
+    flex:0 0 235px!important;
+    width:235px!important;
+    min-width:235px!important;
+    max-width:235px!important;
+    touch-action:auto!important;
+    scroll-snap-align:start!important;
+  }
+  .task-page-compact .kanban-task-card {
+    touch-action:auto!important;
+  }
+  .task-page-compact .kanban-lane-cards::-webkit-scrollbar {
+    display:block!important;
+    height:6px!important;
+  }
+  .task-page-compact .kanban-lane-cards::-webkit-scrollbar-thumb {
+    background:rgba(69,202,228,.7)!important;
+    border-radius:99px!important;
+  }
+}
+@media (max-width:390px) {
+  .task-page-compact .kanban-lane {
+    flex-basis:86vw!important;
+    width:86vw!important;
+    min-width:235px!important;
+  }
+  .task-page-compact .kanban-lane-cards > .kanban-task-card,
+  .task-page-compact .kanban-lane-cards > .kanban-lane-empty {
+    flex-basis:220px!important;
+    width:220px!important;
+    min-width:220px!important;
+    max-width:220px!important;
+  }
+}
