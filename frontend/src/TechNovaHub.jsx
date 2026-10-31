@@ -47,12 +47,21 @@ export default function TechNovaHub({token,user}) {
         call("/hub/profile"),
         ...sections.filter(([key])=>!["attendance","mentorship","messages","certificates"].includes(key)).map(([key])=>call("/hub/"+key)),
         call("/hub/attendance"),
-        call("/hub/rewards/requests")
+        call("/hub/rewards/requests"),
+        call("/hub/mentorship/requests"),
+        call("/hub/messages"),
+        call("/members"),
+        call("/hub/certificates")
       ]);
       setProfile(p);
       const listSections=sections.filter(([key])=>!["attendance","mentorship","messages","certificates"].includes(key));
       setData({...Object.fromEntries(listSections.map(([key],i)=>[key,lists[i]])),attendance:lists[listSections.length]});
-      setRewardRequests(lists[listSections.length+1]);\n      setMentorshipRequests(lists[listSections.length+2]);\n      setMessages(lists[listSections.length+3]);\n      setMembers(lists[listSections.length+4]);\n      setCertificates(lists[listSections.length+5]);\n      setData(v=>({...v,attendance:lists[listSections.length],mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));
+      setRewardRequests(lists[listSections.length+1]);
+      setMentorshipRequests(lists[listSections.length+2]);
+      setMessages(lists[listSections.length+3]);
+      setMembers(lists[listSections.length+4]);
+      setCertificates(lists[listSections.length+5]);
+      setData(v=>({...v,mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));\n      setMentorshipRequests(lists[listSections.length+2]);\n      setMessages(lists[listSections.length+3]);\n      setMembers(lists[listSections.length+4]);\n      setCertificates(lists[listSections.length+5]);\n      setData(v=>({...v,attendance:lists[listSections.length],mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));
     } catch(e){setError(e.message);}
   };
   useEffect(()=>{if(token)refresh();},[token]);
@@ -78,7 +87,11 @@ export default function TechNovaHub({token,user}) {
   const openAttendance=async(e)=>{e.preventDefault();try{const session=await call("/hub/attendance",{method:"POST",body:JSON.stringify({title:sessionTitle})});setSessionTitle("");setMessage("Session opened. Share code: "+session.code);await refresh();}catch(e){setError(e.message);}};
   const rsvp=async(id)=>{try{await call("/hub/events/"+id+"/rsvp",{method:"POST"});setMessage("Event registration saved.");await refresh();}catch(e){setError(e.message);}};
   const requestReward=async(id)=>{try{await call("/hub/rewards/"+id+"/request",{method:"POST"});setMessage("Reward request sent.");await refresh();}catch(e){setError(e.message);}};
-  const vote=async(id,option)=>{try{await call("/hub/polls/"+id+"/vote",{method:"POST",body:JSON.stringify({option})});setMessage("Vote recorded.");await refresh();}catch(e){setError(e.message);}};\n  const sendMessage=async(e)=>{e.preventDefault();try{await call("/hub/messages",{method:"POST",body:JSON.stringify({recipient_id:recipientId,message:messageText})});setMessage("Message sent.");setMessageText("");await refresh();}catch(e){setError(e.message);}};\n  const requestMentorship=async(e)=>{e.preventDefault();try{await call("/hub/mentorship",{method:"POST",body:JSON.stringify({mentor,goal})});setMessage("Mentorship request sent.");setMentor("");setGoal("");await refresh();}catch(e){setError(e.message);}};\n  const issueCertificate=async()=>{try{await call("/hub/certificates/issue",{method:"POST"});setMessage("Certificate issued.");await refresh();}catch(e){setError(e.message);}};\n  const decideMentorship=async(id,decision)=>{try{await call("/hub/mentorship/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};\n  const decideReward=async(id,decision)=>{try{await call("/hub/rewards/requests/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
+  const vote=async(id,option)=>{try{await call("/hub/polls/"+id+"/vote",{method:"POST",body:JSON.stringify({option})});setMessage("Vote recorded.");await refresh();}catch(e){setError(e.message);}};
+  const sendMessage=async(e)=>{e.preventDefault();try{await call("/hub/messages",{method:"POST",body:JSON.stringify({recipient_id:recipientId,message:messageText})});setMessage("Message sent.");setMessageText("");await refresh();}catch(e){setError(e.message);}};
+  const requestMentorship=async(e)=>{e.preventDefault();try{await call("/hub/mentorship",{method:"POST",body:JSON.stringify({mentor,goal})});setMessage("Mentorship request sent.");setMentor("");setGoal("");await refresh();}catch(e){setError(e.message);}};
+  const issueCertificate=async()=>{try{await call("/hub/certificates/issue",{method:"POST"});setMessage("Certificate issued.");await refresh();}catch(e){setError(e.message);}};
+  const decideMentorship=async(id,decision)=>{try{await call("/hub/mentorship/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};\n  const decideReward=async(id,decision)=>{try{await call("/hub/rewards/requests/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
   const reviewChallenge=async(item,userId,decision)=>{try{await call("/hub/challenges/"+item.id+"/review",{method:"POST",body:JSON.stringify({user_id:userId,decision,feedback:decision==="Accepted"?"Approved by club management":"Please revise and resubmit."})});setMessage("Challenge submission reviewed.");await refresh();}catch(e){setError(e.message);}};
   const canCreate=(staff&&["projects","challenges","events","resources","polls","rewards"].includes(section))||section==="discussions";
   return <main className="hub-page">
@@ -114,7 +127,8 @@ export default function TechNovaHub({token,user}) {
       <div className="hub-card-top"><span>{item.category||sections.find(x=>x[0]===section)?.[1]}</span><small>{item.status}</small></div><h3>{item.title}</h3><p>{item.description||"No description provided."}</p>
       <div className="hub-meta">{item.created_by&&<span>By {item.created_by}</span>}{item.due_date&&<span>Due {item.due_date}</span>}{item.points>0&&<span>{item.points} points</span>}{section==="projects"&&<span><Users size={13}/> {item.members?.length||0} members</span>}</div>
       {section==="projects"&&<button className="secondary" onClick={()=>join(item.id)}>Join project</button>}
-      {section==="events"&&<button className="secondary" onClick={()=>rsvp(item.id)}>Register for event</button>}\n      {section==="polls"&&(item.options||[]).map(option=><button className="secondary" key={option} onClick={()=>vote(item.id,option)}>{option} · {(item.votes||[]).filter(v=>v.option===option).length} votes</button>)}
+      {section==="events"&&<button className="secondary" onClick={()=>rsvp(item.id)}>Register for event</button>}
+      {section==="polls"&&(item.options||[]).map(option=><button className="secondary" key={option} onClick={()=>vote(item.id,option)}>{option} · {(item.votes||[]).filter(v=>v.option===option).length} votes</button>)}
       {section==="rewards"&&<button className="secondary" onClick={()=>requestReward(item.id)}>Request reward</button>}
       {section==="attendance"&&<div className="hub-meta"><span>{item.attendee_count} checked in</span><span>{item.checked_in?"You are checked in":"Check in with session code"}</span>{staff&&item.code&&<b>Code: {item.code}</b>}</div>}
       {section==="challenges"&&staff&&(item.submissions||[]).map((sub,i)=><div className="hub-review" key={i}><b>{sub.member_name} · {sub.language}</b><small>{sub.review_status}</small><pre>{sub.code}</pre>{sub.review_feedback&&<p>{sub.review_feedback}</p>}<div><button className="secondary" onClick={()=>reviewChallenge(item,sub.user_id,"Accepted")}>Accept</button><button className="secondary" onClick={()=>reviewChallenge(item,sub.user_id,"Needs changes")}>Request changes</button></div></div>)}
