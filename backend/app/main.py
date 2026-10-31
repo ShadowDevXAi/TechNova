@@ -398,6 +398,20 @@ async def generate_automatic_daily_tasks() -> dict:
     while remaining:
         templates, source = await automatic_task_templates(min(15, remaining))
         sources.add(source)
+        if source != "Gemini AI" and templates:
+            # Expand the local fallback bank with clearly-labelled extensions so custom
+            # targets above the bank size still work when no Gemini API key is configured.
+            base_templates = list(templates)
+            variant_number = 1
+            while len(templates) < min(15, remaining):
+                for base in base_templates:
+                    if len(templates) >= min(15, remaining):
+                        break
+                    variant = dict(base)
+                    variant["title"] = f'{base["title"]} · Extension {variant_number}'
+                    variant["description"] = base["description"] + " Extension requirement: add input validation, handle an edge case, and document the result with a short test example."
+                    templates.append(variant)
+                variant_number += 1
         random.shuffle(templates)
         inserted_this_batch = 0
         for template in templates:
