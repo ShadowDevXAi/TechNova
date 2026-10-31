@@ -8091,3 +8091,68 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
   .hub-tabs button { gap: 6px; padding: 8px 10px; font-size: 11px; }
   .hub-footnote { font-size: 10px; }
 }
+
+
+/* Portal-level recovery screen shown only for unexpected React render errors. */
+.app-error-boundary {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  color: #eaf2ff;
+  background: radial-gradient(ellipse at 50% 0%, #152640, #070b14 62%);
+}
+.app-error-boundary section {
+  width: min(100%, 480px);
+  padding: 32px;
+  border: 1px solid #263b53;
+  border-radius: 18px;
+  background: rgba(10, 20, 34, .92);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .35);
+}
+.app-error-kicker {
+  color: #55dff3;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+.app-error-boundary h1 {
+  margin: 12px 0 8px;
+  font: 700 26px "Space Grotesk", sans-serif;
+}
+.app-error-boundary p { color: #9aabc1; line-height: 1.6; }
+.app-error-boundary button {
+  margin-top: 12px;
+  padding: 11px 16px;
+  color: #07121d;
+  font-weight: 700;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(110deg, #54dff1, #85c7ff);
+}
+.hub-toolbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hub-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 9px 13px;
+  white-space: nowrap;
+}
+.hub-refreshing { animation: hub-refresh-spin .9s linear infinite; }
+@keyframes hub-refresh-spin { to { transform: rotate(360deg); } }
+@media (max-width: 980px) {
+  .hub-toolbar-actions { justify-self: end; }
+}
+@media (max-width: 520px) {
+  .hub-toolbar-actions { width: 100%; }
+  .hub-toolbar-actions > button { flex: 1 1 auto; }
+}
