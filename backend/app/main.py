@@ -2558,3 +2558,7 @@ async def hub_certificate_verify(code: str):
     if not doc: raise HTTPException(404,"Certificate not found")
     return {"valid":True,"name":doc["name"],"member_id":doc["member_id"],"completed_tasks":doc["completed_tasks"],"issued_at":doc["issued_at"]}
 
+@app.get("/api/hub/members/active")
+async def hub_active_members(user: dict=Depends(get_current_user)):
+    docs=await db.users.find({"status":"Active"},{"name":1,"member_id":1,"role":1,"team":1}).sort("name",1).to_list(500)
+    return [{"id":str(x["_id"]),"name":x.get("name","Member"),"member_id":x.get("member_id",""),"role":x.get("role","Member"),"team":x.get("team","Unassigned"),"status":"Active"} for x in docs]
