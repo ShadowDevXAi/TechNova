@@ -2357,6 +2357,9 @@ async def hub_create(collection: str, request: Request, user: dict = Depends(get
     if len(title)<3: raise HTTPException(422,"Title must contain at least 3 characters")
     url=str(data.get("url","")).strip()[:500]
     if url and not re.match(r"^https?://",url,re.I): raise HTTPException(422,"Use a valid http or https link")
+    if collection=="polls":
+        options=[str(x).strip()[:100] for x in data.get("options",[]) if str(x).strip()][:8]
+        if len(options)<2 or len(set(options))<2: raise HTTPException(422,"A poll needs at least two different options")
     doc={"type":collection,"title":title,"description":str(data.get("description","")).strip()[:4000],
          "status":"Open","category":str(data.get("category","")).strip()[:60],"url":url,
          "team":str(data.get("team","")).strip()[:80],"visibility":"Club","created_by":user["_id"],
