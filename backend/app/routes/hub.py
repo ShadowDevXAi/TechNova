@@ -46,16 +46,15 @@ def hub_clean(doc):
 @router.get("/api/hub/profile")
 async def hub_profile(user: dict = Depends(get_current_user)):
     uid=user["_id"]
-    done=await db.tasks.count_documents({"assignee_id":uid,"status":"Done"})
-    review=await db.tasks.count_documents({"assignee_id":uid,"status":"Review"})
-    credits=await member_credit_balance(uid)
-    xp=done*100+review*25
-    level=max(1,int((xp/100)**0.5)+1)
+    progress=await member_progress_summary(uid)
+    done=progress["completed_tasks"]
+    review=progress["pending_reviews"]
+    credits=progress["credits"]
     achievements=[]
     for threshold,title,desc,icon in [(1,"First Mission","Complete your first task","🎯"),(10,"Task Machine","Complete 10 tasks","⚡"),(25,"Consistent Builder","Complete 25 tasks","🛠️")]:
         if done>=threshold: achievements.append({"title":title,"description":desc,"icon":icon})
     if credits>=100: achievements.append({"title":"Credit Century","description":"Earn 100 credits","icon":"🏅"})
-    return {"xp":xp,"level":level,"next_level_xp":level*level*100,"completed_tasks":done,"pending_reviews":review,"credits":credits,"achievements":achievements}
+    return {**progress,"achievements":achievements}
 
 # Purpose: hub list handles the hub feature flow and returns its API result.
 @router.get("/api/hub/{collection}")
