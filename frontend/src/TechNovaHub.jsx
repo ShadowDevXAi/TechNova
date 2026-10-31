@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { BriefcaseBusiness, Code2, CalendarDays, BookOpen, MessageSquare, Gift, Plus, ExternalLink, Trophy, Zap, Users, Send, Archive, ClipboardCheck } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { BriefcaseBusiness, Code2, CalendarDays, BookOpen, MessageSquare, Gift, Plus, ExternalLink, Trophy, Zap, Users, Send, Archive, ClipboardCheck, ChevronLeft, ChevronRight } from "lucide-react";
 
 const API = (import.meta.env.VITE_API_BASE_URL || "https://technova-5h0g.onrender.com").replace(/\/$/, "");
 const sections = [
@@ -11,6 +11,12 @@ const emptyForm = {title:"",description:"",category:"",url:"",due_date:"",points
 
 export default function TechNovaHub({token,user}) {
   const [section,setSection]=useState("projects");
+  const tabsRef=useRef(null);
+  const scrollTabs=(direction)=>{
+    const tabs=tabsRef.current;
+    if(!tabs) return;
+    tabs.scrollBy({left:direction*Math.max(200,tabs.clientWidth*0.72),behavior:"smooth"});
+  };
   const [data,setData]=useState({});
   const [profile,setProfile]=useState(null);
   const [form,setForm]=useState(emptyForm);
@@ -106,8 +112,15 @@ export default function TechNovaHub({token,user}) {
       <div><span>Achievements</span><b>{profile.achievements.length}</b><small>Milestones unlocked</small></div>
     </div>}
     {profile?.achievements?.length>0&&<section className="hub-achievements"><h3>Achievements unlocked</h3><div>{profile.achievements.map(a=><article key={a.title}><strong>{a.icon}</strong><b>{a.title}</b><small>{a.description}</small></article>)}</div></section>}
-    <div className="hub-sectionbar"><div className="hub-tabs">{sections.map(([key,label,Icon])=><button key={key} className={section===key?"active":""} onClick={()=>setSection(key)}><Icon size={16}/>{label}</button>)}</div>
-      {canCreate&&<button className="primary hub-add" onClick={()=>setShowForm(v=>!v)}><Plus size={16}/> Create</button>}
+    <div className="hub-sectionbar">
+      <div className="hub-tab-shell">
+        <button type="button" className="hub-tab-arrow" onClick={()=>scrollTabs(-1)} aria-label="Scroll club sections left"><ChevronLeft size={17}/></button>
+        <div className="hub-tabs" ref={tabsRef} aria-label="Club Hub sections">
+          {sections.map(([key,label,Icon])=><button type="button" key={key} aria-pressed={section===key} className={section===key?"active":""} onClick={()=>setSection(key)}><Icon size={16}/><span>{label}</span></button>)}
+        </div>
+        <button type="button" className="hub-tab-arrow" onClick={()=>scrollTabs(1)} aria-label="Scroll club sections right"><ChevronRight size={17}/></button>
+      </div>
+      {canCreate&&<button type="button" className="primary hub-add" onClick={()=>setShowForm(v=>!v)}><Plus size={16}/> Create</button>}
     </div>
     {error&&<div className="hub-alert error">{error}</div>}{message&&<div className="hub-alert">{message}</div>}
     {section==="polls"&&showForm&&<div className="hub-create"><label>Poll options (comma separated)<input value={pollOptions} onChange={e=>setPollOptions(e.target.value)} placeholder="Option A, Option B"/></label></div>}
