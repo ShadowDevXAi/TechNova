@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import TechNovaHub from "./TechNovaHub";
 import { createPortal } from "react-dom";
 import {
   LayoutDashboard,
@@ -104,6 +105,7 @@ const api = async (path, token, opts = {}) => {
 
 const links = [
   ["Overview", LayoutDashboard],
+  ["Club Hub", Code2],
   ["Members", Users],
   ["Tasks & Projects", ClipboardList],
   ["Leaderboard", Trophy],
@@ -1522,6 +1524,8 @@ function App() {
               <button onClick={() => setError("")}>Dismiss</button>
             </div>
           )}
+
+          {page === "Club Hub" && <TechNovaHub token={token} user={user} />}
 
           {page === "Overview" && (
             <>
