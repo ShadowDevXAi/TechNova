@@ -2277,7 +2277,7 @@ def hub_clean(doc):
         "team":doc.get("team",""),"created_by":doc.get("created_by_name",""),
         "created_at":doc.get("created_at"),"due_date":doc.get("due_date"),
         "points":doc.get("points",0),"members":doc.get("members",[]),
-        "comments":doc.get("comments",[]),"submissions":doc.get("submissions",[]),"rsvps":doc.get("rsvps",[]),
+        "comments":doc.get("comments",[]),"submissions":doc.get("submissions",[]),"rsvps":doc.get("rsvps",[]),"options":doc.get("options",[]),"votes":doc.get("votes",[]),
     }.items()}
 
 @app.get("/api/hub/profile")
