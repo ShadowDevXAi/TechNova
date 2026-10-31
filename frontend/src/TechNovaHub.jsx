@@ -61,7 +61,6 @@ export default function TechNovaHub({token,user}) {
       setMessages(lists[listSections.length+3]);
       setMembers(lists[listSections.length+4]);
       setCertificates(lists[listSections.length+5]);
-      setData(v=>({...v,mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));
       setData(v=>({...v,attendance:lists[listSections.length],mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));
     } catch(e){setError(e.message);}
   };
