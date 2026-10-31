@@ -10,7 +10,8 @@ export function formatBytes(value) {
     Math.floor(Math.log(value) / Math.log(1024)),
     units.length - 1
   );
-  return \`\${(value / Math.pow(1024, index)).toFixed(index > 1 ? 2 : 1)} \${units[index]}\`;
+  const amount = (value / Math.pow(1024, index)).toFixed(index > 1 ? 2 : 1);
+  return amount + " " + units[index];
 }
 
 /**
