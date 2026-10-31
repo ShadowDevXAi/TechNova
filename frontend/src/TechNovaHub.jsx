@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { BriefcaseBusiness, Code2, CalendarDays, BookOpen, MessageSquare, Gift, Plus, ExternalLink, Trophy, Zap, Users, Send, Archive, ClipboardCheck, ChevronLeft, ChevronRight } from "lucide-react";
+import { BriefcaseBusiness, Code2, CalendarDays, BookOpen, MessageSquare, Gift, Plus, ExternalLink, Trophy, Zap, Users, Send, Archive, ClipboardCheck, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { api, API_BASE } from "./api/client.js";
 
-const API = (import.meta.env.VITE_API_BASE_URL || "https://technova-5h0g.onrender.com").replace(/\/$/, "");
 const sections = [
   ["projects","Projects",BriefcaseBusiness],["challenges","Coding Arena",Code2],
   ["events","Events",CalendarDays],["resources","Library",BookOpen],["polls","Polls",ClipboardCheck],
@@ -40,35 +40,72 @@ export default function TechNovaHub({token,user}) {
   const [messageText,setMessageText]=useState("");
   const [certificates,setCertificates]=useState([]);
   const staff=["Founder","Core Management","Faculty"].includes(user?.role);
-  const call=async(path,opts={})=>{
-    const res=await fetch(API+"/api"+path,{...opts,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token,...(opts.headers||{})}});
-    const body=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(body.detail||"Request failed ("+res.status+")");
-    return body;
-  };
-  const refresh=async()=>{
-    setError("");
+  // Reuse the shared client so every screen gets the same auth, timeout and error handling.
+  const call = (path, opts = {}) => api(path, token, opts);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [certificateBusy, setCertificateBusy] = useState(false);
+  const listSections = sections.filter(([key]) =>
+    !["attendance", "mentorship", "messages", "certificates"].includes(key)
+  );
+
+  // Load Hub resources independently. A temporary failure in one section should not
+  // hide the other sections that loaded successfully.
+  const refresh = async () => {
+    setRefreshing(true);
+    const requests = [
+      ["profile", call("/hub/profile")],
+      ...listSections.map(([key]) => [key, call("/hub/" + key)]),
+      ["attendance", call("/hub/attendance")],
+      ["rewardRequests", call("/hub/rewards/requests")],
+      ["mentorship", call("/hub/mentorship/requests")],
+      ["messages", call("/hub/messages")],
+      ["members", call("/hub/members/active")],
+      ["certificates", call("/hub/certificates")],
+    ];
+
     try {
-      const [p,...lists]=await Promise.all([
-        call("/hub/profile"),
-        ...sections.filter(([key])=>!["attendance","mentorship","messages","certificates"].includes(key)).map(([key])=>call("/hub/"+key)),
-        call("/hub/attendance"),
-        call("/hub/rewards/requests"),
-        call("/hub/mentorship/requests"),
-        call("/hub/messages"),
-        call("/hub/members/active"),
-        call("/hub/certificates")
-      ]);
-      setProfile(p);
-      const listSections=sections.filter(([key])=>!["attendance","mentorship","messages","certificates"].includes(key));
-      setData({...Object.fromEntries(listSections.map(([key],i)=>[key,lists[i]])),attendance:lists[listSections.length]});
-      setRewardRequests(lists[listSections.length+1]);
-      setMentorshipRequests(lists[listSections.length+2]);
-      setMessages(lists[listSections.length+3]);
-      setMembers(lists[listSections.length+4]);
-      setCertificates(lists[listSections.length+5]);
-      setData(v=>({...v,attendance:lists[listSections.length],mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));
-    } catch(e){setError(e.message);}
+      const settled = await Promise.allSettled(requests.map(([, request]) => request));
+      const results = Object.fromEntries(
+        requests.map(([key], index) => [key, settled[index]])
+      );
+      const profileResult = results.profile;
+      if (profileResult.status !== "fulfilled") throw profileResult.reason;
+
+      const value = (key, fallback = []) =>
+        results[key]?.status === "fulfilled" ? results[key].value : fallback;
+
+      setProfile(value("profile", null));
+      setData({
+        ...Object.fromEntries(listSections.map(([key]) => [key, value(key)])),
+        attendance: value("attendance"),
+        mentorship: value("mentorship"),
+        messages: value("messages"),
+        certificates: value("certificates"),
+      });
+      setRewardRequests(value("rewardRequests"));
+      setMentorshipRequests(value("mentorship"));
+      setMessages(value("messages"));
+      setMembers(value("members"));
+      setCertificates(value("certificates"));
+
+      const failedSections = requests
+        .filter(([key], index) => key !== "profile" && settled[index].status === "rejected")
+        .map(([key]) => key);
+      const labels = failedSections.map((key) => ({
+        rewardRequests: "reward requests",
+      }[key] || key));
+      setError(
+        labels.length
+          ? "Some Hub data could not load (" + labels.join(", ") +
+              "). Other sections remain available; use Refresh to retry."
+          : ""
+      );
+    } catch (error) {
+      setError(error.message || "Unable to load Club Hub data.");
+    } finally {
+      setRefreshing(false);
+    }
   };
   useEffect(()=>{if(token)refresh();},[token]);
   const create=async(e)=>{
@@ -96,7 +133,23 @@ export default function TechNovaHub({token,user}) {
   const vote=async(id,option)=>{try{await call("/hub/polls/"+id+"/vote",{method:"POST",body:JSON.stringify({option})});setMessage("Vote recorded.");await refresh();}catch(e){setError(e.message);}};
   const sendMessage=async(e)=>{e.preventDefault();try{await call("/hub/messages",{method:"POST",body:JSON.stringify({recipient_id:recipientId,message:messageText})});setMessage("Message sent.");setMessageText("");await refresh();}catch(e){setError(e.message);}};
   const requestMentorship=async(e)=>{e.preventDefault();try{await call("/hub/mentorship",{method:"POST",body:JSON.stringify({mentor,goal})});setMessage("Mentorship request sent.");setMentor("");setGoal("");await refresh();}catch(e){setError(e.message);}};
-  const issueCertificate=async()=>{try{await call("/hub/certificates/issue",{method:"POST"});setMessage("Certificate issued.");await refresh();}catch(e){setError(e.message);}};
+  const certificateEligible = Number(profile?.completed_tasks || 0) >= 1;
+  const issueCertificate = async () => {
+    if (!certificateEligible) {
+      setError("Complete at least one approved task before requesting a certificate.");
+      return;
+    }
+    setCertificateBusy(true);
+    try {
+      await call("/hub/certificates/issue", { method: "POST" });
+      setMessage("Certificate issued.");
+      await refresh();
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setCertificateBusy(false);
+    }
+  };
   const decideMentorship=async(id,decision)=>{try{await call("/hub/mentorship/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
   const decideReward=async(id,decision)=>{try{await call("/hub/rewards/requests/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
   const reviewChallenge=async(item,userId,decision)=>{try{await call("/hub/challenges/"+item.id+"/review",{method:"POST",body:JSON.stringify({user_id:userId,decision,feedback:decision==="Accepted"?"Approved by club management":"Please revise and resubmit."})});setMessage("Challenge submission reviewed.");await refresh();}catch(e){setError(e.message);}};
@@ -120,13 +173,18 @@ export default function TechNovaHub({token,user}) {
         </div>
         <button type="button" className="hub-tab-arrow" onClick={()=>scrollTabs(1)} aria-label="Scroll club sections right"><ChevronRight size={17}/></button>
       </div>
-      {canCreate&&<button type="button" className="primary hub-add" onClick={()=>setShowForm(v=>!v)}><Plus size={16}/> Create</button>}
+      <div className="hub-toolbar-actions">
+        <button type="button" className="secondary hub-refresh" onClick={refresh} disabled={refreshing} aria-label="Refresh Club Hub data">
+          <RefreshCw size={15} className={refreshing ? "hub-refreshing" : ""} /> {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+        {canCreate&&<button type="button" className="primary hub-add" onClick={()=>setShowForm(v=>!v)}><Plus size={16}/> Create</button>}
+      </div>
     </div>
     {error&&<div className="hub-alert error">{error}</div>}{message&&<div className="hub-alert">{message}</div>}
     {section==="polls"&&showForm&&<div className="hub-create"><label>Poll options (comma separated)<input value={pollOptions} onChange={e=>setPollOptions(e.target.value)} placeholder="Option A, Option B"/></label></div>}
     {section==="mentorship"&&<form className="hub-create" onSubmit={requestMentorship}><h3>Request a mentor</h3><input required placeholder="Mentor name" value={mentor} onChange={e=>setMentor(e.target.value)}/><textarea required rows="3" placeholder="What do you want to learn?" value={goal} onChange={e=>setGoal(e.target.value)}/><button className="primary">Send request</button></form>}
     {section==="messages"&&<form className="hub-create" onSubmit={sendMessage}><h3>Send a club message</h3><select required value={recipientId} onChange={e=>setRecipientId(e.target.value)}><option value="">Choose active member</option>{members.filter(m=>m.status==="Active"&&m.id!==user?.id).map(m=><option key={m.id} value={m.id}>{m.name} · {m.member_id}</option>)}</select><textarea required maxLength="2000" rows="3" placeholder="Write a message…" value={messageText} onChange={e=>setMessageText(e.target.value)}/><button className="primary">Send message</button></form>}
-    {section==="certificates"&&<div className="hub-create"><h3>Achievement certificates</h3><p>Request a certificate after completing at least one approved task.</p><button className="primary" onClick={issueCertificate}>Issue my certificate</button>{certificates.map(c=><article key={c.id}><b>{c.name}</b><small>{c.completed_tasks} approved tasks · Verification code: {c.code}</small><a className="hub-link" href={API+"/api/certificates/verify/"+c.code} target="_blank" rel="noreferrer">Verify certificate <ExternalLink size={13}/></a></article>)}</div>}
+    {section==="certificates"&&<div className="hub-create"><h3>Achievement certificates</h3><p>Request a certificate after completing at least one approved task.</p><button className="primary" onClick={issueCertificate} disabled={!certificateEligible||certificateBusy||refreshing}>{certificateBusy?"Issuing…":certificateEligible?"Issue my certificate":"Complete an approved task first"}</button>{!certificateEligible&&<small>Certificate requests unlock after your first approved task.</small>}{certificates.map(c=><article key={c.id}><b>{c.name}</b><small>{c.completed_tasks} approved tasks · Verification code: {c.code}</small><a className="hub-link" href={API_BASE+"/api/certificates/verify/"+encodeURIComponent(c.code)} target="_blank" rel="noreferrer">Verify certificate <ExternalLink size={13}/></a></article>)}</div>}
     {section==="attendance"&&<div className="hub-create">
       {staff&&<form onSubmit={openAttendance}><h3>Open attendance session</h3><input required minLength="3" placeholder="Meeting / workshop title" value={sessionTitle} onChange={e=>setSessionTitle(e.target.value)}/><button className="primary">Generate check-in code</button></form>}
       <form onSubmit={checkIn}><h3>Member check-in</h3><input required placeholder="Enter code shared by management" value={attendanceCode} onChange={e=>setAttendanceCode(e.target.value)}/><button className="primary">Confirm attendance</button></form>
