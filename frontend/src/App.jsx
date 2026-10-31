@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
 import TechNovaHub from "./TechNovaHub";
+import { api, API_BASE } from "./api/client.js";
+import TechNovaLogo from "./components/TechNovaLogo.jsx";
+import { links } from "./config/navigation.js";
+import { formatBytes, initials } from "./utils/formatters.js";
 import { createPortal } from "react-dom";
 import {
   LayoutDashboard,
@@ -29,93 +33,12 @@ import { QRCodeSVG } from "qrcode.react";
 import { Html5QrcodeScanner } from "html5-qrcode";
 
 
-// ImagePaste /v/ URLs are share pages. Use the /i/ direct-file URL in HTML image sources.
-const TECHNOVA_LOGO_SHARE_URL = "https://imagepaste.org/v/c4n7u2ru.png";
-const TECHNOVA_LOGO_IMAGE_URL = "https://imagepaste.org/i/c4n7u2ru.png";
+// Shared API, branding, navigation and formatting utilities are imported above.
 
-const formatBytes = (value) => {
-  if (value === null || value === undefined) return "Not configured";
-  if (value === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-  return `${(value / Math.pow(1024, index)).toFixed(index > 1 ? 2 : 1)} ${units[index]}`;
-};
-
-function TechNovaLogo({ className = "" }) {
-  const [failed, setFailed] = useState(false);
-
-  return (
-    <a
-      className={("technova-logo-link " + className).trim()}
-      href={TECHNOVA_LOGO_SHARE_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Open the TechNova logo image"
-    >
-      {failed ? (
-        <span className="technova-logo-fallback">TN</span>
-      ) : (
-        <img
-          className="technova-logo-image"
-          src={TECHNOVA_LOGO_IMAGE_URL}
-          alt="TechNova logo"
-          loading="eager"
-          decoding="async"
-          onError={() => setFailed(true)}
-        />
-      )}
-    </a>
-  );
-}
-
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  "https://technova-5h0g.onrender.com"
-).replace(/\/$/, "");
-
-const api = async (path, token, opts = {}) => {
-  const isForm = opts.body instanceof FormData;
-
-  const r = await fetch(`${API_BASE}/api${path}`, {
-    ...opts,
-    headers: {
-      ...(!isForm ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: "Bearer " + token } : {}),
-      ...(opts.headers || {}),
-    },
-  });
-
-  let data = {};
-
-  try {
-    data = await r.json();
-  } catch {
-    // Response was empty or not JSON.
-  }
-
-  if (!r.ok) {
-    throw new Error(
-      data.detail || data.message || `Request failed: ${r.status}`
-    );
-  }
-
-  return data;
-};
-
-
-const links = [
-  ["Overview", LayoutDashboard],
-  ["Club Hub", Code2],
-  ["Members", Users],
-  ["Tasks & Projects", ClipboardList],
-  ["Leaderboard", Trophy],
-  ["Notifications", Bell],
-  ["Digital ID Cards", CreditCard],
-  ["Verification", ShieldCheck],
-  ["Teams", FolderKanban],
-  ["Settings", Settings],
-];
-
+/**
+ * Main portal coordinator: owns the authenticated session, shared workspace state,
+ * screen selection and event callbacks passed to the portal UI.
+ */
 function App() {
   const [token, setToken] = useState(localStorage.getItem("tn_token") || "");
   const [user, setUser] = useState(null);
@@ -201,13 +124,16 @@ function App() {
   const [profileForm, setProfileForm] = useState({ name: "" });
   const [audit, setAudit] = useState([]);
 
+  // Show a short success toast after a member or management action completes.
   const notify = (s) => {
     setToast(s);
     setTimeout(() => setToast(""), 3000);
   };
 
+  // Convert thrown API errors into the single workspace error banner.
   const fail = (e) => setError(e.message || "Something went wrong");
 
+  // Load the signed-in member and initial data required by the workspace screens.
   const load = async (t = token) => {
     if (!t) return;
     setError("");
@@ -450,6 +376,7 @@ function App() {
     };
   }, [scanEnabled, page]);
 
+  // Shared role flags control management-only controls throughout the portal.
   const isAdmin = user && ["Founder", "Core Management"].includes(user.role);
   const isFounder = user?.role === "Founder";
 
@@ -1155,6 +1082,7 @@ function App() {
     }
   }
 
+  // Derived view data: keep search and status filtering out of the JSX markup.
   const filteredMembers = members.filter((m) =>
     (m.name + " " + m.member_id + " " + m.team + " " + m.email)
       .toLowerCase()
@@ -3463,15 +3391,6 @@ function App() {
       {toast && <div className="toast">✓ {toast}</div>}
     </div>
   );
-}
-
-function initials(s = "") {
-  return s
-    .split(" ")
-    .map((x) => x[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 }
 
 export default App;
