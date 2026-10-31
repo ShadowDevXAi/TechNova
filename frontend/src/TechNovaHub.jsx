@@ -4,8 +4,8 @@ import { BriefcaseBusiness, Code2, CalendarDays, BookOpen, MessageSquare, Gift, 
 const API = (import.meta.env.VITE_API_BASE_URL || "https://technova-5h0g.onrender.com").replace(/\/$/, "");
 const sections = [
   ["projects","Projects",BriefcaseBusiness],["challenges","Coding Arena",Code2],
-  ["events","Events",CalendarDays],["resources","Library",BookOpen],
-  ["discussions","Community",MessageSquare],["rewards","Rewards",Gift],["attendance","Attendance",ClipboardCheck],
+  ["events","Events",CalendarDays],["resources","Library",BookOpen],["polls","Polls",ClipboardCheck],
+  ["discussions","Community",MessageSquare],["rewards","Rewards",Gift],["attendance","Attendance",ClipboardCheck],["mentorship","Mentorship",Users],["messages","Messages",MessageSquare],["certificates","Certificates",Trophy],
 ];
 const emptyForm = {title:"",description:"",category:"",url:"",due_date:"",points:0};
 
@@ -24,6 +24,15 @@ export default function TechNovaHub({token,user}) {
   const [attendanceCode,setAttendanceCode]=useState("");
   const [sessionTitle,setSessionTitle]=useState("");
   const [rewardRequests,setRewardRequests]=useState([]);
+  const [pollOptions,setPollOptions]=useState("Yes,No");
+  const [mentor,setMentor]=useState("");
+  const [goal,setGoal]=useState("");
+  const [mentorshipRequests,setMentorshipRequests]=useState([]);
+  const [messages,setMessages]=useState([]);
+  const [members,setMembers]=useState([]);
+  const [recipientId,setRecipientId]=useState("");
+  const [messageText,setMessageText]=useState("");
+  const [certificates,setCertificates]=useState([]);
   const staff=["Founder","Core Management","Faculty"].includes(user?.role);
   const call=async(path,opts={})=>{
     const res=await fetch(API+"/api"+path,{...opts,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token,...(opts.headers||{})}});
@@ -36,20 +45,20 @@ export default function TechNovaHub({token,user}) {
     try {
       const [p,...lists]=await Promise.all([
         call("/hub/profile"),
-        ...sections.filter(([key])=>key!=="attendance").map(([key])=>call("/hub/"+key)),
+        ...sections.filter(([key])=>!["attendance","mentorship","messages","certificates"].includes(key)).map(([key])=>call("/hub/"+key)),
         call("/hub/attendance"),
         call("/hub/rewards/requests")
       ]);
       setProfile(p);
-      const listSections=sections.filter(([key])=>key!=="attendance");
+      const listSections=sections.filter(([key])=>!["attendance","mentorship","messages","certificates"].includes(key));
       setData({...Object.fromEntries(listSections.map(([key],i)=>[key,lists[i]])),attendance:lists[listSections.length]});
-      setRewardRequests(lists[listSections.length+1]);
+      setRewardRequests(lists[listSections.length+1]);\n      setMentorshipRequests(lists[listSections.length+2]);\n      setMessages(lists[listSections.length+3]);\n      setMembers(lists[listSections.length+4]);\n      setCertificates(lists[listSections.length+5]);\n      setData(v=>({...v,attendance:lists[listSections.length],mentorship:lists[listSections.length+2],messages:lists[listSections.length+3],certificates:lists[listSections.length+5]}));
     } catch(e){setError(e.message);}
   };
   useEffect(()=>{if(token)refresh();},[token]);
   const create=async(e)=>{
     e.preventDefault();setBusy(true);setError("");setMessage("");
-    try{await call("/hub/"+section,{method:"POST",body:JSON.stringify(form)});setForm(emptyForm);setShowForm(false);setMessage("Published successfully.");await refresh();}
+    try{await call("/hub/"+section,{method:"POST",body:JSON.stringify({...form,options:section==="polls"?pollOptions.split(",").map(x=>x.trim()).filter(Boolean):[]})});setForm(emptyForm);setShowForm(false);setMessage("Published successfully.");await refresh();}
     catch(e){setError(e.message);}finally{setBusy(false);}
   };
   const join=async(id)=>{
@@ -69,7 +78,7 @@ export default function TechNovaHub({token,user}) {
   const openAttendance=async(e)=>{e.preventDefault();try{const session=await call("/hub/attendance",{method:"POST",body:JSON.stringify({title:sessionTitle})});setSessionTitle("");setMessage("Session opened. Share code: "+session.code);await refresh();}catch(e){setError(e.message);}};
   const rsvp=async(id)=>{try{await call("/hub/events/"+id+"/rsvp",{method:"POST"});setMessage("Event registration saved.");await refresh();}catch(e){setError(e.message);}};
   const requestReward=async(id)=>{try{await call("/hub/rewards/"+id+"/request",{method:"POST"});setMessage("Reward request sent.");await refresh();}catch(e){setError(e.message);}};
-  const decideReward=async(id,decision)=>{try{await call("/hub/rewards/requests/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
+  const vote=async(id,option)=>{try{await call("/hub/polls/"+id+"/vote",{method:"POST",body:JSON.stringify({option})});setMessage("Vote recorded.");await refresh();}catch(e){setError(e.message);}};\n  const sendMessage=async(e)=>{e.preventDefault();try{await call("/hub/messages",{method:"POST",body:JSON.stringify({recipient_id:recipientId,message:messageText})});setMessage("Message sent.");setMessageText("");await refresh();}catch(e){setError(e.message);}};\n  const requestMentorship=async(e)=>{e.preventDefault();try{await call("/hub/mentorship",{method:"POST",body:JSON.stringify({mentor,goal})});setMessage("Mentorship request sent.");setMentor("");setGoal("");await refresh();}catch(e){setError(e.message);}};\n  const issueCertificate=async()=>{try{await call("/hub/certificates/issue",{method:"POST"});setMessage("Certificate issued.");await refresh();}catch(e){setError(e.message);}};\n  const decideMentorship=async(id,decision)=>{try{await call("/hub/mentorship/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};\n  const decideReward=async(id,decision)=>{try{await call("/hub/rewards/requests/"+id+"/decision",{method:"POST",body:JSON.stringify({decision})});await refresh();}catch(e){setError(e.message);}};
   const reviewChallenge=async(item,userId,decision)=>{try{await call("/hub/challenges/"+item.id+"/review",{method:"POST",body:JSON.stringify({user_id:userId,decision,feedback:decision==="Accepted"?"Approved by club management":"Please revise and resubmit."})});setMessage("Challenge submission reviewed.");await refresh();}catch(e){setError(e.message);}};
   const canCreate=(staff&&section!=="attendance")||section==="discussions";
   return <main className="hub-page">
@@ -87,6 +96,10 @@ export default function TechNovaHub({token,user}) {
       {canCreate&&<button className="primary hub-add" onClick={()=>setShowForm(v=>!v)}><Plus size={16}/> Create</button>}
     </div>
     {error&&<div className="hub-alert error">{error}</div>}{message&&<div className="hub-alert">{message}</div>}
+    {section==="polls"&&showForm&&<div className="hub-create"><label>Poll options (comma separated)<input value={pollOptions} onChange={e=>setPollOptions(e.target.value)} placeholder="Option A, Option B"/></label></div>}
+    {section==="mentorship"&&<form className="hub-create" onSubmit={requestMentorship}><h3>Request a mentor</h3><input required placeholder="Mentor name" value={mentor} onChange={e=>setMentor(e.target.value)}/><textarea required rows="3" placeholder="What do you want to learn?" value={goal} onChange={e=>setGoal(e.target.value)}/><button className="primary">Send request</button></form>}
+    {section==="messages"&&<form className="hub-create" onSubmit={sendMessage}><h3>Send a club message</h3><select required value={recipientId} onChange={e=>setRecipientId(e.target.value)}><option value="">Choose active member</option>{members.filter(m=>m.status==="Active"&&m.id!==user?.id).map(m=><option key={m.id} value={m.id}>{m.name} · {m.member_id}</option>)}</select><textarea required maxLength="2000" rows="3" placeholder="Write a message…" value={messageText} onChange={e=>setMessageText(e.target.value)}/><button className="primary">Send message</button></form>}
+    {section==="certificates"&&<div className="hub-create"><h3>Achievement certificates</h3><p>Request a certificate after completing at least one approved task.</p><button className="primary" onClick={issueCertificate}>Issue my certificate</button>{certificates.map(c=><article key={c.id}><b>{c.name}</b><small>{c.completed_tasks} approved tasks · Verification code: {c.code}</small><a className="hub-link" href={API+"/api/certificates/verify/"+c.code} target="_blank" rel="noreferrer">Verify certificate <ExternalLink size={13}/></a></article>)}</div>}
     {section==="attendance"&&<div className="hub-create">
       {staff&&<form onSubmit={openAttendance}><h3>Open attendance session</h3><input required minLength="3" placeholder="Meeting / workshop title" value={sessionTitle} onChange={e=>setSessionTitle(e.target.value)}/><button className="primary">Generate check-in code</button></form>}
       <form onSubmit={checkIn}><h3>Member check-in</h3><input required placeholder="Enter code shared by management" value={attendanceCode} onChange={e=>setAttendanceCode(e.target.value)}/><button className="primary">Confirm attendance</button></form>
@@ -101,7 +114,7 @@ export default function TechNovaHub({token,user}) {
       <div className="hub-card-top"><span>{item.category||sections.find(x=>x[0]===section)?.[1]}</span><small>{item.status}</small></div><h3>{item.title}</h3><p>{item.description||"No description provided."}</p>
       <div className="hub-meta">{item.created_by&&<span>By {item.created_by}</span>}{item.due_date&&<span>Due {item.due_date}</span>}{item.points>0&&<span>{item.points} points</span>}{section==="projects"&&<span><Users size={13}/> {item.members?.length||0} members</span>}</div>
       {section==="projects"&&<button className="secondary" onClick={()=>join(item.id)}>Join project</button>}
-      {section==="events"&&<button className="secondary" onClick={()=>rsvp(item.id)}>Register for event</button>}
+      {section==="events"&&<button className="secondary" onClick={()=>rsvp(item.id)}>Register for event</button>}\n      {section==="polls"&&(item.options||[]).map(option=><button className="secondary" key={option} onClick={()=>vote(item.id,option)}>{option} · {(item.votes||[]).filter(v=>v.option===option).length} votes</button>)}
       {section==="rewards"&&<button className="secondary" onClick={()=>requestReward(item.id)}>Request reward</button>}
       {section==="attendance"&&<div className="hub-meta"><span>{item.attendee_count} checked in</span><span>{item.checked_in?"You are checked in":"Check in with session code"}</span>{staff&&item.code&&<b>Code: {item.code}</b>}</div>}
       {section==="challenges"&&staff&&(item.submissions||[]).map((sub,i)=><div className="hub-review" key={i}><b>{sub.member_name} · {sub.language}</b><small>{sub.review_status}</small><pre>{sub.code}</pre>{sub.review_feedback&&<p>{sub.review_feedback}</p>}<div><button className="secondary" onClick={()=>reviewChallenge(item,sub.user_id,"Accepted")}>Accept</button><button className="secondary" onClick={()=>reviewChallenge(item,sub.user_id,"Needs changes")}>Request changes</button></div></div>)}
@@ -109,7 +122,9 @@ export default function TechNovaHub({token,user}) {
       {section==="discussions"&&<div className="hub-comments">{(item.comments||[]).map((c,i)=><p key={i}><b>{c.name}:</b> {c.message}</p>)}<div><input placeholder="Add a comment…" value={comment[item.id]||""} onChange={e=>setComment(v=>({...v,[item.id]:e.target.value}))}/><button onClick={()=>addComment(item.id)} aria-label="Send comment"><Send size={15}/></button></div></div>}
       {item.url&&<a className="hub-link" href={item.url} target="_blank" rel="noreferrer">Open link <ExternalLink size={14}/></a>}
     </article>)}</div>
-    {section==="rewards"&&<section className="hub-achievements"><h3>Reward request history</h3>{rewardRequests.length===0?<small>No reward requests yet.</small>:rewardRequests.map(r=><article key={r.id}><b>{r.reward_title}</b><small>{r.member_name||"Member"} · {r.status}</small>{staff&&r.status==="Pending"&&<span><button className="secondary" onClick={()=>decideReward(r.id,"Approved")}>Approve</button> <button className="secondary" onClick={()=>decideReward(r.id,"Declined")}>Decline</button></span>}</article>)}</section>}
+    {section==="mentorship"&&<section className="hub-achievements"><h3>Mentorship requests</h3>{mentorshipRequests.map(r=><article key={r.id}><b>{r.member_name} → {r.mentor}</b><small>{r.goal} · {r.status}</small>{staff&&r.status==="Pending"&&<span><button className="secondary" onClick={()=>decideMentorship(r.id,"Approved")}>Approve</button><button className="secondary" onClick={()=>decideMentorship(r.id,"Declined")}>Decline</button></span>}</article>)}</section>}
+    {section==="messages"&&<section className="hub-achievements"><h3>Inbox and sent messages</h3>{messages.map(m=><article key={m.id}><b>{m.sender_id===user?.id?"To: "+m.recipient:"From: "+m.sender}</b><small>{m.message}</small></article>)}</section>}
+        {section==="rewards"&&<section className="hub-achievements"><h3>Reward request history</h3>{rewardRequests.length===0?<small>No reward requests yet.</small>:rewardRequests.map(r=><article key={r.id}><b>{r.reward_title}</b><small>{r.member_name||"Member"} · {r.status}</small>{staff&&r.status==="Pending"&&<span><button className="secondary" onClick={()=>decideReward(r.id,"Approved")}>Approve</button> <button className="secondary" onClick={()=>decideReward(r.id,"Declined")}>Decline</button></span>}</article>)}</section>}
     <div className="hub-footnote"><Zap size={15}/> XP is calculated from approved task completions. Online code execution, AI assistance and GitHub account linking need separately configured secure providers.</div>
   </main>;
 }
