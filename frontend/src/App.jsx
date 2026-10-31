@@ -1959,7 +1959,27 @@ function App() {
                     Assign work, track progress, and keep project delivery visible.
                   </p>
                 </div>
-  
+                {isAdmin && (
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setTaskForm({
+                        ...taskForm,
+                        assignment_mode: "individual",
+                        assignee_ids: [],
+                        assignee_id:
+                          members.find((m) => m.status === "Active" && m.role === "Member")?.id ||
+                          members[0]?.id ||
+                          "",
+                      });
+                      setModal("task");
+                    }}
+                  >
+                    <Plus size={14} /> Create task
+                  </button>
+                )}
+              </div>
+
                             <div className="task-status-toolbar">
                 <div className="task-status-heading">
                   <b>{isAdmin ? "Club-wide task status" : "My task status"}</b>
@@ -2190,28 +2210,6 @@ function App() {
                   <span className="operations-summary-count">{reviewQueue.length} pending approvals</span>
                 </summary>
                 <div className="task-operations-content">
-                  {isAdmin && (
-                  <button
-                    className="primary"
-                    onClick={() => {
-                      setTaskForm({
-                        ...taskForm,
-                        assignment_mode: "individual",
-                        assignee_ids: [],
-                        assignee_id:
-                          members.find(
-                            (m) => m.status === "Active" && m.role === "Member"
-                          )?.id ||
-                          members[0]?.id ||
-                          "",
-                      });
-                      setModal("task");
-                    }}
-                  >
-                    <Plus size={14} /> Create task
-                  </button>
-                )}
-              </div>
                   {isAdmin && (
                 <div className="panel review-queue-panel">
                   <div className="panelhead">
