@@ -31,6 +31,14 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 const TECHNOVA_LOGO_SHARE_URL = "https://imagepaste.org/v/c4n7u2ru.png";
 const TECHNOVA_LOGO_IMAGE_URL = "https://imagepaste.org/i/c4n7u2ru.png";
 
+const formatBytes = (value) => {
+  if (value === null || value === undefined) return "Not configured";
+  if (value === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  return `${(value / Math.pow(1024, index)).toFixed(index > 1 ? 2 : 1)} ${units[index]}`;
+};
+
 function TechNovaLogo({ className = "" }) {
   const [failed, setFailed] = useState(false);
 
@@ -132,6 +140,7 @@ function App() {
   });
   const [teams, setTeams] = useState([]);
   const [dashboard, setDashboard] = useState(null);
+  const [databaseStats, setDatabaseStats] = useState(null);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [modal, setModal] = useState("");
@@ -199,7 +208,7 @@ function App() {
     try {
       const me = await api("/auth/me", t);
       setUser(me);
-      const [d, ms, ts, tm, common, board, ledger, schedules, inbox, reviews] = await Promise.all([
+      const [d, ms, ts, tm, common, board, ledger, schedules, inbox, reviews, dbStats] = await Promise.all([
         api("/dashboard", t),
         api("/members", t),
         api("/tasks", t),
@@ -212,8 +221,12 @@ function App() {
         ["Founder", "Core Management"].includes(me.role)
           ? api("/tasks/review-queue", t)
           : Promise.resolve([]),
+        ["Founder", "Core Management"].includes(me.role)
+          ? api("/admin/database-stats", t)
+          : Promise.resolve(null),
       ]);
       setDashboard(d);
+      setDatabaseStats(dbStats);
       setMembers(ms);
       setTasks(ts);
       setTeams(tm);
@@ -256,13 +269,15 @@ function App() {
         ];
         if (["Founder", "Core Management"].includes(user.role)) {
           requests.push(api("/tasks/review-queue", token));
+          requests.push(api("/admin/database-stats", token));
         }
-        const [nextTasks, nextNotifications, nextDashboard, nextReviews] =
+        const [nextTasks, nextNotifications, nextDashboard, nextReviews, nextDbStats] =
           await Promise.all(requests);
         if (cancelled) return;
         setTasks(nextTasks);
         setNotifications(nextNotifications);
         setDashboard(nextDashboard);
+        if (nextDbStats) setDatabaseStats(nextDbStats);
         if (nextReviews) {
           setReviewQueue(nextReviews);
           setSelectedReviewIds((current) =>
@@ -476,6 +491,7 @@ function App() {
     setAnnouncementForm({ title: "", message: "" });
     setSubmissionForm({ taskId: "", title: "", submission_evidence_url: "", project_url: "", submission_note: "", submission_attested: false });
     setDashboard(null);
+    setDatabaseStats(null);
     setPage("Overview");
     window.history.replaceState({}, "", "/");
   }
@@ -1508,6 +1524,34 @@ function App() {
                   </div>
                 ))}
               </div>
+              {isAdmin && (
+                <section className="panel database-monitor-panel">
+                  <div className="panelhead">
+                    <div>
+                      <b>Database monitoring · MongoDB live</b>
+                      <small>Live collection counts and storage statistics · refreshes every 30 seconds</small>
+                    </div>
+                    <span className="database-live-indicator"><i /> LIVE</span>
+                  </div>
+                  <div className="database-metrics">
+                    <div className="database-metric"><small>Collections</small><strong>{databaseStats?.collections_count ?? "—"}</strong></div>
+                    <div className="database-metric"><small>Total documents</small><strong>{databaseStats?.documents_count?.toLocaleString() ?? "—"}</strong></div>
+                    <div className="database-metric"><small>Storage used</small><strong>{formatBytes(databaseStats?.storage_bytes)}</strong><small>Data {formatBytes(databaseStats?.data_bytes)} · Index {formatBytes(databaseStats?.index_bytes)}</small></div>
+                    <div className="database-metric"><small>Storage remaining</small><strong>{databaseStats?.storage_limit_configured ? formatBytes(databaseStats.remaining_bytes) : "Set limit"}</strong><small>{databaseStats?.storage_limit_configured ? "Against configured MongoDB storage cap" : "Set MONGODB_STORAGE_LIMIT_GB on Render to calculate remaining capacity"}</small></div>
+                  </div>
+                  <div className="database-collection-wrap">
+                    <div className="database-collection-heading"><b>Collection activity</b><small>{databaseStats?.database || "Database"} · {databaseStats?.measured_at ? new Date(databaseStats.measured_at).toLocaleTimeString() : "Waiting for data"}</small></div>
+                    <div className="database-collection-list">
+                      {(databaseStats?.collections || []).map((item) => (
+                        <div className="database-collection-row" key={item.name}>
+                          <span>{item.name}</span><b>{item.documents.toLocaleString()}</b>
+                        </div>
+                      ))}
+                      {!databaseStats?.collections?.length && <small className="database-empty">Collection statistics are loading.</small>}
+                    </div>
+                  </div>
+                </section>
+              )}
               <div className="panel">
                 <div className="panelhead">
                   <div>
@@ -2046,8 +2090,8 @@ function App() {
               <div className="panel common-task-board">
                 <div className="panelhead">
                   <div>
-                    <b>Common tasks · Member volunteer board</b>
-                    <small>Active Members can accept or decline. Faculty can view the opportunity and announcements but cannot claim student tasks.</small>
+                    <b>Daily Task Board · Open volunteer missions</b>
+                    <small>Daily AI missions are randomly generated here. Members may accept or decline; no one is assigned automatically.</small>
                   </div>
                   <span className="common-task-count">{commonTasks.length} open</span>
                 </div>
@@ -2114,7 +2158,7 @@ function App() {
                     </article>
                   ))}
                   {!commonTasks.length && (
-                    <div className="empty common-empty">No common tasks are open right now.</div>
+                    <div className="empty common-empty">No daily missions are available right now. The next random mission will appear automatically.</div>
                   )}
                 </div>
               </div>
