@@ -3,6 +3,7 @@ import TechNovaHub from "./TechNovaHub";
 import PushNotificationSettings from "./components/PushNotificationSettings.jsx";
 import TwoFactorSettings from "./components/TwoFactorSettings.jsx";
 import StorageSettings from "./components/StorageSettings.jsx";
+import ContactNotificationSettings from "./components/ContactNotificationSettings.jsx";
 import { listenForForegroundMessages } from "./firebase.js";
 import { api, API_BASE } from "./api/client.js";
 import TechNovaLogo from "./components/TechNovaLogo.jsx";
@@ -2434,6 +2435,7 @@ function App() {
               <div className="panel settings">
                 {isAdmin && <TwoFactorSettings token={token} />}
                 {isFounder && <StorageSettings token={token} />}
+                <ContactNotificationSettings token={token} />
                 <PushNotificationSettings token={token} />
                 {isFounder && (
                   <div className="email-delivery-panel">

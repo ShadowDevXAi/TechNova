@@ -364,6 +364,164 @@ async def revoke_two_factor_device(device_id: str, request: Request, user: dict 
     return {"message": "Trusted device revoked. It must complete two-factor verification next time."}
 
 
+# Purpose: Return safe contact and notification-preference settings for the signed-in account.
+@router.get("/api/auth/contact/status")
+async def contact_notification_status(user: dict = Depends(get_current_user)):
+    phone = str(user.get("phone_number") or "")
+    preferences = user.get("notification_preferences") or {}
+    return {
+        "phone_verified": bool(user.get("phone_verified_at")),
+        "phone_masked": ("+" + "*" * max(0, len(phone) - 4) + phone[-4:]) if phone else None,
+        "sms_consent": bool(user.get("sms_consent_at")),
+        "preferences": {
+            "email_enabled": preferences.get("email_enabled", True) is not False,
+            "push_enabled": preferences.get("push_enabled", True) is not False,
+            "sms_enabled": preferences.get("sms_enabled") is True,
+        },
+        "sms_provider": sms_configuration_status(),
+    }
+
+
+# Purpose: Send an opt-in phone verification code; no SMS alert preference is enabled yet.
+@router.post("/api/auth/contact/phone/request")
+@limiter.limit("3/hour")
+async def request_phone_verification(body: dict, request: Request, user: dict = Depends(get_current_user)):
+    phone = str(body.get("phone_number") or "").strip()
+    consent = body.get("consent") is True
+    if not re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
+        raise HTTPException(422, "Enter a phone number in international format, for example +919876543210.")
+    if not consent:
+        raise HTTPException(422, "Explicit consent is required before sending a phone-verification SMS.")
+    if not sms_configuration_status()["configured"]:
+        raise HTTPException(503, "Transactional SMS is not configured. Ask the Founder to configure Brevo SMS sender settings.")
+    existing = await db.users.find_one({
+        "phone_number": phone,
+        "phone_verified_at": {"$exists": True},
+        "status": "Active",
+        "_id": {"$ne": user["_id"]},
+    })
+    if existing:
+        raise HTTPException(409, "This verified phone number is already linked to another active TechNova account.")
+    last_requested = user.get("phone_verification_requested_at")
+    if last_requested and (utcnow() - last_requested).total_seconds() < 60:
+        raise HTTPException(429, "Please wait at least 60 seconds before requesting another verification code.")
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "phone_number_pending": phone,
+            "phone_verification_code_hash": token_hash(code),
+            "phone_verification_expires_at": utcnow() + timedelta(minutes=10),
+            "phone_verification_requested_at": utcnow(),
+        }},
+    )
+    try:
+        receipt = await asyncio.to_thread(
+            send_brevo_sms_message,
+            phone,
+            f"TechNova verification code: {code}. It expires in 10 minutes.",
+        )
+    except Exception as exc:
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$unset": {
+                "phone_number_pending": "",
+                "phone_verification_code_hash": "",
+                "phone_verification_expires_at": "",
+            }},
+        )
+        logger.error("Phone verification SMS failed (user_id=%s error_type=%s)", user["_id"], type(exc).__name__)
+        raise HTTPException(502, "Could not send the verification SMS. Check Brevo transactional SMS settings and credits.") from exc
+    await audit(user, "phone_verification_sms_requested", str(user["_id"]), {
+        "phone_suffix": phone[-4:],
+        "provider": receipt.get("provider"),
+    }, request)
+    return {"message": "Verification code sent. It expires in 10 minutes.", "expires_in_minutes": 10}
+
+
+# Purpose: Verify the SMS code and record explicit consent for transactional club alerts.
+@router.post("/api/auth/contact/phone/confirm")
+@limiter.limit("6/hour")
+async def confirm_phone_verification(body: dict, request: Request, user: dict = Depends(get_current_user)):
+    code = str(body.get("code") or "").strip()
+    pending_phone = user.get("phone_number_pending")
+    expected_hash = user.get("phone_verification_code_hash")
+    expires_at = user.get("phone_verification_expires_at")
+    if not re.fullmatch(r"[0-9]{6}", code):
+        raise HTTPException(422, "Enter the six-digit verification code.")
+    if not pending_phone or not expected_hash or not expires_at or expires_at <= utcnow():
+        raise HTTPException(410, "The phone verification code has expired. Request another code.")
+    if not secrets.compare_digest(token_hash(code), expected_hash):
+        raise HTTPException(400, "The phone verification code is incorrect.")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {
+                "phone_number": pending_phone,
+                "phone_verified_at": utcnow(),
+                "sms_consent_at": utcnow(),
+                "notification_preferences.sms_enabled": False,
+            },
+            "$unset": {
+                "phone_number_pending": "",
+                "phone_verification_code_hash": "",
+                "phone_verification_expires_at": "",
+            },
+        },
+    )
+    await audit(user, "phone_number_verified", str(user["_id"]), {"phone_suffix": pending_phone[-4:]}, request)
+    return {"message": "Phone number verified. SMS alerts remain off until you enable them in Settings."}
+
+
+# Purpose: Update per-channel notification preferences with server-enforced SMS consent checks.
+@router.patch("/api/auth/contact/preferences")
+async def update_contact_notification_preferences(body: dict, request: Request, user: dict = Depends(get_current_user)):
+    allowed = {"email_enabled", "push_enabled", "sms_enabled"}
+    changes = {key: body[key] for key in allowed if key in body}
+    if not changes or any(not isinstance(value, bool) for value in changes.values()):
+        raise HTTPException(422, "Provide one or more boolean notification preferences.")
+    current = user.get("notification_preferences") or {}
+    updated = {
+        "email_enabled": current.get("email_enabled", True) is not False,
+        "push_enabled": current.get("push_enabled", True) is not False,
+        "sms_enabled": current.get("sms_enabled") is True,
+        **changes,
+    }
+    if updated["sms_enabled"] and not (user.get("phone_verified_at") and user.get("sms_consent_at") and user.get("phone_number")):
+        raise HTTPException(409, "Verify your phone number and give SMS consent before enabling SMS alerts.")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"notification_preferences": updated}},
+    )
+    await audit(user, "notification_preferences_updated", str(user["_id"]), {
+        "email_enabled": updated["email_enabled"],
+        "push_enabled": updated["push_enabled"],
+        "sms_enabled": updated["sms_enabled"],
+    }, request)
+    return {"message": "Notification preferences saved.", "preferences": updated}
+
+
+# Purpose: Remove an account phone number and revoke SMS permission.
+@router.delete("/api/auth/contact/phone")
+async def remove_verified_phone(request: Request, user: dict = Depends(get_current_user)):
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$unset": {
+                "phone_number": "",
+                "phone_verified_at": "",
+                "sms_consent_at": "",
+                "phone_number_pending": "",
+                "phone_verification_code_hash": "",
+                "phone_verification_expires_at": "",
+            },
+            "$set": {"notification_preferences.sms_enabled": False},
+        },
+    )
+    await audit(user, "phone_number_removed", str(user["_id"]), {}, request)
+    return {"message": "Phone number removed and SMS alerts disabled."}
+
+
 # Purpose: me handles the auth feature flow and returns its API result.
 @router.get("/api/auth/me")
 async def me(user: dict = Depends(get_current_user)):

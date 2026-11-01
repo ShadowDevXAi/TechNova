@@ -142,13 +142,26 @@ async def email_delivery_status(actor: dict = Depends(allow("Founder"))):
         {"$group": {"_id": "$email_delivery.status", "count": {"$sum": 1}}},
     ]).to_list(length=20)
     counts = {row["_id"]: row["count"] for row in rows}
+    sms_rows = await db.notifications.aggregate([
+        {"$match": {"created_at": {"$gte": since}, "sms_delivery.status": {"$exists": True}}},
+        {"$group": {"_id": "$sms_delivery.status", "count": {"$sum": 1}}},
+    ]).to_list(length=20)
+    sms_counts = {row["_id"]: row["count"] for row in sms_rows}
     return {
         **configuration,
+        "sms": sms_configuration_status(),
         "last_24_hours": {
             "sent": counts.get("sent", 0),
             "failed": counts.get("failed", 0),
             "not_configured": counts.get("skipped_not_configured", 0),
             "missing_recipient": counts.get("skipped_no_recipient_email", 0),
+        },
+        "sms_last_24_hours": {
+            "sent": sms_counts.get("sent", 0),
+            "failed": sms_counts.get("failed", 0),
+            "not_configured": sms_counts.get("skipped_not_configured", 0),
+            "not_enabled": sms_counts.get("skipped_not_enabled", 0),
+            "unverified": sms_counts.get("skipped_no_verified_phone_or_consent", 0),
         },
     }
 

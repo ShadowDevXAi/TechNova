@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # Prefer Brevo's HTTPS API on hosts that block outbound SMTP ports (e.g. Render Free).
     brevo_api_key: str = ""
     brevo_sender_name: str = "TechNova"
+    # Optional sender ID must be approved/enabled for transactional SMS in Brevo.
+    brevo_sms_sender: str = ""
     # Firebase Admin credentials are mounted as a Render Secret File, never committed.
     firebase_service_account_file: str = ""
     firebase_project_id: str = "technova-f4460"

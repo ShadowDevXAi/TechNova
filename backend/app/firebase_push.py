@@ -61,6 +61,10 @@ async def send_push_notification(user_id, title: str, body: str, notification_ty
     if not settings.firebase_service_account_file:
         return
     try:
+        account = await db.users.find_one({"_id": user_id}, {"notification_preferences": 1})
+        preferences = (account or {}).get("notification_preferences") or {}
+        if preferences.get("push_enabled", True) is False:
+            return
         devices = await db.push_tokens.find(
             {"user_id": user_id}, {"_id": 0, "token": 1}
         ).to_list(500)

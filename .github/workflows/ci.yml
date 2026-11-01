@@ -49,6 +49,7 @@ jobs:
           from app.routes.auth import router as auth_router
           from app.core import (
               build_auto_archive_age_query,
+              sms_configuration_status,
               clean_task,
               founder_progression_details,
               member_level_details,
@@ -70,6 +71,8 @@ jobs:
           assert any(route.path == "/api/admin/email/status" for route in system_router.routes), "SMTP status route"
           assert any(route.path == "/api/admin/email/test" for route in system_router.routes), "SMTP test route"
           assert any(route.path == "/api/admin/storage/status" for route in system_router.routes), "Storage diagnostics route"
+          assert any(route.path == "/api/auth/contact/phone/request" for route in auth_router.routes), "Phone verification route"
+          assert any(route.path == "/api/auth/contact/preferences" for route in auth_router.routes), "Notification preferences route"
           auth_paths = {route.path for route in auth_router.routes}
           assert "/api/auth/2fa/setup" in auth_paths and "/api/auth/2fa/enable" in auth_paths, "Management MFA enrollment routes"
           assert "/api/auth/2fa/login" in auth_paths and "/api/auth/2fa/status" in auth_paths, "Management MFA login/status routes"
@@ -96,11 +99,16 @@ jobs:
           assert "completeTwoFactorSetup" in app_source and "QRCodeSVG" in app_source, "Management authenticator enrollment UI"
           assert "TwoFactorSettings" in app_source, "Trusted-device security settings UI"
           assert "build_task_sms_summary" in core_source, "Compact task SMS summary helper"
+          assert "send_brevo_sms_message" in core_source, "Brevo transactional SMS sender"
+          sms_status = sms_configuration_status()
+          assert "brevo_api_key" not in sms_status and "api_key" not in sms_status, "SMS provider status never exposes credentials"
+          assert 'preferences.get("sms_enabled") is not True' in core_source, "SMS is opt-in by default"
+          assert "sms_consent_at" in core_source, "SMS delivery requires recorded consent"
           from app.storage import attachment_storage_status
           from app.routes.tasks import attachment_signature_is_valid
           local_storage = attachment_storage_status()
           assert local_storage["provider"] == "Local disk" and local_storage["configured"], "Local development storage fallback"
-          assert attachment_signature_is_valid("image/png", b"\\x89PNG\\r\\n\\x1a\\nexample"), "PNG file signature"
+          assert attachment_signature_is_valid("image/png", b"\x89PNG\r\n\x1a\nexample"), "PNG file signature"
           assert not attachment_signature_is_valid("image/png", b"not an image"), "Reject MIME spoofing"
           assert attachment_signature_is_valid("application/pdf", b"%PDF-1.7"), "PDF file signature"
           assert not attachment_signature_is_valid("application/zip", b"#!/bin/sh"), "Reject executable renamed as ZIP"
@@ -116,6 +124,9 @@ jobs:
           compact_task_sms = build_task_sms_summary(sample_summary, "New task assigned")
           assert len(compact_task_sms) <= 320 and "Calculate total marks" in compact_task_sms, "SMS summary stays compact"
           assert "penalty_recipient = await db.users.find_one" in core_source, "Penalty emails must load the actual member email"
+          contact_source = open("app/routes/auth.py", encoding="utf-8").read()
+          assert "phone_verification_code_hash" in contact_source and "phone_verified_at" in contact_source, "SMS phone number verification"
+          assert "notification_preferences.sms_enabled" in contact_source, "SMS preferences are saved server-side"
 
           archive_cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
           archive_query = build_auto_archive_age_query("completion_confirmed_at", archive_cutoff)

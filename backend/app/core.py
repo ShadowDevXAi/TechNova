@@ -220,6 +220,68 @@ def smtp_configuration_status() -> dict:
     }
 
 
+def sms_configuration_status() -> dict:
+    """Return safe Brevo SMS readiness without exposing the API key."""
+    missing = []
+    if not settings.brevo_api_key.strip():
+        missing.append("BREVO_API_KEY")
+    sender = settings.brevo_sms_sender.strip()
+    if not sender:
+        missing.append("BREVO_SMS_SENDER")
+    elif len(sender) > 11 or not sender.isalnum():
+        missing.append("BREVO_SMS_SENDER (Brevo alphanumeric sender IDs allow up to 11 letters/digits)")
+    return {
+        "configured": not missing,
+        "provider": "Brevo Transactional SMS",
+        "sender": sender or None,
+        "missing": missing,
+    }
+
+
+# Purpose: Send a transactional SMS through Brevo's HTTPS API, without using blocked SMTP ports.
+def send_brevo_sms_message(recipient: str, content: str) -> dict:
+    status = sms_configuration_status()
+    if not status["configured"]:
+        raise RuntimeError("SMS is not configured: " + ", ".join(status["missing"]))
+    phone = str(recipient or "").strip()
+    if phone.startswith("+"):
+        phone = phone[1:]
+    if not phone.isdigit() or not 6 <= len(phone) <= 15:
+        raise ValueError("Recipient phone number must include its country code.")
+    message = str(content or "").strip()
+    if not message:
+        raise ValueError("SMS content cannot be empty.")
+    payload = {
+        "sender": settings.brevo_sms_sender.strip(),
+        "recipient": phone,
+        "content": message[:640],
+        "type": "transactional",
+    }
+    if any(ord(character) > 127 for character in payload["content"]):
+        payload["unicodeEnabled"] = True
+    request = urllib.request.Request(
+        "https://api.brevo.com/v3/transactionalSMS/send",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "accept": "application/json",
+            "api-key": settings.brevo_api_key.strip(),
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            result = json.loads(body) if body else {}
+            return {"provider": "Brevo Transactional SMS", "message_id": result.get("messageId")}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:800]
+        raise RuntimeError(f"Brevo SMS API returned HTTP {exc.code}: {detail or exc.reason}") from exc
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        raise RuntimeError(f"Brevo SMS HTTPS connection failed: {type(reason).__name__}") from exc
+
+
 # Purpose: Send transactional email via Brevo's HTTPS API (works on Render Free).
 def send_brevo_api_email(recipient: str, subject: str, body: str) -> dict:
     """Send email over HTTPS so the backend does not need outbound SMTP ports."""
@@ -312,6 +374,7 @@ async def create_notification(
     task_id: str | None = None,
     common_task_id: str | None = None,
     email_body: str | None = None,
+    sms_body: str | None = None,
 ) -> None:
     created_at = utcnow()
     notification = {
@@ -324,63 +387,88 @@ async def create_notification(
         "read_at": None,
         "created_at": created_at,
         "email_delivery": {"status": "pending", "updated_at": created_at},
+        "sms_delivery": {"status": "pending", "updated_at": created_at},
     }
     inserted = await db.notifications.insert_one(notification)
 
+    preferences = recipient.get("notification_preferences") or {}
+
+    # Email remains enabled by default for existing accounts; members can opt out in Settings.
     email = str(recipient.get("email") or "").strip()
-    smtp_status = smtp_configuration_status()
-    if not email:
-        delivery = {"status": "skipped_no_recipient_email", "updated_at": utcnow()}
+    email_status = smtp_configuration_status()
+    if preferences.get("email_enabled", True) is False:
+        email_delivery = {"status": "skipped_by_preference", "updated_at": utcnow()}
+    elif not email:
+        email_delivery = {"status": "skipped_no_recipient_email", "updated_at": utcnow()}
         logger.warning("Email notification skipped: recipient email is missing (notification_id=%s)", inserted.inserted_id)
-    elif not smtp_status["configured"]:
-        delivery = {
+    elif not email_status["configured"]:
+        email_delivery = {
             "status": "skipped_not_configured",
-            "missing": smtp_status["missing"],
+            "missing": email_status["missing"],
             "updated_at": utcnow(),
         }
-        logger.warning(
-            "Email notification skipped because SMTP is not configured (notification_id=%s missing=%s)",
-            inserted.inserted_id,
-            ", ".join(smtp_status["missing"]),
-        )
     else:
         try:
             receipt = await asyncio.to_thread(send_email_message, email, title, email_body or message)
-            delivery = {
+            email_delivery = {
                 "status": "sent",
-                "provider": receipt.get("provider", smtp_status.get("provider")),
+                "provider": receipt.get("provider", email_status.get("provider")),
                 "message_id": receipt.get("message_id"),
                 "updated_at": utcnow(),
             }
-            logger.info(
-                "Email notification sent (notification_id=%s provider=%s)",
-                inserted.inserted_id,
-                delivery.get("provider"),
-            )
         except Exception as exc:
-            delivery = {
-                "status": "failed",
-                "error_type": type(exc).__name__,
-                "updated_at": utcnow(),
-            }
+            email_delivery = {"status": "failed", "error_type": type(exc).__name__, "updated_at": utcnow()}
             logger.exception(
                 "Email notification delivery failed (notification_id=%s provider=%s error_type=%s)",
-                inserted.inserted_id,
-                smtp_status.get("provider"),
-                type(exc).__name__,
+                inserted.inserted_id, email_status.get("provider"), type(exc).__name__,
             )
+
+    # SMS is strictly opt-in: a verified phone and explicit member preference are both required.
+    phone = str(recipient.get("phone_number") or "").strip()
+    consented = bool(recipient.get("phone_verified_at") and recipient.get("sms_consent_at"))
+    sms_status = sms_configuration_status()
+    if preferences.get("sms_enabled") is not True:
+        sms_delivery = {"status": "skipped_not_enabled", "updated_at": utcnow()}
+    elif not phone or not consented:
+        sms_delivery = {"status": "skipped_no_verified_phone_or_consent", "updated_at": utcnow()}
+    elif not sms_status["configured"]:
+        sms_delivery = {
+            "status": "skipped_not_configured",
+            "missing": sms_status["missing"],
+            "updated_at": utcnow(),
+        }
+    else:
+        try:
+            compact_body = (sms_body or f"TechNova: {title}. {message}").strip()[:640]
+            receipt = await asyncio.to_thread(send_brevo_sms_message, phone, compact_body)
+            sms_delivery = {
+                "status": "sent",
+                "provider": receipt.get("provider", "Brevo Transactional SMS"),
+                "message_id": receipt.get("message_id"),
+                "updated_at": utcnow(),
+            }
+        except Exception as exc:
+            sms_delivery = {"status": "failed", "error_type": type(exc).__name__, "updated_at": utcnow()}
+            # Do not log phone numbers, verification codes, SMS bodies or API response payloads.
+            logger.error(
+                "SMS notification delivery failed (notification_id=%s error_type=%s)",
+                inserted.inserted_id, type(exc).__name__,
+            )
+
     await db.notifications.update_one(
         {"_id": inserted.inserted_id},
-        {"$set": {"email_delivery": delivery}},
+        {"$set": {"email_delivery": email_delivery, "sms_delivery": sms_delivery}},
     )
 
-    # Push delivery is optional and isolated: a Firebase outage never breaks the portal action.
-    await send_push_notification(
-        recipient["_id"], title, message,
-        notification_type=notification_type,
-        task_id=task_id,
-        common_task_id=common_task_id,
-    )
+    # Push delivery is optional and respects the member's notification preference.
+    if preferences.get("push_enabled", True) is not False:
+        await send_push_notification(
+            recipient["_id"], title, message,
+            notification_type=notification_type,
+            task_id=task_id,
+            common_task_id=common_task_id,
+        )
+
 
 def build_task_email_summary(
     task: dict,
@@ -467,8 +555,9 @@ async def create_task_notification(
     common_task_id: str | None = None,
     extra_details: dict | None = None,
 ) -> None:
-    """Keep in-app/push text concise while attaching the full task summary to email."""
+    """Keep in-app/push previews concise while attaching full email and compact SMS task summaries."""
     email_body = build_task_email_summary(task, message, extra_details)
+    sms_body = build_task_sms_summary(task, message, max_length=320)
     await create_notification(
         recipient,
         title,
@@ -477,6 +566,7 @@ async def create_task_notification(
         task_id=task_id,
         common_task_id=common_task_id,
         email_body=email_body,
+        sms_body=sms_body,
     )
 
 

@@ -8400,3 +8400,24 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
 .storage-settings h3 { margin:5px 0; }
 .storage-settings p,.storage-settings small { color:var(--muted,#697386); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .storage-settings-head p { margin:0; }
+
+/* Member contact verification and per-channel notification preferences */
+.contact-notification-settings { border:1px solid var(--line,#d9deea); border-radius:16px; padding:18px; margin:0 0 22px; }
+.contact-notification-head h3 { margin:5px 0; }
+.contact-notification-head p { margin:0; color:var(--muted,#697386); font-size:12px; line-height:1.5; max-width:760px; }
+.contact-notification-providers { display:flex; flex-wrap:wrap; gap:16px; padding:15px 0; margin:12px 0; border-bottom:1px solid var(--line,#d9deea); }
+.contact-notification-providers span,.contact-verified-phone > div { display:flex; flex-direction:column; gap:3px; }
+.contact-notification-providers small,.contact-notification-note,.contact-notification-footnote,.contact-verified-phone small { color:var(--muted,#697386); font-size:11px; line-height:1.5; }
+.contact-notification-note { background:#fff6e5; padding:10px 12px; border-radius:9px; }
+.contact-verified-phone { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 0; }
+.contact-verified-phone strong { font-size:16px; }
+.contact-phone-form form { display:grid; gap:12px; max-width:520px; margin:12px 0 18px; }
+.contact-consent { display:flex; align-items:flex-start; gap:9px; font-size:12px; line-height:1.5; }
+.contact-consent input { width:auto; margin-top:3px; }
+.contact-preferences-form { border-top:1px solid var(--line,#d9deea); padding-top:14px; display:grid; gap:10px; }
+.contact-preference-row { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:8px 0; }
+.contact-preference-row span { display:flex; flex-direction:column; gap:3px; }
+.contact-preference-row small { color:var(--muted,#697386); font-size:11px; }
+.contact-preference-row input { width:auto; }
+.contact-notification-success { color:#187447; font-size:12px; }
+.contact-notification-footnote { display:block; margin-top:12px; }
