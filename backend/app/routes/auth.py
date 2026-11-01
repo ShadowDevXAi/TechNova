@@ -453,22 +453,25 @@ async def confirm_phone_verification(body: dict, request: Request, user: dict = 
         raise HTTPException(410, "The phone verification code has expired. Request another code.")
     if not secrets.compare_digest(token_hash(code), expected_hash):
         raise HTTPException(400, "The phone verification code is incorrect.")
-    await db.users.update_one(
-        {"_id": user["_id"]},
-        {
-            "$set": {
-                "phone_number": pending_phone,
-                "phone_verified_at": utcnow(),
-                "sms_consent_at": utcnow(),
-                "notification_preferences.sms_enabled": False,
+    try:
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {
+                "$set": {
+                    "phone_number": pending_phone,
+                    "phone_verified_at": utcnow(),
+                    "sms_consent_at": utcnow(),
+                    "notification_preferences.sms_enabled": False,
+                },
+                "$unset": {
+                    "phone_number_pending": "",
+                    "phone_verification_code_hash": "",
+                    "phone_verification_expires_at": "",
+                },
             },
-            "$unset": {
-                "phone_number_pending": "",
-                "phone_verification_code_hash": "",
-                "phone_verification_expires_at": "",
-            },
-        },
-    )
+        )
+    except DuplicateKeyError:
+        raise HTTPException(409, "This phone number is already verified on another TechNova account.")
     await audit(user, "phone_number_verified", str(user["_id"]), {"phone_suffix": pending_phone[-4:]}, request)
     return {"message": "Phone number verified. SMS alerts remain off until you enable them in Settings."}
 
@@ -514,6 +517,7 @@ async def remove_verified_phone(request: Request, user: dict = Depends(get_curre
                 "phone_number_pending": "",
                 "phone_verification_code_hash": "",
                 "phone_verification_expires_at": "",
+                "phone_verification_requested_at": "",
             },
             "$set": {"notification_preferences.sms_enabled": False},
         },

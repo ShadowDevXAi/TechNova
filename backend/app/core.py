@@ -439,7 +439,10 @@ async def create_notification(
         }
     else:
         try:
-            compact_body = (sms_body or f"TechNova: {title}. {message}").strip()[:640]
+            import unicodedata
+            raw_sms = sms_body or f"TechNova: {title}. {message}"
+            compact_body = unicodedata.normalize("NFKD", str(raw_sms)).encode("ascii", "ignore").decode("ascii")
+            compact_body = " ".join(compact_body.split())[:155].rstrip()
             receipt = await asyncio.to_thread(send_brevo_sms_message, phone, compact_body)
             sms_delivery = {
                 "status": "sent",
@@ -533,7 +536,8 @@ def build_task_sms_summary(
 
     title = clean(task.get("title"), "Task update", 42)
     project = clean(task.get("project"), "Club projects", 18)
-    priority = clean(task.get("priority"), "Medium", 3).upper()
+    priority_raw = clean(task.get("priority"), "Medium", 8).lower()
+    priority = {"low": "LOW", "medium": "MED", "high": "HIGH"}.get(priority_raw, priority_raw[:4].upper())
     rank = clean(task.get("difficulty_rank"), "F", 3)
     due = clean(task.get("due_date"), "No deadline", 10)
     action = clean(intro, "Task update", 24)

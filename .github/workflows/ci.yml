@@ -123,6 +123,9 @@ jobs:
           assert "Read 5 subject marks" in full_task_email and "Programming language: C" in full_task_email, "Full task email includes description and language"
           compact_task_sms = build_task_sms_summary(sample_summary, "New task assigned")
           assert len(compact_task_sms) <= 155 and "Calculate total marks" in compact_task_sms, "SMS summary stays within one standard segment"
+          assert compact_task_sms.isascii(), "Task SMS content uses ASCII to avoid Unicode segmentation"
+          generic_sms = ("TechNova: " + "Important member alert. " * 30)
+          assert len(generic_sms[:155]) <= 155, "Generic SMS fallback is capped"
           assert compact_task_sms.isascii(), "SMS summary uses GSM-safe ASCII text"
           assert "penalty_recipient = await db.users.find_one" in core_source, "Penalty emails must load the actual member email"
           contact_source = open("app/routes/auth.py", encoding="utf-8").read()
