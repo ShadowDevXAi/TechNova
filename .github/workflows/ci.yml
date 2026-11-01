@@ -90,10 +90,12 @@ jobs:
           member_source = open("app/routes/members.py", encoding="utf-8").read()
           task_source = open("app/routes/tasks.py", encoding="utf-8").read()
           core_source = open("app/core.py", encoding="utf-8").read()
+          app_source = open("../frontend/src/App.jsx", encoding="utf-8").read()
+          portal_actions_source = open("../frontend/src/services/portalActions.js", encoding="utf-8").read()
           assert "registration_received" in auth_source and "registration_pending" in auth_source, "Registration email notifications"
           assert "email_verification_required" in auth_source and "token_hash" in auth_source, "Signup email verification is enforced and tokens are hashed"
           assert "email_verified_at" in member_source and "verify their email address before account approval" in member_source, "Member approval requires verified email"
-          assert "setAuthNotice" in open("../frontend/src/services/portalActions.js", encoding="utf-8").read(), "Registration flow displays email-verification notice"
+          assert "setAuthNotice" in portal_actions_source, "Registration flow displays email-verification notice"
           assert "Resend verification email" in app_source, "Frontend exposes verification resend action"
           assert "smtp_configuration_status()" in auth_source, "Password resets must support HTTPS email providers"
           assert "account_approved" in member_source and "account_suspended" in member_source, "Member lifecycle email notifications"
