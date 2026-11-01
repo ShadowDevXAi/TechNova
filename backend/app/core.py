@@ -222,7 +222,18 @@ def smtp_configuration_status() -> dict:
 
 def sms_configuration_status() -> dict:
     """Return safe Brevo SMS readiness without exposing the API key."""
-    # PHONE VERIFICATION / SMS PAUSED: do not send verification or notification SMS until explicitly activated.\n    if not settings.phone_verification_enabled:\n        return {\n            "configured": False,\n            "enabled": False,\n            "provider": "Brevo Transactional SMS",\n            "sender": None,\n            "missing": [],\n            "message": "Phone verification and SMS are temporarily disabled by the TechNova owner.",\n        }\n    missing = []\n    if not settings.brevo_api_key.strip():
+    # PHONE VERIFICATION / SMS PAUSED: do not send verification or notification SMS until explicitly activated.
+    if not settings.phone_verification_enabled:
+        return {
+            "configured": False,
+            "enabled": False,
+            "provider": "Brevo Transactional SMS",
+            "sender": None,
+            "missing": [],
+            "message": "Phone verification and SMS are temporarily disabled by the TechNova owner.",
+        }
+    missing = []
+    if not settings.brevo_api_key.strip():
         missing.append("BREVO_API_KEY")
     sender = settings.brevo_sms_sender.strip()
     if not sender:
