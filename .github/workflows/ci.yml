@@ -122,7 +122,8 @@ jobs:
           full_task_email = build_task_email_summary(sample_summary, "A new task was assigned.")
           assert "Read 5 subject marks" in full_task_email and "Programming language: C" in full_task_email, "Full task email includes description and language"
           compact_task_sms = build_task_sms_summary(sample_summary, "New task assigned")
-          assert len(compact_task_sms) <= 320 and "Calculate total marks" in compact_task_sms, "SMS summary stays compact"
+          assert len(compact_task_sms) <= 155 and "Calculate total marks" in compact_task_sms, "SMS summary stays within one standard segment"
+          assert compact_task_sms.isascii(), "SMS summary uses GSM-safe ASCII text"
           assert "penalty_recipient = await db.users.find_one" in core_source, "Penalty emails must load the actual member email"
           contact_source = open("app/routes/auth.py", encoding="utf-8").read()
           assert "phone_verification_code_hash" in contact_source and "phone_verified_at" in contact_source, "SMS phone number verification"

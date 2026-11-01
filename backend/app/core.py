@@ -521,28 +521,43 @@ def build_task_email_summary(
 def build_task_sms_summary(
     task: dict,
     intro: str,
-    max_length: int = 320,
+    max_length: int = 155,
 ) -> str:
-    """Return a compact SMS-ready summary; an SMS gateway is not enabled yet."""
-    title = " ".join(str(task.get("title") or "Untitled task").split())
-    priority = " ".join(str(task.get("priority") or "Medium").split())
-    rank = " ".join(str(task.get("difficulty_rank") or "F").split())
-    due = " ".join(str(task.get("due_date") or "No deadline").split())
-    project = " ".join(str(task.get("project") or "Club projects").split())
-    app_url = settings.public_app_url.strip().rstrip("/")
+    """Build an ASCII-safe one-segment SMS summary to limit message cost."""
+    import unicodedata
+
+    def clean(value: object, fallback: str, limit: int) -> str:
+        raw = str(value or fallback)
+        plain = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+        return " ".join(plain.split())[:limit]
+
+    title = clean(task.get("title"), "Task update", 42)
+    project = clean(task.get("project"), "Club projects", 18)
+    priority = clean(task.get("priority"), "Medium", 3).upper()
+    rank = clean(task.get("difficulty_rank"), "F", 3)
+    due = clean(task.get("due_date"), "No deadline", 10)
+    action = clean(intro, "Task update", 24)
+    app_url = settings.public_app_url.strip().replace("https://", "").replace("http://", "").rstrip("/")
+    app_url = clean(app_url, "", 38)
+
+    # Keep the core fields recognizable and stay within one standard GSM SMS segment.
     parts = [
-        f"TechNova: {intro.strip()}",
-        f'Task: "{title}"',
-        f"Project: {project}",
-        f"{priority} priority · Rank {rank}",
-        f"Due: {due}",
+        f"TechNova: {action}",
+        f'Task "{title}"',
+        f"{project}",
+        f"{priority}/Rank {rank}",
+        f"Due {due}",
     ]
     if app_url:
-        parts.append(f"Open: {app_url}")
+        parts.append(app_url)
     content = " | ".join(part for part in parts if part)
-    if len(content) <= max_length:
-        return content
-    return content[: max(0, max_length - 1)].rstrip() + "…"
+    while len(content) > max_length and len(title) > 18:
+        title = title[:-5].rstrip()
+        parts[1] = f'Task "{title}..."'
+        content = " | ".join(part for part in parts if part)
+    if len(content) > max_length:
+        content = content[:max_length].rstrip()
+    return content
 
 
 async def create_task_notification(
@@ -557,7 +572,7 @@ async def create_task_notification(
 ) -> None:
     """Keep in-app/push previews concise while attaching full email and compact SMS task summaries."""
     email_body = build_task_email_summary(task, message, extra_details)
-    sms_body = build_task_sms_summary(task, message, max_length=320)
+    sms_body = build_task_sms_summary(task, f"{title}: {message}", max_length=155)
     await create_notification(
         recipient,
         title,
