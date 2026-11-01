@@ -69,6 +69,7 @@ jobs:
 
           smtp_status = smtp_configuration_status()
           assert "password" not in smtp_status and "username" not in smtp_status, "SMTP credentials must never be returned"
+          assert "api_key" not in smtp_status and "brevo_api_key" not in smtp_status, "Email API credentials must never be returned"
 
           archive_cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
           archive_query = build_auto_archive_age_query("completion_confirmed_at", archive_cutoff)

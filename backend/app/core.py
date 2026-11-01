@@ -180,32 +180,102 @@ def clean_common_task(
 
 
 def smtp_configuration_status() -> dict:
-    """Return safe SMTP readiness details without exposing credentials."""
+    """Return safe email-provider readiness details without exposing credentials.
+
+    Brevo's HTTPS API is preferred when BREVO_API_KEY is configured. SMTP remains
+    available for paid hosts or local development where SMTP ports are reachable.
+    """
+    use_brevo_api = bool(settings.brevo_api_key.strip())
     missing = []
-    if not settings.smtp_host.strip():
-        missing.append("SMTP_HOST")
     if not settings.smtp_from_email.strip():
-        missing.append("SMTP_FROM_EMAIL")
-    if bool(settings.smtp_username.strip()) != bool(settings.smtp_password):
-        missing.append("SMTP_USERNAME and SMTP_PASSWORD (both are required when using SMTP authentication)")
+        missing.append("SMTP_FROM_EMAIL (verified Brevo sender)")
+    if not use_brevo_api:
+        if not settings.smtp_host.strip():
+            missing.append("SMTP_HOST")
+        if bool(settings.smtp_username.strip()) != bool(settings.smtp_password):
+            missing.append("SMTP_USERNAME and SMTP_PASSWORD (both are required when using SMTP authentication)")
+
+    if use_brevo_api:
+        provider = "Brevo HTTPS API"
+        host = "api.brevo.com"
+        port = 443
+        transport = "HTTPS"
+    else:
+        provider = "SMTP"
+        host = settings.smtp_host.strip() or None
+        port = settings.smtp_port
+        transport = "SSL" if settings.smtp_use_ssl else "STARTTLS" if settings.smtp_use_tls else "Unencrypted (not recommended)"
+
     return {
         "configured": not missing,
         "missing": missing,
-        "host": settings.smtp_host.strip() or None,
-        "port": settings.smtp_port,
+        "provider": provider,
+        "host": host,
+        "port": port,
+        "transport": transport,
         "from_email": settings.smtp_from_email.strip() or None,
-        "authentication_enabled": bool(settings.smtp_username.strip() and settings.smtp_password),
-        "use_tls": bool(settings.smtp_use_tls and not settings.smtp_use_ssl),
-        "use_ssl": bool(settings.smtp_use_ssl),
+        "authentication_enabled": use_brevo_api or bool(settings.smtp_username.strip() and settings.smtp_password),
+        "use_tls": bool(not use_brevo_api and settings.smtp_use_tls and not settings.smtp_use_ssl),
+        "use_ssl": bool(not use_brevo_api and settings.smtp_use_ssl),
     }
 
 
-# Purpose: Send an email using the configured SMTP transport (STARTTLS or implicit SSL).
-def send_email_message(recipient: str, subject: str, body: str) -> None:
+# Purpose: Send transactional email via Brevo's HTTPS API (works on Render Free).
+def send_brevo_api_email(recipient: str, subject: str, body: str) -> dict:
+    """Send email over HTTPS so the backend does not need outbound SMTP ports."""
+    if not settings.brevo_api_key.strip():
+        raise RuntimeError("BREVO_API_KEY is not configured")
+
+    payload = {
+        "sender": {
+            "name": settings.brevo_sender_name.strip() or "TechNova",
+            "email": settings.smtp_from_email.strip(),
+        },
+        "to": [{"email": recipient}],
+        "subject": subject,
+        "textContent": body,
+    }
+    request = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "accept": "application/json",
+            "api-key": settings.brevo_api_key.strip(),
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            response_body = response.read().decode("utf-8", errors="replace")
+            result = json.loads(response_body) if response_body else {}
+            return {
+                "provider": "Brevo HTTPS API",
+                "message_id": result.get("messageId"),
+            }
+    except urllib.error.HTTPError as exc:
+        # Brevo returns a useful JSON error body (e.g. invalid API key or sender).
+        detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        raise RuntimeError(
+            f"Brevo API returned HTTP {exc.code}: {detail or exc.reason}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        raise RuntimeError(
+            f"Brevo HTTPS API connection failed: {type(reason).__name__}: {reason}"
+        ) from exc
+
+
+# Purpose: Send an email via Brevo HTTPS API when configured, otherwise SMTP.
+def send_email_message(recipient: str, subject: str, body: str) -> dict:
     status = smtp_configuration_status()
     if not status["configured"]:
         missing = ", ".join(status["missing"])
-        raise RuntimeError(f"SMTP is not configured. Missing: {missing}")
+        raise RuntimeError(f"Email delivery is not configured. Missing: {missing}")
+
+    # Prefer HTTPS API: Render Free blocks outbound SMTP ports 25, 465 and 587.
+    if settings.brevo_api_key.strip():
+        return send_brevo_api_email(recipient, subject, body)
 
     message = EmailMessage()
     message["Subject"] = subject
@@ -221,7 +291,7 @@ def send_email_message(recipient: str, subject: str, body: str) -> None:
             if settings.smtp_username:
                 server.login(settings.smtp_username, settings.smtp_password)
             server.send_message(message)
-        return
+        return {"provider": "SMTP", "message_id": None}
 
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=12) as server:
         server.ehlo()
@@ -231,7 +301,7 @@ def send_email_message(recipient: str, subject: str, body: str) -> None:
         if settings.smtp_username:
             server.login(settings.smtp_username, settings.smtp_password)
         server.send_message(message)
-
+    return {"provider": "SMTP", "message_id": None}
 
 # Purpose: Save an in-app notification and send email when SMTP is configured.
 async def create_notification(
@@ -274,9 +344,18 @@ async def create_notification(
         )
     else:
         try:
-            await asyncio.to_thread(send_email_message, email, title, message)
-            delivery = {"status": "sent", "updated_at": utcnow()}
-            logger.info("Email notification sent (notification_id=%s)", inserted.inserted_id)
+            receipt = await asyncio.to_thread(send_email_message, email, title, message)
+            delivery = {
+                "status": "sent",
+                "provider": receipt.get("provider", smtp_status.get("provider")),
+                "message_id": receipt.get("message_id"),
+                "updated_at": utcnow(),
+            }
+            logger.info(
+                "Email notification sent (notification_id=%s provider=%s)",
+                inserted.inserted_id,
+                delivery.get("provider"),
+            )
         except Exception as exc:
             delivery = {
                 "status": "failed",
@@ -284,8 +363,9 @@ async def create_notification(
                 "updated_at": utcnow(),
             }
             logger.exception(
-                "SMTP notification delivery failed (notification_id=%s error_type=%s)",
+                "Email notification delivery failed (notification_id=%s provider=%s error_type=%s)",
                 inserted.inserted_id,
+                smtp_status.get("provider"),
                 type(exc).__name__,
             )
     await db.notifications.update_one(

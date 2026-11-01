@@ -2340,13 +2340,14 @@ function App() {
                 {isFounder && (
                   <div className="email-delivery-panel">
                     <h3>Email notifications</h3>
-                    <p>Check the backend SMTP configuration and send a real test email to your Founder address.</p>
+                    <p>Check the backend email provider and send a real test email to your Founder address.</p>
                     {emailStatus && (
                       <div className="email-delivery-status">
-                        <p><b>SMTP:</b> {emailStatus.configured ? "Configured" : "Not configured"}</p>
-                        <p><b>Server:</b> {emailStatus.host || "Not set"} · Port {emailStatus.port || "—"}</p>
+                        <p><b>Email delivery:</b> {emailStatus.configured ? "Configured" : "Not configured"}</p>
+                        <p><b>Provider:</b> {emailStatus.provider || "SMTP"}</p>
+                        <p><b>Endpoint:</b> {emailStatus.host || "Not set"} · Port {emailStatus.port || "—"}</p>
                         <p><b>Sender:</b> {emailStatus.from_email || "Not set"}</p>
-                        <p><b>Transport:</b> {emailStatus.use_ssl ? "SSL" : emailStatus.use_tls ? "STARTTLS" : "Unencrypted (not recommended)"}</p>
+                        <p><b>Transport:</b> {emailStatus.transport || (emailStatus.use_ssl ? "SSL" : emailStatus.use_tls ? "STARTTLS" : "Unencrypted (not recommended)")}</p>
                         {emailStatus.missing?.length > 0 && (
                           <p className="email-delivery-warning"><b>Missing:</b> {emailStatus.missing.join(", ")}</p>
                         )}
@@ -2356,7 +2357,7 @@ function App() {
                       </div>
                     )}
                     <div className="email-delivery-actions">
-                      <button type="button" className="secondary" onClick={checkEmailStatus} disabled={emailTestBusy}>Check SMTP configuration</button>
+                      <button type="button" className="secondary" onClick={checkEmailStatus} disabled={emailTestBusy}>Check email configuration</button>
                       <button type="button" className="primary" onClick={sendTestEmail} disabled={emailTestBusy}>{emailTestBusy ? "Sending..." : "Send test email to " + user.email}</button>
                     </div>
                   </div>

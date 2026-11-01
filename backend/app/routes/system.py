@@ -153,36 +153,42 @@ async def send_email_test(request: Request, actor: dict = Depends(allow("Founder
     if not configuration["configured"]:
         raise HTTPException(
             503,
-            "SMTP is not configured. Set the missing environment variables shown in Email Settings, then redeploy the backend.",
+            "Email delivery is not configured. Set the missing environment variables shown in Email Settings, then redeploy the backend.",
         )
     recipient = str(actor.get("email") or "").strip()
     if not recipient:
         raise HTTPException(422, "The Founder account has no email address to test.")
     try:
-        await asyncio.to_thread(
+        receipt = await asyncio.to_thread(
             send_email_message,
             recipient,
-            "TechNova SMTP test email",
-            "This is a test email from your TechNova portal. SMTP delivery is working.",
+            "TechNova email delivery test",
+            "This is a test email from your TechNova portal. Email delivery is working.",
         )
     except Exception as exc:
-        logger.exception("Founder SMTP test email failed (error_type=%s)", type(exc).__name__)
+        logger.exception(
+            "Founder email test failed (provider=%s error_type=%s)",
+            configuration.get("provider"),
+            type(exc).__name__,
+        )
         raise HTTPException(
             502,
-            "SMTP test failed. Check the backend Render logs for the SMTP error type and provider response.",
+            "Email test failed. Check the backend Render logs for the provider error details.",
         )
-    await audit(actor, "smtp_test_email_sent", recipient, {
+    await audit(actor, "email_test_sent", recipient, {
+        "provider": receipt.get("provider", configuration.get("provider")),
+        "message_id": receipt.get("message_id"),
         "host": configuration.get("host"),
         "port": configuration.get("port"),
-        "use_ssl": configuration.get("use_ssl"),
-        "use_tls": configuration.get("use_tls"),
+        "transport": configuration.get("transport"),
     }, request)
     return {
-        "message": f"Test email sent to {recipient}. Check the inbox and spam folder.",
+        "message": f"Test email accepted by {receipt.get('provider', configuration.get('provider'))} for {recipient}. Check the inbox and spam folder.",
         "recipient": recipient,
+        "provider": receipt.get("provider", configuration.get("provider")),
+        "message_id": receipt.get("message_id"),
         "configuration": configuration,
     }
-
 
 # Purpose: run the configured completed-task archive immediately.
 @router.post("/api/auto-tasks/archive-now")

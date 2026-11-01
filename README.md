@@ -17,7 +17,7 @@ React + FastAPI + MongoDB implementation with real persistence, JWT login, role-
 5. Sign in using the bootstrap founder email/password you configured in `.env`.
 6. API docs are at `http://localhost:8000/docs`.
 
-For Render deployments, set `MONGODB_URI`, `JWT_SECRET`, `BOOTSTRAP_FOUNDER_NAME`, `BOOTSTRAP_FOUNDER_EMAIL`, `BOOTSTRAP_FOUNDER_PASSWORD`, `FRONTEND_ORIGINS`, and `PUBLIC_APP_URL` in the backend environment. Use `RESET_DELIVERY_MODE=email` only after SMTP is configured.
+For Render deployments, set `MONGODB_URI`, `JWT_SECRET`, `BOOTSTRAP_FOUNDER_NAME`, `BOOTSTRAP_FOUNDER_EMAIL`, `BOOTSTRAP_FOUNDER_PASSWORD`, `FRONTEND_ORIGINS`, and `PUBLIC_APP_URL` in the backend environment. For email on Render Free, use the Brevo HTTPS API configuration below; SMTP ports 25, 465, and 587 are blocked on Free web services. Use `RESET_DELIVERY_MODE=email` only after email delivery is configured.
 
 MongoDB is published only to localhost by default. The frontend container's nginx proxies `/api/` to FastAPI.
 
@@ -64,8 +64,9 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 
 ## Password reset and attachments
 - In local development, password reset returns a one-time reset token in the API response for testing. Never use `RESET_DELIVERY_MODE=development` on a public deployment.
-- For email notifications and email-based password resets, configure SMTP on the **backend Render service**: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_USE_TLS`, and optionally `SMTP_USE_SSL`. Use port 587 with `SMTP_USE_TLS=true` and `SMTP_USE_SSL=false`, or port 465 with `SMTP_USE_TLS=false` and `SMTP_USE_SSL=true`. For Gmail, use `smtp.gmail.com` and an app password (not your normal account password). Never put SMTP credentials in frontend variables or commit them.
-- Founder Settings includes **Check SMTP configuration** and **Send test email** actions. Notification records now track whether email was sent, skipped because SMTP is not configured, or failed; SMTP failures are written to backend logs instead of being silently swallowed.
+- For email notifications and password resets on Render Free, prefer the Brevo HTTPS API: set `BREVO_API_KEY` to a Brevo **API key** (from Settings > SMTP & API > API keys; not the SMTP key), set `BREVO_SENDER_NAME=TechNova`, and set `SMTP_FROM_EMAIL` to a verified Brevo sender address. This sends over HTTPS to `api.brevo.com` and avoids Render Free's blocked SMTP ports. Keep the API key only in the **backend Render environment**, never in GitHub or frontend `VITE_*` variables.
+- SMTP remains supported for paid hosts/local development using `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_USE_TLS`, and optionally `SMTP_USE_SSL`. Brevo's SMTP relay is `smtp-relay.brevo.com`; use the SMTP login and SMTP key from Brevo, not the API key. Render Free blocks outbound ports 25, 465, and 587; use its paid instance or the HTTPS API instead.
+- Founder Settings includes **Check email configuration** and **Send test email** actions. Notification records track whether email was sent, skipped because email is not configured, or failed; provider failures are written to backend logs instead of being silently swallowed.
 - Task attachments accept PNG, JPEG, WEBP, PDF, TXT, and ZIP up to 10 MB. In Docker, files are stored in the persistent `uploads_data` volume. Configure volume backups and malware scanning before public use.
 - The ID card page includes browser Print / Save as PDF. Browser print output is intended for printing; it is not a professionally imposed double-sided card PDF template.
 
