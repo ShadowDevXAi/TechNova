@@ -452,7 +452,7 @@ async def request_phone_verification(body: dict, request: Request, user: dict = 
     if existing:
         raise HTTPException(409, "This verified phone number is already linked to another active TechNova account.")
     last_requested = user.get("phone_verification_requested_at")
-    if last_requested and (utcnow() - last_requested).total_seconds() < 60:
+    if last_requested and (utcnow() - normalize_utc_datetime(last_requested)).total_seconds() < 60:
         raise HTTPException(429, "Please wait at least 60 seconds before requesting another verification code.")
     code = f"{secrets.randbelow(1_000_000):06d}"
     await db.users.update_one(
@@ -498,7 +498,7 @@ async def confirm_phone_verification(body: dict, request: Request, user: dict = 
     expires_at = user.get("phone_verification_expires_at")
     if not re.fullmatch(r"[0-9]{6}", code):
         raise HTTPException(422, "Enter the six-digit verification code.")
-    if not pending_phone or not expected_hash or not expires_at or expires_at <= utcnow():
+    if not pending_phone or not expected_hash or not expires_at or normalize_utc_datetime(expires_at) <= utcnow():
         raise HTTPException(410, "The phone verification code has expired. Request another code.")
     if not secrets.compare_digest(token_hash(code), expected_hash):
         raise HTTPException(400, "The phone verification code is incorrect.")
