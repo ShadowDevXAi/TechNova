@@ -117,6 +117,19 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      - name: Verify Firebase browser and worker share the configured Web App key
+        working-directory: frontend
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from "node:fs";
+          const page = fs.readFileSync("src/firebase.js", "utf8");
+          const worker = fs.readFileSync("public/firebase-messaging-sw.js", "utf8");
+          if (!page.includes("VITE_FIREBASE_API_KEY")) throw new Error("Frontend Firebase API key must come from VITE_FIREBASE_API_KEY");
+          if (!page.includes('searchParams.set("firebaseConfig"')) throw new Error("Page must pass its Firebase config to the service worker");
+          if (!worker.includes('searchParams.get("firebaseConfig")')) throw new Error("Service worker must read the page-provided Firebase config");
+          if (worker.includes("AIzaSy")) throw new Error("Do not hard-code a Firebase API key in the service worker");
+          console.log("Firebase browser and service-worker configuration checks passed.");
+          NODE
       - name: Build frontend
         working-directory: frontend
         run: npm run build

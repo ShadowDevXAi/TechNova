@@ -2,17 +2,37 @@
 importScripts("https://www.gstatic.com/firebasejs/13.0.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/13.0.0/firebase-messaging-compat.js");
 
-firebase.initializeApp({
-  apiKey: "AIzaSyCo7Hoq-4xoE7QYlSSiJtpHilGIwWrQnNo",
-  authDomain: "technova-f4460.firebaseapp.com",
-  projectId: "technova-f4460",
-  storageBucket: "technova-f4460.firebasestorage.app",
-  messagingSenderId: "788928273384",
-  appId: "1:788928273384:web:b9685a1acf4a687308a25d",
-  measurementId: "G-ETG8Q387EH",
+// The page supplies its current Firebase Web App config in the registration URL.
+// Never keep a second, hard-coded API key here.
+const configParam = new URL(self.location.href).searchParams.get("firebaseConfig");
+let firebaseConfig;
+try {
+  firebaseConfig = JSON.parse(configParam || "null");
+} catch {
+  firebaseConfig = null;
+}
+
+if (
+  !firebaseConfig ||
+  !firebaseConfig.apiKey ||
+  firebaseConfig.projectId !== "technova-f4460" ||
+  !firebaseConfig.messagingSenderId ||
+  !firebaseConfig.appId
+) {
+  throw new Error("TechNova Firebase Messaging service worker received an invalid Web App config.");
+}
+
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+
+// Activate config updates promptly when the frontend deploys a corrected Web App API key.
+self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
 });
 
-const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   const title = payload?.notification?.title || payload?.data?.title || "TechNova notification";
   const body = payload?.notification?.body || payload?.data?.body || "You have a new update.";
