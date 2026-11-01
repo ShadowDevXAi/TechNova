@@ -83,7 +83,7 @@ async def register(data: RegisterIn, request: Request):
             "registration_pending",
         )
     await audit(None,"registration_submitted",str(result.inserted_id),{"email":email},request)
-    return {"message":"Registration submitted. A confirmation email has been sent if email delivery is configured. A club administrator must approve your account before you can sign in.","member_id":doc["member_id"]}
+    return {"message":"Registration received. Check your inbox to verify your email. After verification, a club administrator must approve your account before you can sign in.","member_id":doc["member_id"]}
 
 # Purpose: login handles the auth feature flow and returns its API result.
 @router.post("/api/auth/login")

@@ -718,7 +718,7 @@ function App() {
             {authMode === "login"
               ? "Sign in to manage projects, tasks, and your digital club ID."
               : authMode === "register"
-              ? "Create your student account. A club administrator must approve it."
+              ? "Create your student account. Verify your email first, then wait for a club administrator to approve it."
               : "Request a reset token, then set a new password."}
           </p>
           {authNotice && <div className="auth-success-notice" role="status">{authNotice}</div>}
