@@ -102,6 +102,10 @@ export default function createPortalActions(context) {
     setProfileForm,
     audit,
     setAudit,
+    emailStatus,
+    setEmailStatus,
+    emailTestBusy,
+    setEmailTestBusy,
     api,
     API_BASE,
     notify,
@@ -873,6 +877,31 @@ export default function createPortalActions(context) {
     }
   }
 
+  // Purpose: Check SMTP configuration and recent email delivery statistics.
+  async function checkEmailStatus() {
+    try {
+      const result = await api("/admin/email/status", token);
+      setEmailStatus(result);
+      notify(result.configured ? "SMTP is configured." : "SMTP is not configured. Add the missing Render environment variables.");
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  // Purpose: Send an actual test email to the signed-in Founder account.
+  async function sendTestEmail() {
+    setEmailTestBusy(true);
+    try {
+      const result = await api("/admin/email/test", token, { method: "POST" });
+      if (result.configuration) setEmailStatus((current) => ({ ...current, ...result.configuration }));
+      notify(result.message);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setEmailTestBusy(false);
+    }
+  }
+
   // Purpose: Load the founder-only audit history.
   async function loadAudit() {
     try {
@@ -901,6 +930,8 @@ export default function createPortalActions(context) {
     saveAutoTaskSettings,
     generateAutoTasksNow,
     runAutoArchiveNow,
+    checkEmailStatus,
+    sendTestEmail,
     disciplineMember,
     reinstateMember,
     respondToCommonTask,

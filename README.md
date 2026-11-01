@@ -64,7 +64,8 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 
 ## Password reset and attachments
 - In local development, password reset returns a one-time reset token in the API response for testing. Never use `RESET_DELIVERY_MODE=development` on a public deployment.
-- For email-based resets, set `RESET_DELIVERY_MODE=email` and configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, and `SMTP_USE_TLS`. Test delivery with a dedicated mail account.
+- For email notifications and email-based password resets, configure SMTP on the **backend Render service**: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_USE_TLS`, and optionally `SMTP_USE_SSL`. Use port 587 with `SMTP_USE_TLS=true` and `SMTP_USE_SSL=false`, or port 465 with `SMTP_USE_TLS=false` and `SMTP_USE_SSL=true`. For Gmail, use `smtp.gmail.com` and an app password (not your normal account password). Never put SMTP credentials in frontend variables or commit them.
+- Founder Settings includes **Check SMTP configuration** and **Send test email** actions. Notification records now track whether email was sent, skipped because SMTP is not configured, or failed; SMTP failures are written to backend logs instead of being silently swallowed.
 - Task attachments accept PNG, JPEG, WEBP, PDF, TXT, and ZIP up to 10 MB. In Docker, files are stored in the persistent `uploads_data` volume. Configure volume backups and malware scanning before public use.
 - The ID card page includes browser Print / Save as PDF. Browser print output is intended for printing; it is not a professionally imposed double-sided card PDF template.
 

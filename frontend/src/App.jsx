@@ -75,6 +75,8 @@ function App() {
   const [databaseStats, setDatabaseStats] = useState(null);
   const [autoTaskSettings, setAutoTaskSettings] = useState({ mode: "custom", daily_target: 5, unlimited_daily_cap: 20, generated_today: 0, open_today: 0, total_generated: 0, remaining_today: 5, auto_archive_enabled: true, auto_archive_after_days: 30 });
   const [autoTaskBusy, setAutoTaskBusy] = useState(false);
+  const [emailStatus, setEmailStatus] = useState(null);
+  const [emailTestBusy, setEmailTestBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [modal, setModal] = useState("");
@@ -350,6 +352,8 @@ function App() {
     saveAutoTaskSettings,
     generateAutoTasksNow,
     runAutoArchiveNow,
+    checkEmailStatus,
+    sendTestEmail,
     disciplineMember,
     reinstateMember,
     respondToCommonTask,
@@ -472,6 +476,10 @@ function App() {
     setProfileForm,
     audit,
     setAudit,
+    emailStatus,
+    setEmailStatus,
+    emailTestBusy,
+    setEmailTestBusy,
     api,
     API_BASE,
     notify,
@@ -2329,6 +2337,30 @@ function App() {
               </div>
               <div className="panel settings">
                 <PushNotificationSettings token={token} />
+                {isFounder && (
+                  <div className="email-delivery-panel">
+                    <h3>Email notifications</h3>
+                    <p>Check the backend SMTP configuration and send a real test email to your Founder address.</p>
+                    {emailStatus && (
+                      <div className="email-delivery-status">
+                        <p><b>SMTP:</b> {emailStatus.configured ? "Configured" : "Not configured"}</p>
+                        <p><b>Server:</b> {emailStatus.host || "Not set"} · Port {emailStatus.port || "—"}</p>
+                        <p><b>Sender:</b> {emailStatus.from_email || "Not set"}</p>
+                        <p><b>Transport:</b> {emailStatus.use_ssl ? "SSL" : emailStatus.use_tls ? "STARTTLS" : "Unencrypted (not recommended)"}</p>
+                        {emailStatus.missing?.length > 0 && (
+                          <p className="email-delivery-warning"><b>Missing:</b> {emailStatus.missing.join(", ")}</p>
+                        )}
+                        {emailStatus.last_24_hours && (
+                          <p><b>Last 24 hours:</b> {emailStatus.last_24_hours.sent} sent · {emailStatus.last_24_hours.failed} failed · {emailStatus.last_24_hours.not_configured} skipped (SMTP not set)</p>
+                        )}
+                      </div>
+                    )}
+                    <div className="email-delivery-actions">
+                      <button type="button" className="secondary" onClick={checkEmailStatus} disabled={emailTestBusy}>Check SMTP configuration</button>
+                      <button type="button" className="primary" onClick={sendTestEmail} disabled={emailTestBusy}>{emailTestBusy ? "Sending..." : "Send test email to " + user.email}</button>
+                    </div>
+                  </div>
+                )}
                 <h3>Profile</h3>
                 <form onSubmit={saveProfile}>
                   <label>

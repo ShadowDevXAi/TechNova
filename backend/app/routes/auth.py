@@ -112,25 +112,18 @@ async def password_reset_request(body: dict, request: Request):
         elif delivery_mode == "email":
             if not (settings.smtp_host and settings.smtp_from_email):
                 raise HTTPException(503, "Password reset email is not configured")
-            message = EmailMessage()
-            message["Subject"] = "Reset your TechNova portal password"
-            message["From"] = settings.smtp_from_email
-            message["To"] = email
-            message.set_content(
-                "A password reset was requested for your TechNova account. "
-                "Use this one-time token within 20 minutes:\\n\\n"
-                f"{raw}\\n\\nIf you did not request this, ignore this email."
-            )
             try:
-                context = ssl.create_default_context()
-                with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
-                    if settings.smtp_use_tls:
-                        server.starttls(context=context)
-                    if settings.smtp_username:
-                        server.login(settings.smtp_username, settings.smtp_password)
-                    server.send_message(message)
+                await asyncio.to_thread(
+                    send_email_message,
+                    email,
+                    "Reset your TechNova portal password",
+                    "A password reset was requested for your TechNova account. "
+                    "Use this one-time token within 20 minutes:\\n\\n"
+                    f"{raw}\\n\\nIf you did not request this, ignore this email.",
+                )
             except Exception:
-                raise HTTPException(503, "Could not deliver password reset email; try again later")
+                logger.exception("Password reset email delivery failed (user_id=%s)", user["_id"])
+                raise HTTPException(503, "Could not deliver password reset email; check SMTP configuration and backend logs")
     return response
 
 # Purpose: password reset confirm handles the auth feature flow and returns its API result.

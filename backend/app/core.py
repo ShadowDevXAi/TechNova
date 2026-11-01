@@ -6,6 +6,7 @@ Keep HTTP route declarations in app/routes/ so each feature remains easy to find
 
 from contextlib import asynccontextmanager
 import asyncio
+import logging
 import os
 import hmac
 import hashlib
@@ -38,6 +39,8 @@ from .db import client, db, ensure_indexes
 from .firebase_push import send_push_notification
 from .security import hash_password, verify_password, create_access_token, decode_access_token, new_card_token, token_hash, utcnow
 from .models import RegisterIn, LoginIn, MemberCreate, MemberPatch, TaskCreate, TaskPatch, TaskBulkConfirm, TaskCompletionConfirm, TeamCreate, AnnouncementCreate, MemberSuspendIn, TaskStateIn
+
+logger = logging.getLogger("technova.notifications")
 
 bearer = HTTPBearer(auto_error=False)
 PRIVILEGED = {"Founder", "Core Management"}
@@ -176,17 +179,55 @@ def clean_common_task(
     }
 
 
-# Purpose: Send an optional SMTP email notification in a worker thread.
-def _send_notification_email(recipient: str, subject: str, body: str) -> None:
+def smtp_configuration_status() -> dict:
+    """Return safe SMTP readiness details without exposing credentials."""
+    missing = []
+    if not settings.smtp_host.strip():
+        missing.append("SMTP_HOST")
+    if not settings.smtp_from_email.strip():
+        missing.append("SMTP_FROM_EMAIL")
+    if bool(settings.smtp_username.strip()) != bool(settings.smtp_password):
+        missing.append("SMTP_USERNAME and SMTP_PASSWORD (both are required when using SMTP authentication)")
+    return {
+        "configured": not missing,
+        "missing": missing,
+        "host": settings.smtp_host.strip() or None,
+        "port": settings.smtp_port,
+        "from_email": settings.smtp_from_email.strip() or None,
+        "authentication_enabled": bool(settings.smtp_username.strip() and settings.smtp_password),
+        "use_tls": bool(settings.smtp_use_tls and not settings.smtp_use_ssl),
+        "use_ssl": bool(settings.smtp_use_ssl),
+    }
+
+
+# Purpose: Send an email using the configured SMTP transport (STARTTLS or implicit SSL).
+def send_email_message(recipient: str, subject: str, body: str) -> None:
+    status = smtp_configuration_status()
+    if not status["configured"]:
+        missing = ", ".join(status["missing"])
+        raise RuntimeError(f"SMTP is not configured. Missing: {missing}")
+
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = settings.smtp_from_email
     message["To"] = recipient
     message.set_content(body)
     context = ssl.create_default_context()
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=8) as server:
+
+    if settings.smtp_use_ssl:
+        with smtplib.SMTP_SSL(
+            settings.smtp_host, settings.smtp_port, timeout=12, context=context
+        ) as server:
+            if settings.smtp_username:
+                server.login(settings.smtp_username, settings.smtp_password)
+            server.send_message(message)
+        return
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=12) as server:
+        server.ehlo()
         if settings.smtp_use_tls:
             server.starttls(context=context)
+            server.ehlo()
         if settings.smtp_username:
             server.login(settings.smtp_username, settings.smtp_password)
         server.send_message(message)
@@ -201,7 +242,8 @@ async def create_notification(
     task_id: str | None = None,
     common_task_id: str | None = None,
 ) -> None:
-    await db.notifications.insert_one({
+    created_at = utcnow()
+    notification = {
         "user_id": recipient["_id"],
         "type": notification_type,
         "title": title,
@@ -209,20 +251,48 @@ async def create_notification(
         "task_id": task_id,
         "common_task_id": common_task_id,
         "read_at": None,
-        "created_at": utcnow(),
-    })
-    # In-app delivery is always enabled. Email is an optional extra when SMTP is configured.
-    if settings.smtp_host and settings.smtp_from_email and recipient.get("email"):
+        "created_at": created_at,
+        "email_delivery": {"status": "pending", "updated_at": created_at},
+    }
+    inserted = await db.notifications.insert_one(notification)
+
+    email = str(recipient.get("email") or "").strip()
+    smtp_status = smtp_configuration_status()
+    if not email:
+        delivery = {"status": "skipped_no_recipient_email", "updated_at": utcnow()}
+        logger.warning("Email notification skipped: recipient email is missing (notification_id=%s)", inserted.inserted_id)
+    elif not smtp_status["configured"]:
+        delivery = {
+            "status": "skipped_not_configured",
+            "missing": smtp_status["missing"],
+            "updated_at": utcnow(),
+        }
+        logger.warning(
+            "Email notification skipped because SMTP is not configured (notification_id=%s missing=%s)",
+            inserted.inserted_id,
+            ", ".join(smtp_status["missing"]),
+        )
+    else:
         try:
-            await asyncio.to_thread(
-                _send_notification_email,
-                recipient["email"],
-                title,
-                message,
+            await asyncio.to_thread(send_email_message, email, title, message)
+            delivery = {"status": "sent", "updated_at": utcnow()}
+            logger.info("Email notification sent (notification_id=%s)", inserted.inserted_id)
+        except Exception as exc:
+            delivery = {
+                "status": "failed",
+                "error_type": type(exc).__name__,
+                "updated_at": utcnow(),
+            }
+            logger.exception(
+                "SMTP notification delivery failed (notification_id=%s error_type=%s)",
+                inserted.inserted_id,
+                type(exc).__name__,
             )
-        except Exception:
-            # A mail-provider outage must never undo a saved task or in-app notification.
-            pass
+    await db.notifications.update_one(
+        {"_id": inserted.inserted_id},
+        {"$set": {"email_delivery": delivery}},
+    )
+
     # Push delivery is optional and isolated: a Firebase outage never breaks the portal action.
     await send_push_notification(
         recipient["_id"], title, message,

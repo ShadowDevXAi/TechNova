@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
     # Firebase Admin credentials are mounted as a Render Secret File, never committed.
     firebase_service_account_file: str = ""
     firebase_project_id: str = "technova-f4460"

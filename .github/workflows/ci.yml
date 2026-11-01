@@ -35,6 +35,8 @@ jobs:
           BOOTSTRAP_FOUNDER_NAME: CI Founder
           BOOTSTRAP_FOUNDER_EMAIL: ci-founder@example.com
           BOOTSTRAP_FOUNDER_PASSWORD: ci-only-not-a-real-password-123
+          SMTP_HOST: ""
+          SMTP_FROM_EMAIL: ""
         run: |
           python - <<'PY'
           from bson import ObjectId
@@ -49,6 +51,7 @@ jobs:
               clean_task,
               founder_progression_details,
               member_level_details,
+              smtp_configuration_status,
           )
 
           expected_hub = {
@@ -61,6 +64,11 @@ jobs:
           assert any(route.path == "/api/push/register" for route in push_router.routes), "Push registration route"
           assert any(route.path == "/api/health" for route in system_router.routes), "Health route"
           assert any(route.path == "/api/auto-tasks/archive-now" for route in system_router.routes), "Manual auto-archive route"
+          assert any(route.path == "/api/admin/email/status" for route in system_router.routes), "SMTP status route"
+          assert any(route.path == "/api/admin/email/test" for route in system_router.routes), "SMTP test route"
+
+          smtp_status = smtp_configuration_status()
+          assert "password" not in smtp_status and "username" not in smtp_status, "SMTP credentials must never be returned"
 
           archive_cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
           archive_query = build_auto_archive_age_query("completion_confirmed_at", archive_cutoff)

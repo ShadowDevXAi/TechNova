@@ -125,6 +125,65 @@ async def update_auto_task_settings(body: dict, request: Request, actor: dict = 
     return await auto_task_generation_status()
 
 
+# Purpose: Inspect the safe SMTP configuration and recent notification-delivery totals.
+@router.get("/api/admin/email/status")
+async def email_delivery_status(actor: dict = Depends(allow("Founder"))):
+    configuration = smtp_configuration_status()
+    since = utcnow() - timedelta(hours=24)
+    rows = await db.notifications.aggregate([
+        {"$match": {"created_at": {"$gte": since}, "email_delivery.status": {"$exists": True}}},
+        {"$group": {"_id": "$email_delivery.status", "count": {"$sum": 1}}},
+    ]).to_list(length=20)
+    counts = {row["_id"]: row["count"] for row in rows}
+    return {
+        **configuration,
+        "last_24_hours": {
+            "sent": counts.get("sent", 0),
+            "failed": counts.get("failed", 0),
+            "not_configured": counts.get("skipped_not_configured", 0),
+            "missing_recipient": counts.get("skipped_no_recipient_email", 0),
+        },
+    }
+
+
+# Purpose: Send a real SMTP test email to the signed-in Founder address.
+@router.post("/api/admin/email/test")
+async def send_email_test(request: Request, actor: dict = Depends(allow("Founder"))):
+    configuration = smtp_configuration_status()
+    if not configuration["configured"]:
+        raise HTTPException(
+            503,
+            "SMTP is not configured. Set the missing environment variables shown in Email Settings, then redeploy the backend.",
+        )
+    recipient = str(actor.get("email") or "").strip()
+    if not recipient:
+        raise HTTPException(422, "The Founder account has no email address to test.")
+    try:
+        await asyncio.to_thread(
+            send_email_message,
+            recipient,
+            "TechNova SMTP test email",
+            "This is a test email from your TechNova portal. SMTP delivery is working.",
+        )
+    except Exception as exc:
+        logger.exception("Founder SMTP test email failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            502,
+            "SMTP test failed. Check the backend Render logs for the SMTP error type and provider response.",
+        )
+    await audit(actor, "smtp_test_email_sent", recipient, {
+        "host": configuration.get("host"),
+        "port": configuration.get("port"),
+        "use_ssl": configuration.get("use_ssl"),
+        "use_tls": configuration.get("use_tls"),
+    }, request)
+    return {
+        "message": f"Test email sent to {recipient}. Check the inbox and spam folder.",
+        "recipient": recipient,
+        "configuration": configuration,
+    }
+
+
 # Purpose: run the configured completed-task archive immediately.
 @router.post("/api/auto-tasks/archive-now")
 async def archive_eligible_tasks_now(request: Request, actor: dict = Depends(allow("Founder"))):
