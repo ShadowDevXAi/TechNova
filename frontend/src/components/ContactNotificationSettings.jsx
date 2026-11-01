@@ -34,7 +34,7 @@ export default function ContactNotificationSettings({ token }) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  async function requestCode(event) {
+  // Ask the backend to generate and send a fresh OTP; the server enforces consent, provider readiness, cooldown and expiry.\n  async function requestCode(event) {
     event.preventDefault();
     setBusy(true); setError(""); setMessage("");
     try {
@@ -49,7 +49,7 @@ export default function ContactNotificationSettings({ token }) {
     } finally { setBusy(false); }
   }
 
-  async function verifyPhone(event) {
+  // Submit the six-digit OTP. A successful response refreshes the account status so the verified number is shown.\n  async function verifyPhone(event) {
     event.preventDefault();
     setBusy(true); setError(""); setMessage("");
     try {
@@ -140,7 +140,7 @@ export default function ContactNotificationSettings({ token }) {
             <button className="primary" disabled={busy || loading || (!pending && !smsProvider.configured) || (!pending && !consent)}>
               {busy ? "Please wait…" : pending ? "Verify phone number" : "Send verification code"}
             </button>
-            {pending && <button type="button" className="textbtn" onClick={() => {setPending(false); setCode("");}} disabled={busy}>Change phone number</button>}
+            {/* Return to phone entry; submitting again requests a fresh OTP after the backend resend cooldown. */}\n            {pending && <button type="button" className="textbtn" onClick={() => {setPending(false); setCode("");}} disabled={busy}>Change phone number / resend</button>}
           </form>
         </div>
       )}
