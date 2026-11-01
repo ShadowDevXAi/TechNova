@@ -36,7 +36,62 @@ jobs:
           BOOTSTRAP_FOUNDER_EMAIL: ci-founder@example.com
           BOOTSTRAP_FOUNDER_PASSWORD: ci-only-not-a-real-password-123
         run: |
-          python -c "from app.main import app; from app.routes.hub import HUB_COLLECTIONS, HUB_STAFF; expected = {'projects', 'challenges', 'events', 'resources', 'discussions', 'rewards', 'attendance', 'polls', 'mentorship', 'messages', 'certificates'}; assert set(HUB_COLLECTIONS) == expected; assert {'Founder', 'Core Management', 'Faculty'} == HUB_STAFF; from app.routes.push import router as push_router; assert any(route.path == '/api/push/register' for route in push_router.routes); from bson import ObjectId; from app.db import partial_object_id_index_is_current; assert partial_object_id_index_is_current({'unique': True, 'partialFilterExpression': {'daily_schedule_id': {'$type': 'objectId'}}}, 'daily_schedule_id'); assert not partial_object_id_index_is_current({'unique': True, 'partialFilterExpression': {'daily_schedule_id': {'$exists': True}}}, 'daily_schedule_id'); from app.core import member_level_details, founder_progression_details, clean_task; legacy_task = clean_task({'_id': ObjectId(), 'status': 'Todo', 'assignment_group_id': ObjectId()}); assert legacy_task['title'] == 'Untitled task' and legacy_task['assignee_id'] == '' and legacy_task['created_by'] == '' and isinstance(legacy_task['assignment_group_id'], str); from app.routes.system import router as system_router; assert any(route.path == '/api/health' for route in system_router.routes); assert member_level_details(0)['level_title'] == 'Newcomer'; assert member_level_details(100)['level'] == 2; assert member_level_details(400)['level_title'] == 'Contributor'; assert member_level_details(10000)['level_title'] == 'TechNova Legend'; assert member_level_details(12100)['level'] == 12; founder = founder_progression_details(3, 1, 50); assert founder['progression_type'] == 'founder' and founder['level'] is None and founder['xp'] is None and founder['level_title'] == 'Founder · Origin Rank'; print('API imports, Hub configuration, XP progression and permanent Founder rank are valid.')"
+          python - <<'PY'
+          from bson import ObjectId
+          from app.main import app
+          from app.routes.hub import HUB_COLLECTIONS, HUB_STAFF
+          from app.routes.push import router as push_router
+          from app.routes.system import router as system_router
+          from app.db import partial_object_id_index_is_current
+          from app.core import (
+              clean_task,
+              founder_progression_details,
+              member_level_details,
+          )
+
+          expected_hub = {
+              "projects", "challenges", "events", "resources", "discussions",
+              "rewards", "attendance", "polls", "mentorship", "messages",
+              "certificates",
+          }
+          assert set(HUB_COLLECTIONS) == expected_hub, "Hub collection set"
+          assert HUB_STAFF == {"Founder", "Core Management", "Faculty"}, "Hub staff roles"
+          assert any(route.path == "/api/push/register" for route in push_router.routes), "Push registration route"
+          assert any(route.path == "/api/health" for route in system_router.routes), "Health route"
+
+          valid_index = {
+              "unique": True,
+              "partialFilterExpression": {"daily_schedule_id": {"$type": "objectId"}},
+          }
+          old_index = {
+              "unique": True,
+              "partialFilterExpression": {"daily_schedule_id": {"$exists": True}},
+          }
+          assert partial_object_id_index_is_current(valid_index, "daily_schedule_id"), "Correct ObjectId partial index"
+          assert not partial_object_id_index_is_current(old_index, "daily_schedule_id"), "Legacy $exists index must be migrated"
+
+          legacy_task = clean_task({
+              "_id": ObjectId(), "status": "Todo",
+              "assignment_group_id": ObjectId(),
+          })
+          assert legacy_task["title"] == "Untitled task", "Legacy task title fallback"
+          assert legacy_task["assignee_id"] == "", "Legacy assignee fallback"
+          assert legacy_task["created_by"] == "", "Legacy creator fallback"
+          assert isinstance(legacy_task["assignment_group_id"], str), "ObjectId JSON conversion"
+
+          assert member_level_details(0)["level_title"] == "Newcomer", "Level 1"
+          assert member_level_details(100)["level"] == 2, "Level 2"
+          assert member_level_details(400)["level_title"] == "Contributor", "Contributor title"
+          assert member_level_details(10000)["level_title"] == "TechNova Legend", "Legend title"
+          assert member_level_details(12100)["level"] == 12, "Open-ended XP levels"
+
+          founder = founder_progression_details(3, 1, 50)
+          assert founder["progression_type"] == "founder", "Founder progression mode"
+          assert founder["level"] is None and founder["xp"] is None, "Founder is not XP-ranked"
+          assert founder["level_title"] == "Founder · Origin Rank", "Permanent Founder title"
+
+          print("API imports, task serializer, schedule index migration, Hub, push, health and progression checks passed.")
+          PY
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
