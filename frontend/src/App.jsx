@@ -1274,6 +1274,14 @@ function App() {
                   <p>Task updates, club announcements, and important messages from management.</p>
                 </div>
                 <div className="titleactions">
+                  <button
+                    className="secondary"
+                    onClick={markAllNotificationsRead}
+                    disabled={busy || !notifications.some((item) => !item.read)}
+                    title={notifications.some((item) => !item.read) ? "Mark every notification as read" : "All notifications are already read"}
+                  >
+                    <Check size={14} /> {busy ? "Updating..." : "Read all"}
+                  </button>
                   <button className="secondary" onClick={refresh}>
                     <RefreshCw size={14} /> Refresh inbox
                   </button>
