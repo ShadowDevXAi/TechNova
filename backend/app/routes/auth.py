@@ -427,7 +427,8 @@ async def contact_notification_status(user: dict = Depends(get_current_user)):
             "push_enabled": preferences.get("push_enabled", True) is not False,
             "sms_enabled": preferences.get("sms_enabled") is True,
         },
-        "phone_verification_enabled": settings.phone_verification_enabled,\n        "sms_provider": sms_configuration_status(),
+        "phone_verification_enabled": settings.phone_verification_enabled,
+        "sms_provider": sms_configuration_status(),
     }
 
 
@@ -448,7 +449,11 @@ async def request_phone_verification(body: dict, request: Request, user: dict = 
     Calling this endpoint again after the cooldown sends a fresh code and
     replaces the previous pending code; the previous code can no longer verify.
     """
-    # Feature is intentionally paused. Remove this guard only when the owner activates phone verification.\n    if not settings.phone_verification_enabled:\n        raise HTTPException(503, "Phone verification is temporarily disabled by the TechNova owner.")\n    phone = str(body.get("phone_number") or "").strip()\n    consent = body.get("consent") is True
+    # Feature is intentionally paused. Remove this guard only when the owner activates phone verification.
+    if not settings.phone_verification_enabled:
+        raise HTTPException(503, "Phone verification is temporarily disabled by the TechNova owner.")
+    phone = str(body.get("phone_number") or "").strip()
+    consent = body.get("consent") is True
     if not re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
         raise HTTPException(422, "Enter a phone number in international format, for example +919876543210.")
     if not consent:
@@ -514,7 +519,11 @@ async def confirm_phone_verification(body: dict, request: Request, user: dict = 
     all temporary OTP data, and leave SMS alerts disabled until separately
     enabled in notification preferences.
     """
-    # Feature is intentionally paused. Remove this guard only when the owner activates phone verification.\n    if not settings.phone_verification_enabled:\n        raise HTTPException(503, "Phone verification is temporarily disabled by the TechNova owner.")\n    code = str(body.get("code") or "").strip()\n    pending_phone = user.get("phone_number_pending")
+    # Feature is intentionally paused. Remove this guard only when the owner activates phone verification.
+    if not settings.phone_verification_enabled:
+        raise HTTPException(503, "Phone verification is temporarily disabled by the TechNova owner.")
+    code = str(body.get("code") or "").strip()
+    pending_phone = user.get("phone_number_pending")
     expected_hash = user.get("phone_verification_code_hash")
     expires_at = user.get("phone_verification_expires_at")
     if not re.fullmatch(r"[0-9]{6}", code):
@@ -562,7 +571,9 @@ async def update_contact_notification_preferences(body: dict, request: Request, 
         "sms_enabled": current.get("sms_enabled") is True,
         **changes,
     }
-    if updated["sms_enabled"] and not settings.phone_verification_enabled:\n        raise HTTPException(503, "SMS notifications are temporarily disabled by the TechNova owner.")\n    if updated["sms_enabled"] and not (user.get("phone_verified_at") and user.get("sms_consent_at") and user.get("phone_number")):
+    if updated["sms_enabled"] and not settings.phone_verification_enabled:
+        raise HTTPException(503, "SMS notifications are temporarily disabled by the TechNova owner.")
+    if updated["sms_enabled"] and not (user.get("phone_verified_at") and user.get("sms_consent_at") and user.get("phone_number")):
         raise HTTPException(409, "Verify your phone number and give SMS consent before enabling SMS alerts.")
     await db.users.update_one(
         {"_id": user["_id"]},
