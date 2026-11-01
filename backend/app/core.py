@@ -311,6 +311,7 @@ async def create_notification(
     notification_type: str = "general",
     task_id: str | None = None,
     common_task_id: str | None = None,
+    email_body: str | None = None,
 ) -> None:
     created_at = utcnow()
     notification = {
@@ -344,7 +345,7 @@ async def create_notification(
         )
     else:
         try:
-            receipt = await asyncio.to_thread(send_email_message, email, title, message)
+            receipt = await asyncio.to_thread(send_email_message, email, title, email_body or message)
             delivery = {
                 "status": "sent",
                 "provider": receipt.get("provider", smtp_status.get("provider")),
@@ -380,6 +381,104 @@ async def create_notification(
         task_id=task_id,
         common_task_id=common_task_id,
     )
+
+def build_task_email_summary(
+    task: dict,
+    intro: str,
+    extra_details: dict | None = None,
+) -> str:
+    """Build a detailed, plain-text task summary for email/SMS notification channels."""
+    def value(name: str, fallback: str = "Not specified") -> str:
+        raw = task.get(name)
+        if raw is None or str(raw).strip() == "":
+            return fallback
+        return " ".join(str(raw).split())
+
+    lines = [
+        intro.strip(),
+        "",
+        "TASK SUMMARY",
+        f'Title: {value("title", "Untitled task")}',
+        f'Description: {value("description", "No description provided")[:1200]}',
+        f'Project: {value("project", "Club projects")}',
+        f'Priority: {value("priority", "Medium")}',
+        f'Difficulty: {value("difficulty_rank", "F")} · Reward: {value("credits_reward", "0")} credits',
+        f'Programming language: {value("programming_language", "General")}',
+        f'Due date: {value("due_date")}',
+        f'Status: {value("status", value("task_state", "Active"))}',
+        f'Recurrence: {value("recurrence", "once")}',
+    ]
+    for label, field in (
+        ("Submission note", "submission_note"),
+        ("Review feedback", "review_feedback"),
+        ("Screenshot evidence", "submission_evidence_url"),
+        ("Project link", "project_url"),
+    ):
+        detail = value(field, "")
+        if detail:
+            lines.append(f"{label}: {detail[:1200]}")
+    for label, detail in (extra_details or {}).items():
+        if detail is not None and str(detail).strip():
+            lines.append(f"{label}: {' '.join(str(detail).split())[:1200]}")
+    if task.get("assignee_name"):
+        lines.append(f'Assigned to: {value("assignee_name")}')
+    if task.get("created_by_name"):
+        lines.append(f'Created by: {value("created_by_name")}')
+    app_url = settings.public_app_url.strip().rstrip("/")
+    if app_url:
+        lines.extend(["", f"Open TechNova: {app_url}"])
+    return "\n".join(lines)
+
+
+def build_task_sms_summary(
+    task: dict,
+    intro: str,
+    max_length: int = 320,
+) -> str:
+    """Return a compact SMS-ready summary; an SMS gateway is not enabled yet."""
+    title = " ".join(str(task.get("title") or "Untitled task").split())
+    priority = " ".join(str(task.get("priority") or "Medium").split())
+    rank = " ".join(str(task.get("difficulty_rank") or "F").split())
+    due = " ".join(str(task.get("due_date") or "No deadline").split())
+    project = " ".join(str(task.get("project") or "Club projects").split())
+    app_url = settings.public_app_url.strip().rstrip("/")
+    parts = [
+        f"TechNova: {intro.strip()}",
+        f'Task: "{title}"',
+        f"Project: {project}",
+        f"{priority} priority · Rank {rank}",
+        f"Due: {due}",
+    ]
+    if app_url:
+        parts.append(f"Open: {app_url}")
+    content = " | ".join(part for part in parts if part)
+    if len(content) <= max_length:
+        return content
+    return content[: max(0, max_length - 1)].rstrip() + "…"
+
+
+async def create_task_notification(
+    recipient: dict,
+    task: dict,
+    title: str,
+    message: str,
+    notification_type: str = "task",
+    task_id: str | None = None,
+    common_task_id: str | None = None,
+    extra_details: dict | None = None,
+) -> None:
+    """Keep in-app/push text concise while attaching the full task summary to email."""
+    email_body = build_task_email_summary(task, message, extra_details)
+    await create_notification(
+        recipient,
+        title,
+        message,
+        notification_type,
+        task_id=task_id,
+        common_task_id=common_task_id,
+        email_body=email_body,
+    )
+
 
 # Purpose: Validate the bearer token, load the active member and expire timed suspensions.
 async def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
@@ -734,8 +833,8 @@ async def generate_automatic_daily_tasks() -> dict:
             remaining -= 1
             inserted_this_batch += 1
             for recipient in recipients:
-                await create_notification(
-                    recipient, "New daily coding mission",
+                await create_task_notification(
+                    recipient, common_doc, "New daily coding mission",
                     f'{common_doc["title"]} is available on the shared Daily Task Board. Accept it if you want to work on it; it has not been assigned to you.',
                     "common_task", common_task_id=str(result.inserted_id),
                 )
@@ -984,7 +1083,7 @@ async def run_daily_maintenance() -> dict:
                     "role": {"$in": ["Member", "Faculty"]}, "status": "Active",
                 }).limit(5000).to_list(5000)
                 for recipient in recipients:
-                    await create_notification(recipient, "New daily common task", f'{common_doc["title"]} is available today. Open Tasks & Projects to review it.', "common_task", common_task_id=str(common_doc["_id"]))
+                    await create_task_notification(recipient, common_doc, "New daily common task", f'{common_doc["title"]} is available today. Open Tasks & Projects to review it.', "common_task", common_task_id=str(common_doc["_id"]))
             except DuplicateKeyError:
                 pass
             await db.daily_task_schedules.update_one({"_id": schedule_id}, {"$set": {"last_generated_date": today_key}})
@@ -1007,7 +1106,7 @@ async def run_daily_maintenance() -> dict:
             try:
                 await db.tasks.insert_one(task_doc)
                 generated += 1
-                await create_notification(target, "New daily task assigned", f'{task_doc["title"]} has been added to your tasks for {today_key}.', "task_assigned", task_id=str(task_doc["_id"]))
+                await create_task_notification(target, task_doc, "New daily task assigned", f'{task_doc["title"]} has been added to your tasks for {today_key}.', "task_assigned", task_id=str(task_doc["_id"]))
             except DuplicateKeyError:
                 pass
         await db.daily_task_schedules.update_one({"_id": schedule_id}, {"$set": {"last_generated_date": today_key}})
@@ -1040,11 +1139,13 @@ async def run_daily_maintenance() -> dict:
             penalties_applied += 1
             penalty_recipient = await db.users.find_one({"_id": task["assignee_id"]})
             if penalty_recipient:
-                await create_notification(
+                await create_task_notification(
                     penalty_recipient,
+                    task,
                     "Task deadline missed · credit penalty",
                     f'{task.get("title", "Task")} was not submitted by its due date. {points} credits (rank {task.get("difficulty_rank", "F")}) were deducted. This penalty is applied only once.',
                     "credit_penalty", task_id=str(task["_id"]),
+                    extra_details={"Credit penalty": f"{points} credits deducted"},
                 )
             else:
                 logger.warning(

@@ -52,6 +52,8 @@ jobs:
               founder_progression_details,
               member_level_details,
               smtp_configuration_status,
+              build_task_email_summary,
+              build_task_sms_summary,
           )
 
           expected_hub = {
@@ -80,6 +82,19 @@ jobs:
           assert "smtp_configuration_status()" in auth_source, "Password resets must support HTTPS email providers"
           assert "account_approved" in member_source and "account_suspended" in member_source, "Member lifecycle email notifications"
           assert "task_comment" in task_source, "Task comments must notify the other party"
+          assert "build_task_email_summary" in core_source, "Task email detail summary helper"
+          assert "build_task_sms_summary" in core_source, "Compact task SMS summary helper"
+          assert "create_task_notification" in task_source, "Task event emails use full task summary"
+          sample_summary = {
+              "title": "Calculate total marks", "description": "Read 5 subject marks and calculate the sum.",
+              "project": "C Programming", "priority": "Medium", "difficulty_rank": "F",
+              "credits_reward": 5, "programming_language": "C", "due_date": "2026-11-02",
+              "status": "Todo", "recurrence": "once",
+          }
+          full_task_email = build_task_email_summary(sample_summary, "A new task was assigned.")
+          assert "Read 5 subject marks" in full_task_email and "Programming language: C" in full_task_email, "Full task email includes description and language"
+          compact_task_sms = build_task_sms_summary(sample_summary, "New task assigned")
+          assert len(compact_task_sms) <= 320 and "Calculate total marks" in compact_task_sms, "SMS summary stays compact"
           assert "penalty_recipient = await db.users.find_one" in core_source, "Penalty emails must load the actual member email"
 
           archive_cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)

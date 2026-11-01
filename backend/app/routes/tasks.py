@@ -226,12 +226,13 @@ async def bulk_confirm_task_completion(
         if result.modified_count:
             member = member_by_id[task["assignee_id"]]
             approved.append(str(task["_id"]))
-            await create_notification(
-                member,
+            await create_task_notification(
+                member, task,
                 "Task completion approved",
                 f'{actor["name"]} approved your submission for "{task["title"]}".',
                 "task_approved",
                 task_id=str(task["_id"]),
+                extra_details={"Approved by": actor["name"], "Credits awarded": f'{task_credit_value(task)} credits'},
             )
 
     await audit(actor, "tasks_bulk_completion_confirmed", ",".join(approved), {
@@ -327,8 +328,8 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
                 if recipient.get("role") == "Member"
                 else f'{actor["name"]} published the common task "{common_doc["title"]}" for Members to volunteer.'
             )
-            await create_notification(
-                recipient,
+            await create_task_notification(
+                recipient, common_doc,
                 "New common task available",
                 recipient_message,
                 "common_task",
@@ -392,12 +393,13 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
         doc["_id"] = result.inserted_id
         created.append(clean_task(doc))
         due_text = f' Due date: {data.due_date}.' if data.due_date else ""
-        await create_notification(
-            target,
+        await create_task_notification(
+            target, doc,
             "New task assigned to you",
             f'{actor["name"]} assigned you "{data.title.strip()}". Project: {base["project"]}.{due_text}',
             "task_assigned",
             task_id=str(result.inserted_id),
+            extra_details={"Assigned by": actor["name"]},
         )
     await audit(actor, "task_created", group_id or created[0]["id"], {
         "assignee_ids": [str(target["_id"]) for target in targets],
@@ -473,13 +475,14 @@ async def respond_to_common_task(common_task_id: str, body: dict, request: Reque
 
     creator = await db.users.find_one({"_id": common["created_by"], "status": "Active"})
     if creator:
-        await create_notification(
-            creator,
+        await create_task_notification(
+            creator, common,
             f'Common task {response}',
             f'{user["name"]} {response} "{common["title"]}".',
             "common_task_response",
             task_id=str(personal_task["_id"]) if personal_task else None,
             common_task_id=common_task_id,
+            extra_details={"Member response": response, "Member": user["name"]},
         )
     await audit(user, "common_task_responded", common_task_id, {"response": response}, request)
     return {
@@ -522,8 +525,8 @@ async def set_task_state(task_id: str, data: TaskStateIn, request: Request, acto
         if assignee:
             is_paused = data.state == "Suspended"
             detail = f" Reason: {reason}" if is_paused and reason else ""
-            await create_notification(
-                assignee,
+            await create_task_notification(
+                assignee, task,
                 "Task paused by management" if is_paused else "Task resumed by management",
                 f"{actor['name']} {'paused' if is_paused else 'resumed'} \"{task['title']}\".{detail}",
                 "task_paused" if is_paused else "task_resumed",
@@ -581,8 +584,8 @@ async def set_common_task_state(common_task_id: str, data: TaskStateIn, request:
         is_paused = data.state == "Suspended"
         detail = f" Reason: {reason}" if is_paused and reason else ""
         for recipient in recipients:
-            await create_notification(
-                recipient,
+            await create_task_notification(
+                recipient, task,
                 "Common mission paused" if is_paused else "Common mission reopened",
                 f"{actor['name']} {'paused' if is_paused else 'reopened'} \"{task['title']}\".{detail}",
                 "common_task_paused" if is_paused else "common_task_resumed",
@@ -802,24 +805,26 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
     await db.tasks.update_one({"_id": target["_id"]}, {"$set": changes})
 
     if reassigned_to:
-        await create_notification(
-            reassigned_to,
+        await create_task_notification(
+            reassigned_to, {**target, **changes},
             "Task assigned to you",
             f'{actor["name"]} assigned you "{target["title"]}".',
             "task_assigned",
             task_id=task_id,
+            extra_details={"Assigned by": actor["name"]},
         )
 
     if changes.get("status") == "In progress" and target.get("status") == "Review":
         assignee = await db.users.find_one({"_id": target["assignee_id"]})
         if assignee:
             message = changes.get("review_feedback") or "Please update your submission evidence and send it for review again."
-            await create_notification(
-                assignee,
+            await create_task_notification(
+                assignee, {**target, **changes},
                 "Task needs changes",
                 f'{actor["name"]} returned "{target["title"]}" for changes: {message}',
                 "task_changes_requested",
                 task_id=task_id,
+                extra_details={"Review feedback": message, "Reviewed by": actor["name"]},
             )
 
     if changes.get("status") == "Review":
@@ -830,12 +835,13 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
             "_id": {"$ne": actor["_id"]},
         }).to_list(200)
         for reviewer in reviewers:
-            await create_notification(
-                reviewer,
+            await create_task_notification(
+                reviewer, {**target, **changes},
                 "Task submission awaiting review",
                 f'{actor["name"]} submitted "{target["title"]}" with screenshot evidence for review.',
                 "task_review",
                 task_id=task_id,
+                extra_details={"Submitted by": actor["name"]},
             )
 
     await audit(actor, "task_updated", task_id, {"fields": list(changes)}, request)
@@ -923,12 +929,13 @@ async def add_task_comment(task_id: str, body: dict, request: Request, user: dic
             "status": "Active",
         })
         if recipient and recipient["_id"] != user["_id"]:
-            await create_notification(
-                recipient,
+            await create_task_notification(
+                recipient, task,
                 "New comment on your TechNova task",
                 f'{user["name"]} commented on "{task.get("title", "your task")}": {text.strip()}',
                 "task_comment",
                 task_id=task_id,
+                extra_details={"New comment": text.strip(), "Comment by": user["name"]},
             )
     else:
         creator_id = task.get("created_by")
@@ -948,12 +955,13 @@ async def add_task_comment(task_id: str, body: dict, request: Request, user: dic
                 "_id": {"$ne": user["_id"]},
             }).limit(50).to_list(50)
             for reviewer in reviewers:
-                await create_notification(
-                    reviewer,
+                await create_task_notification(
+                    reviewer, task,
                     "New comment on an assigned task",
                     f'{user["name"]} commented on "{task.get("title", "task")}": {text.strip()}',
                     "task_comment",
                     task_id=task_id,
+                    extra_details={"New comment": text.strip(), "Comment by": user["name"]},
                 )
     await audit(user, "task_comment_added", task_id, {}, request)
     return {"id": str(result.inserted_id), "author": doc["author"], "role": doc["role"], "text": doc["text"], "created_at": doc["created_at"]}
