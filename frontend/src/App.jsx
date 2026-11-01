@@ -229,6 +229,11 @@ function App() {
     const params = new URLSearchParams(window.location.search);
     const emailToken = params.get("verify_email");
     if (emailToken) {
+      // Remove the one-time token from browser history before starting the request;
+      // this also prevents React StrictMode's development effect replay from reusing it.
+      params.delete("verify_email");
+      const query = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (query ? "?" + query : "") + window.location.hash);
       api("/auth/email-verification/confirm", "", {
         method: "POST",
         body: JSON.stringify({ token: emailToken }),
@@ -238,10 +243,6 @@ function App() {
         setAuth((current) => ({ ...current, password: "" }));
       }).catch((err) => {
         setError(err.message || "Email verification failed. Request a new link.");
-      }).finally(() => {
-        params.delete("verify_email");
-        const query = params.toString();
-        window.history.replaceState({}, "", window.location.pathname + (query ? "?" + query : "") + window.location.hash);
       });
     }
   }, []);
