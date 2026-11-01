@@ -941,12 +941,13 @@ async def add_task_comment(task_id: str, body: dict, request: Request, user: dic
         creator_id = task.get("created_by")
         recipient = await db.users.find_one({"_id": creator_id, "status": "Active"}) if creator_id else None
         if recipient and recipient["_id"] != user["_id"]:
-            await create_notification(
-                recipient,
+            await create_task_notification(
+                recipient, task,
                 "New comment on an assigned task",
                 f'{user["name"]} commented on "{task.get("title", "task")}": {text.strip()}',
                 "task_comment",
                 task_id=task_id,
+                extra_details={"New comment": text.strip(), "Comment by": user["name"]},
             )
         elif not recipient:
             reviewers = await db.users.find({
