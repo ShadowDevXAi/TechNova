@@ -74,10 +74,12 @@ def clean_task(doc: dict) -> dict:
     return {
         "id": str(doc["_id"]),
         "assignment_group_id": doc.get("assignment_group_id"),
-        "title": doc["title"],
+        # Older/imported task rows may not contain all fields from the current schema.
+        # Keep one incomplete legacy row from breaking the entire /api/tasks response.
+        "title": doc.get("title") or "Untitled task",
         "description": doc.get("description", ""),
         "project": doc.get("project", "Club projects"),
-        "assignee_id": str(doc["assignee_id"]),
+        "assignee_id": str(doc.get("assignee_id") or ""),
         "assignee_name": doc.get("assignee_name", ""),
         "priority": doc.get("priority", "Medium"),
         "difficulty_rank": doc.get("difficulty_rank", "F"),
@@ -99,7 +101,7 @@ def clean_task(doc: dict) -> dict:
         "completion_confirmed_at": doc.get("completion_confirmed_at"),
         "completion_confirmed_by_name": doc.get("completion_confirmed_by_name"),
         "completion_confirmed_by_role": doc.get("completion_confirmed_by_role"),
-        "created_by": str(doc["created_by"]),
+        "created_by": str(doc.get("created_by") or ""),
         "created_at": doc.get("created_at"),
         "updated_at": doc.get("updated_at"),
         "auto_generated": bool(doc.get("auto_generated", False)),
