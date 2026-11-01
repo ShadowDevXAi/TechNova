@@ -9,6 +9,7 @@ All protected operations reuse authentication and role checks from app.core.
 import logging
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from ..core import *  # Shared database, schemas, authorization and business helpers.
 from ..storage import store_attachment, read_attachment
 from ..config import settings
@@ -849,6 +850,28 @@ async def update_task(task_id: str, data: TaskPatch, request: Request, actor: di
     await audit(actor, "task_updated", task_id, {"fields": list(changes)}, request)
     return clean_task(await db.tasks.find_one({"_id": target["_id"]}))
 
+def attachment_signature_is_valid(content_type: str, data: bytes) -> bool:
+    """Check basic file signatures so a renamed executable is not accepted as an image/PDF."""
+    mime = (content_type or "").split(";", 1)[0].strip().lower()
+    if mime == "image/png":
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if mime == "image/jpeg":
+        return data.startswith(b"\xff\xd8\xff")
+    if mime == "image/webp":
+        return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    if mime == "application/pdf":
+        return data.startswith(b"%PDF-")
+    if mime == "application/zip":
+        return data.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"))
+    if mime == "text/plain":
+        try:
+            data.decode("utf-8")
+            return b"\x00" not in data
+        except UnicodeDecodeError:
+            return False
+    return False
+
+
 # Purpose: upload task attachment handles the tasks feature flow and returns its API result.
 @router.post("/api/tasks/{task_id}/attachments", status_code=201)
 async def upload_task_attachment(task_id: str, request: Request, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
@@ -865,6 +888,8 @@ async def upload_task_attachment(task_id: str, request: Request, file: UploadFil
     data = await file.read(10 * 1024 * 1024 + 1)
     if not data or len(data) > 10 * 1024 * 1024:
         raise HTTPException(413, "Attachment must be under 10 MB")
+    if not attachment_signature_is_valid(file.content_type, data):
+        raise HTTPException(415, "The file content does not match its declared type. Re-export the file and upload it again.")
     import uuid
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", file.filename or "attachment")[:120]
     stored = f"{uuid.uuid4().hex}_{safe_name}"

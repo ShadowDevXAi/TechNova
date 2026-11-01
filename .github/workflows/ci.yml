@@ -97,8 +97,13 @@ jobs:
           assert "TwoFactorSettings" in app_source, "Trusted-device security settings UI"
           assert "build_task_sms_summary" in core_source, "Compact task SMS summary helper"
           from app.storage import attachment_storage_status
+          from app.routes.tasks import attachment_signature_is_valid
           local_storage = attachment_storage_status()
           assert local_storage["provider"] == "Local disk" and local_storage["configured"], "Local development storage fallback"
+          assert attachment_signature_is_valid("image/png", b"\\x89PNG\\r\\n\\x1a\\nexample"), "PNG file signature"
+          assert not attachment_signature_is_valid("image/png", b"not an image"), "Reject MIME spoofing"
+          assert attachment_signature_is_valid("application/pdf", b"%PDF-1.7"), "PDF file signature"
+          assert not attachment_signature_is_valid("application/zip", b"#!/bin/sh"), "Reject executable renamed as ZIP"
           assert "create_task_notification" in task_source, "Task event emails use full task summary"
           sample_summary = {
               "title": "Calculate total marks", "description": "Read 5 subject marks and calculate the sum.",
