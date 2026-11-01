@@ -34,7 +34,8 @@ export default function ContactNotificationSettings({ token }) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Ask the backend to generate and send a fresh OTP; the server enforces consent, provider readiness, cooldown and expiry.\n  async function requestCode(event) {
+  // Ask the backend to generate and send a fresh OTP; the server enforces consent, provider readiness, cooldown and expiry.
+  async function requestCode(event) {
     event.preventDefault();
     setBusy(true); setError(""); setMessage("");
     try {
@@ -49,7 +50,8 @@ export default function ContactNotificationSettings({ token }) {
     } finally { setBusy(false); }
   }
 
-  // Submit the six-digit OTP. A successful response refreshes the account status so the verified number is shown.\n  async function verifyPhone(event) {
+  // Submit the six-digit OTP. A successful response refreshes the account status so the verified number is shown.
+  async function verifyPhone(event) {
     event.preventDefault();
     setBusy(true); setError(""); setMessage("");
     try {
@@ -113,7 +115,12 @@ export default function ContactNotificationSettings({ token }) {
           SMS is not ready yet. {smsProvider.missing?.length ? `The backend is missing: ${smsProvider.missing.join(", ")}. ` : ""}The Founder must add the required SMS credentials and an approved sender in the backend Render environment, then redeploy. The SMS provider must also have transactional SMS permission and sufficient credits.
         </p>
       )}
-      {!status?.phone_verification_enabled ? (\n        <div className="contact-notification-note" role="status">\n          <b>Phone verification is temporarily paused.</b>\n          <p>The OTP, phone verification and SMS notification functions are kept in the project but are disabled. They will be activated only when the TechNova owner decides to enable them.</p>\n        </div>\n      ) : status?.phone_verified ? (
+      {!status?.phone_verification_enabled ? (
+        <div className="contact-notification-note" role="status">
+          <b>Phone verification is temporarily paused.</b>
+          <p>The OTP, phone verification and SMS notification functions are kept in the project but are disabled. They will be activated only when the TechNova owner decides to enable them.</p>
+        </div>
+      ) : status?.phone_verified ? (
         <div className="contact-verified-phone">
           <div><b>Verified phone</b><strong>{status.phone_masked}</strong><small>Verification consent recorded. SMS alerts still require separate opt-in.</small></div>
           <button type="button" className="secondary" onClick={removePhone} disabled={busy}>Remove</button>
@@ -140,7 +147,8 @@ export default function ContactNotificationSettings({ token }) {
             <button className="primary" disabled={busy || loading || (!pending && !smsProvider.configured) || (!pending && !consent)}>
               {busy ? "Please wait…" : pending ? "Verify phone number" : "Send verification code"}
             </button>
-            {/* Return to phone entry; submitting again requests a fresh OTP after the backend resend cooldown. */}\n            {pending && <button type="button" className="textbtn" onClick={() => {setPending(false); setCode("");}} disabled={busy}>Change phone number / resend</button>}
+            {/* Return to phone entry; submitting again requests a fresh OTP after the backend resend cooldown. */}
+            {pending && <button type="button" className="textbtn" onClick={() => {setPending(false); setCode("");}} disabled={busy}>Change phone number / resend</button>}
           </form>
         </div>
       )}
