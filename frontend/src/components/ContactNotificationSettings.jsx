@@ -106,11 +106,11 @@ export default function ContactNotificationSettings({ token }) {
       <div className="contact-notification-providers">
         <span><b>Email</b><small>Brevo email notifications</small></span>
         <span><b>Push</b><small>Browser/device alerts</small></span>
-        <span><b>SMS</b><small>{smsProvider.configured ? "SMS configuration present" : "Provider setup pending"}</small></span>
+        <span><b>SMS</b><small>{smsProvider.configured ? `${smsProvider.provider || "SMS provider"} ready` : `${smsProvider.provider || "SMS provider"} setup pending`}</small></span>
       </div>
       {!smsProvider.configured && (
         <p className="contact-notification-note">
-          SMS setup is incomplete. The Founder must configure BREVO_API_KEY and an approved BREVO_SMS_SENDER in the backend Render environment. Transactional SMS permission and credits are managed in Brevo.
+          SMS is not ready yet. {smsProvider.missing?.length ? `The backend is missing: ${smsProvider.missing.join(", ")}. ` : ""}The Founder must add the required SMS credentials and an approved sender in the backend Render environment, then redeploy. The SMS provider must also have transactional SMS permission and sufficient credits.
         </p>
       )}
       {status?.phone_verified ? (
