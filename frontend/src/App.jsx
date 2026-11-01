@@ -503,6 +503,7 @@ function App() {
     setResetPassword,
     auth,
     setAuth,
+    setAuthNotice,
     memberForm,
     setMemberForm,
     taskForm,
