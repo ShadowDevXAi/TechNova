@@ -6,7 +6,16 @@ All protected operations reuse authentication and role checks from app.core.
 """
 
 import secrets
-from datetime import timedelta
+from datetime import timedelta, timezone
+
+
+def normalize_utc_datetime(value):
+    """Normalize MongoDB UTC datetimes before comparing with aware UTC values."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 import pyotp
 from jose import JWTError, jwt
@@ -235,7 +244,7 @@ async def two_factor_setup(body: dict, request: Request):
         raise HTTPException(409, "Authenticator two-factor authentication is already enabled.")
     pending_secret = user.get("two_factor_pending_secret")
     pending_expiry = user.get("two_factor_pending_expires_at")
-    if not pending_secret or not pending_expiry or pending_expiry <= utcnow():
+    if not pending_secret or not pending_expiry or normalize_utc_datetime(pending_expiry) <= utcnow():
         pending_secret = pyotp.random_base32()
         await db.users.update_one(
             {"_id": user["_id"]},
@@ -268,7 +277,7 @@ async def enable_two_factor(body: dict, request: Request):
     code = str(body.get("code") or "").strip().replace(" ", "")
     secret = user.get("two_factor_pending_secret")
     pending_expiry = user.get("two_factor_pending_expires_at")
-    if not secret or not pending_expiry or pending_expiry <= utcnow():
+    if not secret or not pending_expiry or normalize_utc_datetime(pending_expiry) <= utcnow():
         raise HTTPException(410, "Authenticator setup expired. Start login again.")
     if not pyotp.TOTP(secret).verify(code, valid_window=1):
         raise HTTPException(400, "That authenticator code is not valid. Check the phone's time and try again.")
