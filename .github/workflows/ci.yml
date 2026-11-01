@@ -91,6 +91,9 @@ jobs:
           assert "task_comment" in task_source, "Task comments must notify the other party"
           assert 'await create_notification(\n                recipient,\n                "New comment on an assigned task"' not in task_source, "Member task-comment emails must use the task summary"
           assert "build_task_email_summary" in core_source, "Task email detail summary helper"
+          app_source = open("../frontend/src/App.jsx", encoding="utf-8").read()
+          assert "completeTwoFactorSetup" in app_source and "QRCodeSVG" in app_source, "Management authenticator enrollment UI"
+          assert "TwoFactorSettings" in app_source, "Trusted-device security settings UI"
           assert "build_task_sms_summary" in core_source, "Compact task SMS summary helper"
           assert "create_task_notification" in task_source, "Task event emails use full task summary"
           sample_summary = {

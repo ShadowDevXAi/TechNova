@@ -106,6 +106,18 @@ export default function createPortalActions(context) {
     setEmailStatus,
     emailTestBusy,
     setEmailTestBusy,
+    twoFactorFlow,
+    setTwoFactorFlow,
+    twoFactorSetup,
+    setTwoFactorSetup,
+    twoFactorCode,
+    setTwoFactorCode,
+    twoFactorRecoveryCodes,
+    setTwoFactorRecoveryCodes,
+    twoFactorPendingSession,
+    setTwoFactorPendingSession,
+    trustDevice,
+    setTrustDevice,
     api,
     API_BASE,
     notify,
@@ -131,17 +143,122 @@ export default function createPortalActions(context) {
       } else {
         let r = await api("/auth/login", "", {
           method: "POST",
-          body: JSON.stringify({ email: auth.email, password: auth.password }),
+          body: JSON.stringify({
+            email: auth.email,
+            password: auth.password,
+            trusted_device_token: localStorage.getItem("tn_trusted_device") || "",
+          }),
         });
-        localStorage.setItem("tn_token", r.access_token);
-        setToken(r.access_token);
-        setUser(r.user);
+        if (r.two_factor_setup_required) {
+          setTwoFactorFlow({ mode: "setup", setupToken: r.setup_token });
+          setTwoFactorCode("");
+          const setup = await api("/auth/2fa/setup", "", {
+            method: "POST",
+            body: JSON.stringify({ setup_token: r.setup_token }),
+          });
+          setTwoFactorSetup(setup);
+        } else if (r.two_factor_required) {
+          setTwoFactorFlow({ mode: "verify", challengeToken: r.challenge_token });
+          setTwoFactorSetup(null);
+          setTwoFactorCode("");
+        } else {
+          if (r.trusted_device_token) localStorage.setItem("tn_trusted_device", r.trusted_device_token);
+          localStorage.setItem("tn_token", r.access_token);
+          setToken(r.access_token);
+          setUser(r.user);
+        }
       }
     } catch (e) {
       fail(e);
     } finally {
       setBusy(false);
     }
+  }
+
+  // Purpose: Complete first-time authenticator enrollment and keep recovery codes visible until saved.
+  async function completeTwoFactorSetup(e) {
+    e.preventDefault();
+    if (!twoFactorFlow?.setupToken) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api("/auth/2fa/enable", "", {
+        method: "POST",
+        body: JSON.stringify({
+          setup_token: twoFactorFlow.setupToken,
+          code: twoFactorCode,
+          remember_device: trustDevice,
+        }),
+      });
+      setTwoFactorRecoveryCodes(result.recovery_codes || []);
+      setTwoFactorPendingSession(result);
+      setTwoFactorFlow({ mode: "recovery" });
+      setTwoFactorCode("");
+      notify("Authenticator two-factor authentication enabled.");
+    } catch (error) {
+      fail(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Purpose: Verify a TOTP or single-use recovery code before issuing a management session.
+  async function completeTwoFactorLogin(e) {
+    e.preventDefault();
+    if (!twoFactorFlow?.challengeToken) return;
+    setBusy(true);
+    setError("");
+    const entered = twoFactorCode.trim().replace(/\s/g, "");
+    const isAuthenticatorCode = /^\d{6}$/.test(entered);
+    try {
+      const result = await api("/auth/2fa/login", "", {
+        method: "POST",
+        body: JSON.stringify({
+          challenge_token: twoFactorFlow.challengeToken,
+          code: isAuthenticatorCode ? entered : "",
+          recovery_code: isAuthenticatorCode ? "" : entered,
+          remember_device: trustDevice,
+        }),
+      });
+      if (result.trusted_device_token) localStorage.setItem("tn_trusted_device", result.trusted_device_token);
+      setTwoFactorFlow(null);
+      setTwoFactorSetup(null);
+      setTwoFactorCode("");
+      localStorage.setItem("tn_token", result.access_token);
+      setToken(result.access_token);
+      setUser(result.user);
+      notify("Two-factor verification successful.");
+    } catch (error) {
+      fail(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Purpose: Finish MFA setup only after the one-time recovery codes have been displayed.
+  function finishTwoFactorSetup() {
+    if (!twoFactorPendingSession?.access_token) return;
+    if (twoFactorPendingSession.trusted_device_token) {
+      localStorage.setItem("tn_trusted_device", twoFactorPendingSession.trusted_device_token);
+    }
+    localStorage.setItem("tn_token", twoFactorPendingSession.access_token);
+    setToken(twoFactorPendingSession.access_token);
+    setUser(twoFactorPendingSession.user);
+    setTwoFactorFlow(null);
+    setTwoFactorSetup(null);
+    setTwoFactorCode("");
+    setTwoFactorRecoveryCodes([]);
+    setTwoFactorPendingSession(null);
+  }
+
+  // Purpose: Cancel an incomplete MFA login without creating an authenticated portal session.
+  function cancelTwoFactorFlow() {
+    setTwoFactorFlow(null);
+    setTwoFactorSetup(null);
+    setTwoFactorCode("");
+    setTwoFactorRecoveryCodes([]);
+    setTwoFactorPendingSession(null);
+    setError("");
   }
 
   // Purpose: Clear the session and reset all member-specific portal state.
@@ -915,6 +1032,10 @@ export default function createPortalActions(context) {
   return {
     login,
     logout,
+    completeTwoFactorSetup,
+    completeTwoFactorLogin,
+    finishTwoFactorSetup,
+    cancelTwoFactorFlow,
     refresh,
     createMember,
     updateMember,

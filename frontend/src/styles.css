@@ -8360,3 +8360,36 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
   .email-delivery-actions { display: grid; grid-template-columns: 1fr; }
   .email-delivery-actions button { width: 100%; }
 }
+
+
+/* Mandatory management TOTP enrollment and trusted browser settings */
+.two-factor-auth-card .two-factor-qr { display:flex; flex-direction:column; align-items:center; gap:10px; margin:18px 0; padding:18px; border:1px solid var(--line,#d9deea); border-radius:16px; background:var(--surface,#fff); }
+.two-factor-auth-card .two-factor-qr svg { width:190px; max-width:100%; height:auto; background:#fff; padding:8px; border-radius:8px; }
+.two-factor-auth-card .two-factor-qr code { padding:10px 14px; border-radius:8px; background:#f1f3f8; color:#1c2334; font-weight:800; letter-spacing:1px; overflow-wrap:anywhere; }
+.two-factor-trust-option { display:flex; align-items:center; gap:9px; font-weight:500; }
+.two-factor-trust-option input { width:auto; }
+.two-factor-recovery-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin:18px 0; }
+.two-factor-recovery-grid code { padding:12px 8px; text-align:center; border:1px solid var(--line,#d9deea); border-radius:9px; font-weight:800; letter-spacing:1px; background:var(--surface,#fff); }
+.two-factor-settings { border:1px solid var(--line,#d9deea); border-radius:16px; padding:18px; margin-bottom:22px; }
+.two-factor-settings-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
+.two-factor-settings-head h3 { margin:5px 0; }
+.two-factor-settings-head p { margin:0; max-width:620px; color:var(--muted,#697386); font-size:13px; line-height:1.5; }
+.two-factor-kicker { font-size:10px; letter-spacing:1.5px; font-weight:800; color:var(--muted,#697386); }
+.two-factor-state { white-space:nowrap; border-radius:100px; padding:6px 10px; background:#fff3dc; color:#845500; font-size:11px; font-weight:800; }
+.two-factor-state.enabled { background:#e7f8ee; color:#187447; }
+.two-factor-metrics { display:flex; flex-wrap:wrap; gap:22px; padding:16px 0; margin-top:12px; border-bottom:1px solid var(--line,#d9deea); }
+.two-factor-metrics span { display:flex; flex-direction:column; gap:3px; }
+.two-factor-metrics b { font-size:20px; }
+.two-factor-metrics small,.two-factor-device small,.two-factor-footnote { color:var(--muted,#697386); font-size:11px; }
+.two-factor-device-heading { display:flex; justify-content:space-between; align-items:center; margin:12px 0 6px; }
+.two-factor-device { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-top:1px solid var(--line,#d9deea); }
+.two-factor-device > span { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.two-factor-device small { overflow-wrap:anywhere; }
+.two-factor-empty,.two-factor-footnote { color:var(--muted,#697386); line-height:1.5; }
+.two-factor-success { color:#187447; font-size:12px; }
+.two-factor-error { color:#b42318; font-size:12px; }
+@media(max-width:600px) {
+  .two-factor-settings-head { flex-direction:column; }
+  .two-factor-device { align-items:flex-start; }
+  .two-factor-recovery-grid { grid-template-columns:1fr 1fr; }
+}

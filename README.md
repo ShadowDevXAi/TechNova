@@ -66,7 +66,7 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 - Founder and Core Management must enroll an authenticator app (TOTP) on their next login after this release. The backend rejects management API sessions whose JWT does not carry a verified MFA claim.
 - Initial setup displays an authenticator QR code and manual secret. After enrollment, TechNova issues ten one-time recovery codes; save them in a password manager. The raw TOTP secret is not returned again after setup.
 - Successful MFA login can optionally trust the current browser for 30 days. Only a hash of its random device token is stored. Management can inspect and revoke trusted browsers from Settings.
-- Existing management sessions without a verified MFA claim will be asked to sign in again. Members and Faculty continue using normal password login.
+- Existing management sessions without a verified MFA claim will be asked to sign in again. Members and Faculty continue using normal password login. On first management login after deployment, scan the displayed QR code, enter the six-digit code, and save the ten recovery codes.
 - Recovery codes are single-use. If all recovery codes are used or the authenticator is lost, an administrator recovery procedure is required; do not share recovery codes with club staff.
 
 ## Password reset and attachments

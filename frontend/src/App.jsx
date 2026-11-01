@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import TechNovaHub from "./TechNovaHub";
 import PushNotificationSettings from "./components/PushNotificationSettings.jsx";
+import TwoFactorSettings from "./components/TwoFactorSettings.jsx";
 import { listenForForegroundMessages } from "./firebase.js";
 import { api, API_BASE } from "./api/client.js";
 import TechNovaLogo from "./components/TechNovaLogo.jsx";
@@ -77,6 +78,12 @@ function App() {
   const [autoTaskBusy, setAutoTaskBusy] = useState(false);
   const [emailStatus, setEmailStatus] = useState(null);
   const [emailTestBusy, setEmailTestBusy] = useState(false);
+  const [twoFactorFlow, setTwoFactorFlow] = useState(null);
+  const [twoFactorSetup, setTwoFactorSetup] = useState(null);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [twoFactorRecoveryCodes, setTwoFactorRecoveryCodes] = useState([]);
+  const [twoFactorPendingSession, setTwoFactorPendingSession] = useState(null);
+  const [trustDevice, setTrustDevice] = useState(true);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [modal, setModal] = useState("");
@@ -354,6 +361,10 @@ function App() {
     runAutoArchiveNow,
     checkEmailStatus,
     sendTestEmail,
+    completeTwoFactorSetup,
+    completeTwoFactorLogin,
+    finishTwoFactorSetup,
+    cancelTwoFactorFlow,
     disciplineMember,
     reinstateMember,
     respondToCommonTask,
@@ -480,6 +491,18 @@ function App() {
     setEmailStatus,
     emailTestBusy,
     setEmailTestBusy,
+    twoFactorFlow,
+    setTwoFactorFlow,
+    twoFactorSetup,
+    setTwoFactorSetup,
+    twoFactorCode,
+    setTwoFactorCode,
+    twoFactorRecoveryCodes,
+    setTwoFactorRecoveryCodes,
+    twoFactorPendingSession,
+    setTwoFactorPendingSession,
+    trustDevice,
+    setTrustDevice,
     api,
     API_BASE,
     notify,
@@ -549,6 +572,78 @@ function App() {
       unsubscribe();
     };
   }, [token, user?.id]);
+
+  if (twoFactorFlow) {
+    return (
+      <div className="authscreen">
+        <div className="authbrand">
+          <div className="logo"><TechNovaLogo /></div>
+          <div><b>Tech<span>Nova</span></b><small>TECHNOLOGY DEVELOPMENT CLUB</small></div>
+        </div>
+        <div className="authcard two-factor-auth-card">
+          <div className="eyebrow"><LockKeyhole size={14} /> MANAGEMENT ACCOUNT SECURITY</div>
+          {twoFactorFlow.mode === "setup" && (
+            <>
+              <h1>Secure your account.</h1>
+              <p>Founder and Core Management accounts must use an authenticator app. Scan this QR code with Google Authenticator, Microsoft Authenticator, 1Password or another TOTP app.</p>
+              {twoFactorSetup?.provisioning_uri ? (
+                <div className="two-factor-qr">
+                  <QRCodeSVG value={twoFactorSetup.provisioning_uri} size={190} level="M" />
+                  <small>Can't scan? Add this setup key manually:</small>
+                  <code>{twoFactorSetup.secret}</code>
+                  <small>Account: {twoFactorSetup.account} · Issuer: {twoFactorSetup.issuer}</small>
+                </div>
+              ) : <p>Preparing your secure authenticator setup…</p>}
+              <form onSubmit={completeTwoFactorSetup}>
+                <label>6-digit authenticator code
+                  <input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,8}" maxLength="8" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} placeholder="123456" />
+                </label>
+                <label className="two-factor-trust-option">
+                  <input type="checkbox" checked={trustDevice} onChange={(e) => setTrustDevice(e.target.checked)} />
+                  <span>Trust this browser for 30 days</span>
+                </label>
+                <button className="primary full" disabled={busy || !twoFactorSetup?.secret}>{busy ? "Verifying…" : "Enable two-factor authentication"}</button>
+              </form>
+            </>
+          )}
+          {twoFactorFlow.mode === "verify" && (
+            <>
+              <h1>Verify it's you.</h1>
+              <p>Enter the current 6-digit code from your authenticator app. You can also enter one unused recovery code.</p>
+              <form onSubmit={completeTwoFactorLogin}>
+                <label>Authenticator or recovery code
+                  <input required autoFocus autoComplete="one-time-code" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} placeholder="6-digit code or recovery code" />
+                </label>
+                <label className="two-factor-trust-option">
+                  <input type="checkbox" checked={trustDevice} onChange={(e) => setTrustDevice(e.target.checked)} />
+                  <span>Trust this browser for 30 days</span>
+                </label>
+                <button className="primary full" disabled={busy || !twoFactorCode.trim()}>{busy ? "Verifying…" : "Verify and sign in"}</button>
+              </form>
+            </>
+          )}
+          {twoFactorFlow.mode === "recovery" && (
+            <>
+              <h1>Save your recovery codes.</h1>
+              <p>Authenticator protection is enabled. These codes can each be used once if you lose access to your authenticator. They will not be shown again.</p>
+              <div className="two-factor-recovery-grid">
+                {twoFactorRecoveryCodes.map((code) => <code key={code}>{code}</code>)}
+              </div>
+              <button className="primary full" onClick={finishTwoFactorSetup} disabled={!twoFactorPendingSession}>I've saved my recovery codes — continue</button>
+            </>
+          )}
+          {error && <div className="errorbox"><AlertTriangle size={16} />{error}</div>}
+          {twoFactorFlow.mode !== "recovery" && (
+            <div className="authswitch">
+              <button type="button" onClick={cancelTwoFactorFlow}>Cancel and return to sign in</button>
+            </div>
+          )}
+          <div className="authhint">Do not share authenticator codes or recovery codes with anyone, including club staff.</div>
+        </div>
+        <div className="authfooter">TECHNOVA · CREATE • CODE • INNOVATE</div>
+      </div>
+    );
+  }
 
   if (!token || !user) {
     return (
@@ -2336,6 +2431,7 @@ function App() {
                 </div>
               </div>
               <div className="panel settings">
+                {isAdmin && <TwoFactorSettings token={token} />}
                 <PushNotificationSettings token={token} />
                 {isFounder && (
                   <div className="email-delivery-panel">
@@ -2926,3 +3022,6 @@ function App() {
 }
 
 export default App;
+
+
+/* Management MFA enrollment and trusted-device controls */
