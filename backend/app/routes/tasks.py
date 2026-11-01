@@ -6,10 +6,13 @@ attachments, recurring schedules and temporary member suspension workflows.
 All protected operations reuse authentication and role checks from app.core.
 """
 
+import logging
+
 from fastapi import APIRouter
 from ..core import *  # Shared database, schemas, authorization and business helpers.
 
 router = APIRouter()
+logger = logging.getLogger("technova.tasks")
 
 # Purpose: list tasks handles the tasks feature flow and returns its API result.
 @router.get("/api/tasks")
@@ -20,7 +23,23 @@ async def list_tasks(user: dict = Depends(get_current_user)):
     if user.get("role") not in {"Founder", "Core Management"}:
         query["assignee_id"] = user["_id"]
     docs = await db.tasks.find(query).sort("created_at", -1).limit(5000).to_list(5000)
-    return [clean_task(x) for x in docs]
+    tasks = []
+    skipped = 0
+    for doc in docs:
+        try:
+            tasks.append(clean_task(doc))
+        except Exception:
+            skipped += 1
+            logger.exception(
+                "Skipping malformed task record during /api/tasks serialization; task_id=%s",
+                str(doc.get("_id", "unknown")) if isinstance(doc, dict) else "unknown",
+            )
+    if skipped:
+        logger.error(
+            "/api/tasks returned %s valid task(s); skipped %s malformed task record(s)",
+            len(tasks), skipped,
+        )
+    return tasks
 
 
 # Purpose: list notifications handles the tasks feature flow and returns its API result.

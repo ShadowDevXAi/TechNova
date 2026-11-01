@@ -138,8 +138,11 @@ function App() {
     setTimeout(() => setToast(""), 3000);
   };
 
-  // Convert thrown API errors into the single workspace error banner.
-  const fail = (e) => setError(e.message || "Something went wrong");
+  // Include the server request ID when available so a Render log entry can be located.
+  const fail = (e) => {
+    const message = e.message || "Something went wrong";
+    setError(e.requestId ? message + " (Error ID: " + e.requestId + ")" : message);
+  };
 
   // Initial workspace loading and background refresh are managed by dedicated hooks.
   const load = useWorkspaceData({

@@ -5,10 +5,13 @@ Health checks, database statistics and owner-managed daily-task generation setti
 All protected operations reuse authentication and role checks from app.core.
 """
 
-from fastapi import APIRouter
+import logging
+
+from fastapi import APIRouter, HTTPException
 from ..core import *  # Shared database, schemas, authorization and business helpers.
 
 router = APIRouter()
+logger = logging.getLogger("technova.health")
 
 # Purpose: root handles the system feature flow and returns its API result.
 @router.get("/")
@@ -19,7 +22,16 @@ async def root():
 # Purpose: health handles the system feature flow and returns its API result.
 @router.get("/api/health")
 async def health():
-    return {"status":"ok","service":"technova-api"}
+    """Report application and database readiness without exposing credentials."""
+    try:
+        await client.admin.command("ping")
+    except Exception:
+        logger.exception("MongoDB readiness check failed")
+        raise HTTPException(
+            status_code=503,
+            detail="TechNova API is running, but its database is unavailable.",
+        )
+    return {"status": "ok", "service": "technova-api", "database": "connected"}
 
 
 # Purpose: database stats handles the system feature flow and returns its API result.

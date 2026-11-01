@@ -73,7 +73,10 @@ def clean_user(doc: dict) -> dict:
 def clean_task(doc: dict) -> dict:
     return {
         "id": str(doc["_id"]),
-        "assignment_group_id": doc.get("assignment_group_id"),
+        "assignment_group_id": (
+            str(doc.get("assignment_group_id"))
+            if doc.get("assignment_group_id") is not None else None
+        ),
         # Older/imported task rows may not contain all fields from the current schema.
         # Keep one incomplete legacy row from breaking the entire /api/tasks response.
         "title": doc.get("title") or "Untitled task",
@@ -151,7 +154,7 @@ def clean_common_task(
     completed_members = completed_members or []
     return {
         "id": str(doc["_id"]),
-        "title": doc["title"],
+        "title": doc.get("title") or "Untitled mission",
         "description": doc.get("description", ""),
         "project": doc.get("project", "Club projects"),
         "priority": doc.get("priority", "Medium"),

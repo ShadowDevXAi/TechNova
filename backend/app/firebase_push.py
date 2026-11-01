@@ -60,19 +60,21 @@ async def send_push_notification(user_id, title: str, body: str, notification_ty
     """Send to all registered devices without blocking portal request handling."""
     if not settings.firebase_service_account_file:
         return
-    devices = await db.push_tokens.find({"user_id": user_id}, {"_id": 0, "token": 1}).to_list(500)
-    tokens = [item.get("token") for item in devices if item.get("token")]
-    if not tokens:
-        return
-    data = {"type": str(notification_type or "general"), "title": title[:120], "body": body[:1000]}
-    if task_id:
-        data["taskId"] = str(task_id)
-    if common_task_id:
-        data["commonTaskId"] = str(common_task_id)
     try:
+        devices = await db.push_tokens.find(
+            {"user_id": user_id}, {"_id": 0, "token": 1}
+        ).to_list(500)
+        tokens = [item.get("token") for item in devices if item.get("token")]
+        if not tokens:
+            return
+        data = {"type": str(notification_type or "general"), "title": title[:120], "body": body[:1000]}
+        if task_id:
+            data["taskId"] = str(task_id)
+        if common_task_id:
+            data["commonTaskId"] = str(common_task_id)
         expired = await asyncio.to_thread(_send_to_tokens, tokens, title, body, data)
         if expired:
             await db.push_tokens.delete_many({"token": {"$in": expired}})
     except Exception:
-        # A push-provider failure must never undo task or notification actions.
+        # Optional delivery (including token lookup/cleanup) must never break the main action.
         logger.exception("Firebase push delivery failed; the in-app notification was retained.")
