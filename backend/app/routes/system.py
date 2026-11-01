@@ -171,10 +171,23 @@ async def send_email_test(request: Request, actor: dict = Depends(allow("Founder
             configuration.get("provider"),
             type(exc).__name__,
         )
+        provider_error = str(exc).lower()
+        if (
+            configuration.get("provider") == "Brevo HTTPS API"
+            and "permission_denied" in provider_error
+            and "transactional.email" in provider_error
+        ):
+            raise HTTPException(
+                403,
+                "Brevo rejected this API key because it lacks transactional email permission. "
+                "In Brevo → Settings → SMTP & API → API Keys & MCP, edit the exact key used in "
+                "BREVO_API_KEY and set Transactional email permission to All (Read is insufficient). "
+                "Replace BREVO_API_KEY in Render, save, and redeploy.",
+            ) from exc
         raise HTTPException(
             502,
             "Email test failed. Check the backend Render logs for the provider error details.",
-        )
+        ) from exc
     await audit(actor, "email_test_sent", recipient, {
         "provider": receipt.get("provider", configuration.get("provider")),
         "message_id": receipt.get("message_id"),

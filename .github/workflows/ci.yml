@@ -66,6 +66,8 @@ jobs:
           assert any(route.path == "/api/auto-tasks/archive-now" for route in system_router.routes), "Manual auto-archive route"
           assert any(route.path == "/api/admin/email/status" for route in system_router.routes), "SMTP status route"
           assert any(route.path == "/api/admin/email/test" for route in system_router.routes), "SMTP test route"
+          email_test_source = open("app/routes/system.py", encoding="utf-8").read()
+          assert "Transactional email permission to All" in email_test_source, "Actionable Brevo permission error guidance"
 
           smtp_status = smtp_configuration_status()
           assert "password" not in smtp_status and "username" not in smtp_status, "SMTP credentials must never be returned"
