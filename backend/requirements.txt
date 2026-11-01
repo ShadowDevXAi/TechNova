@@ -9,3 +9,4 @@ pwdlib[argon2]==0.2.1
 python-multipart==0.0.20
 slowapi==0.1.9
 firebase-admin==7.7.0
+pyotp==2.9.0

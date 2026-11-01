@@ -62,6 +62,13 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 - `GET /api/teams`, `POST /api/teams`
 - `GET /api/dashboard`
 
+## Management two-factor authentication
+- Founder and Core Management must enroll an authenticator app (TOTP) on their next login after this release. The backend rejects management API sessions whose JWT does not carry a verified MFA claim.
+- Initial setup displays an authenticator QR code and manual secret. After enrollment, TechNova issues ten one-time recovery codes; save them in a password manager. The raw TOTP secret is not returned again after setup.
+- Successful MFA login can optionally trust the current browser for 30 days. Only a hash of its random device token is stored. Management can inspect and revoke trusted browsers from Settings.
+- Existing management sessions without a verified MFA claim will be asked to sign in again. Members and Faculty continue using normal password login.
+- Recovery codes are single-use. If all recovery codes are used or the authenticator is lost, an administrator recovery procedure is required; do not share recovery codes with club staff.
+
 ## Password reset and attachments
 - In local development, password reset returns a one-time reset token in the API response for testing. Never use `RESET_DELIVERY_MODE=development` on a public deployment.
 - For email notifications and password resets on Render Free, prefer the Brevo HTTPS API: set `BREVO_API_KEY` to a Brevo **API key** (from Settings > SMTP & API > API keys; not the SMTP key), set `BREVO_SENDER_NAME=TechNova`, and set `SMTP_FROM_EMAIL` to a verified Brevo sender address. This sends over HTTPS to `api.brevo.com` and avoids Render Free's blocked SMTP ports. Keep the API key only in the **backend Render environment**, never in GitHub or frontend `VITE_*` variables.
@@ -75,7 +82,7 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 - Deploy only behind HTTPS; use a proper domain and configure CORS origins.
 - Use a strong unique JWT secret and MongoDB credentials stored in a secret manager.
 - Configure backups, monitoring, log retention, and restore testing.
-- Add email verification, WAF/abuse monitoring, and production security review. Password reset and basic rate limiting are included, but must be tested in your hosting environment.
+- Add email verification, WAF/abuse monitoring, external backups, and production security review. Password reset, management TOTP MFA and basic rate limiting are included, but must be tested in your hosting environment.
 - Decide whether college approval is required before claiming affiliation. Use only authorized club/college branding.
 - Review privacy notice and consent, data retention/deletion, and access policies.
 - Rotate bootstrap credentials immediately after first login; this project requires the bootstrap password to be configured before startup.
@@ -85,7 +92,7 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 - Do not store sensitive government identifiers, passwords in plain text, or unnecessary student information.
 
 ## Current scope and honest limitations
-This is an expanded functional starter, not a guarantee of zero limitations or a certified production release. It does not yet include email verification, polished front/back ID PDF generation, cloud object storage, virus scanning, notifications, a full project/milestone module, or a full automated end-to-end test suite. Review the authorization model and deploy only after tests, backups, HTTPS, and secret management are in place.
+TechNova includes role-based access, tasks, review, QR verification, credits, Hub workflows, in-app/email/push notification code, and mandatory authenticator MFA for Founder/Core Management. It is not a certified production release. Remaining deployment-dependent work includes a real SMS provider, durable cloud object storage and malware scanning, email verification, polished front/back ID PDFs, a secure isolated code-execution service, richer project milestones, and full automated API/browser end-to-end tests. Review the authorization model and deploy only after tests, backups, HTTPS, and secret management are in place.
 
 
 ## Member credits, ranks and leaderboard

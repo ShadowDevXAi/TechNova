@@ -21,9 +21,10 @@ class RegisterIn(BaseModel):
     team: str = Field(default="Unassigned", max_length=80)
 
 class LoginIn(BaseModel):
-    """Validate email/password login submissions."""
+    """Validate email/password login submissions and an optional remembered device."""
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
+    trusted_device_token: str | None = Field(default=None, max_length=200)
 
 class MemberCreate(BaseModel):
     """Validate a management-created member account."""

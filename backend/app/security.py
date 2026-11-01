@@ -24,10 +24,16 @@ def verify_password(password: str, hashed: str) -> bool:
     except Exception:
         return False
 
-def create_access_token(subject: str, role: str) -> str:
-    """Sign a time-limited JWT containing the member ID and role."""
+def create_access_token(subject: str, role: str, *, mfa_verified: bool = False) -> str:
+    """Sign a time-limited JWT; management sessions carry an explicit MFA claim."""
     now = datetime.now(timezone.utc)
-    return jwt.encode({"sub": subject, "role": role, "iat": now, "exp": now + timedelta(minutes=settings.jwt_expire_minutes)}, settings.jwt_secret, algorithm=ALGORITHM)
+    return jwt.encode({
+        "sub": subject,
+        "role": role,
+        "mfa_verified": bool(mfa_verified),
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.jwt_expire_minutes),
+    }, settings.jwt_secret, algorithm=ALGORITHM)
 
 def decode_access_token(token: str) -> dict:
     """Verify a JWT signature and expiry, then return its claims."""

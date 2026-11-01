@@ -89,5 +89,10 @@ async def ensure_indexes():
 
     await db.password_resets.create_index("token_hash", unique=True)
     await db.password_resets.create_index("expires_at", expireAfterSeconds=0)
+    await db.auth_challenges.create_index("token_hash", unique=True)
+    await db.auth_challenges.create_index("expires_at", expireAfterSeconds=0)
+    await db.trusted_devices.create_index("token_hash", unique=True)
+    await db.trusted_devices.create_index([("user_id", 1), ("expires_at", 1)])
+    await db.trusted_devices.create_index("expires_at", expireAfterSeconds=0)
     await db.task_comments.create_index([("task_id", 1), ("created_at", 1)])
     await db.attachments.create_index([("task_id", 1), ("created_at", -1)])

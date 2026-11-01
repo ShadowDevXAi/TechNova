@@ -5,6 +5,11 @@ Registration, login, password recovery, session identity, dashboard and credit l
 All protected operations reuse authentication and role checks from app.core.
 """
 
+import secrets
+from datetime import timedelta
+
+import pyotp
+from jose import JWTError, jwt
 from fastapi import APIRouter
 from ..core import *  # Shared database, schemas, authorization and business helpers.
 
@@ -65,9 +70,299 @@ async def login(data: LoginIn, request: Request):
         raise HTTPException(403, "Your account is suspended. Contact the Founder for reinstatement.")
     if user["status"] != "Active":
         raise HTTPException(403,"Your account is pending approval or unavailable")
+    if user.get("role") in {"Founder", "Core Management"}:
+        if not user.get("two_factor_enabled"):
+            setup_token = await _create_two_factor_flow_token(user, "setup", minutes=10)
+            return {
+                "two_factor_setup_required": True,
+                "setup_token": setup_token,
+                "message": "Management accounts must enroll an authenticator app before entering TechNova.",
+            }
+
+        remembered = str(data.trusted_device_token or "").strip()
+        if remembered:
+            device = await db.trusted_devices.find_one({
+                "user_id": user["_id"],
+                "token_hash": token_hash(remembered),
+                "expires_at": {"$gt": utcnow()},
+            })
+            if device:
+                await db.trusted_devices.update_one(
+                    {"_id": device["_id"]},
+                    {"$set": {"last_seen_at": utcnow()}},
+                )
+                token = create_access_token(str(user["_id"]), user["role"], mfa_verified=True)
+                await audit(user, "login", str(user["_id"]), {"mfa": "trusted_device"}, request)
+                return {"access_token": token, "token_type": "bearer", "user": clean_user(user)}
+
+        challenge_token = await _create_two_factor_flow_token(user, "login", minutes=5)
+        return {
+            "two_factor_required": True,
+            "challenge_token": challenge_token,
+            "message": "Enter your authenticator code or a one-time recovery code.",
+        }
+
     token = create_access_token(str(user["_id"]),user["role"])
     await audit(user,"login",str(user["_id"]),{},request)
     return {"access_token":token,"token_type":"bearer","user":clean_user(user)}
+
+# Purpose: Create a short-lived, single-purpose challenge token for management MFA enrollment/login.
+async def _create_two_factor_flow_token(user: dict, purpose: str, *, minutes: int) -> str:
+    now = utcnow()
+    challenge_id = secrets.token_urlsafe(24)
+    await db.auth_challenges.insert_one({
+        "token_hash": token_hash(challenge_id),
+        "user_id": user["_id"],
+        "purpose": purpose,
+        "created_at": now,
+        "expires_at": now + timedelta(minutes=minutes),
+    })
+    return jwt.encode(
+        {
+            "sub": str(user["_id"]),
+            "purpose": purpose,
+            "jti": challenge_id,
+            "iat": now,
+            "exp": now + timedelta(minutes=minutes),
+        },
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+
+
+# Purpose: Verify a signed MFA flow token and retrieve its active management account.
+async def _two_factor_flow_user(raw_token: str, expected_purpose: str) -> tuple[dict, str]:
+    try:
+        claims = jwt.decode(raw_token, settings.jwt_secret, algorithms=["HS256"])
+    except JWTError:
+        raise HTTPException(401, "The two-factor session has expired. Sign in again.")
+    if claims.get("purpose") != expected_purpose or not claims.get("jti"):
+        raise HTTPException(401, "Invalid two-factor challenge.")
+    user = await db.users.find_one({
+        "_id": oid(claims.get("sub")),
+        "status": "Active",
+        "role": {"$in": ["Founder", "Core Management"]},
+    })
+    if not user:
+        raise HTTPException(401, "Active management account not found.")
+    challenge = await db.auth_challenges.find_one({
+        "token_hash": token_hash(claims["jti"]),
+        "user_id": user["_id"],
+        "purpose": expected_purpose,
+        "expires_at": {"$gt": utcnow()},
+    })
+    if not challenge:
+        raise HTTPException(401, "The two-factor challenge has expired or was already used. Sign in again.")
+    return user, claims["jti"]
+
+
+# Purpose: Consume a one-time MFA challenge after the submitted authenticator factor is valid.
+async def _consume_two_factor_challenge(user: dict, challenge_id: str, purpose: str) -> None:
+    result = await db.auth_challenges.delete_one({
+        "token_hash": token_hash(challenge_id),
+        "user_id": user["_id"],
+        "purpose": purpose,
+        "expires_at": {"$gt": utcnow()},
+    })
+    if result.deleted_count != 1:
+        raise HTTPException(409, "This two-factor challenge was already used. Sign in again.")
+
+
+# Purpose: Issue an optional 30-day trusted-device token without storing its raw value.
+async def _remember_two_factor_device(user: dict, request: Request) -> str:
+    raw_token = secrets.token_urlsafe(36)
+    now = utcnow()
+    user_agent = (request.headers.get("user-agent") or "Unknown browser")[:300]
+    await db.trusted_devices.insert_one({
+        "user_id": user["_id"],
+        "token_hash": token_hash(raw_token),
+        "device_label": user_agent[:120],
+        "user_agent": user_agent,
+        "created_at": now,
+        "last_seen_at": now,
+        "expires_at": now + timedelta(days=30),
+    })
+    return raw_token
+
+
+# Purpose: Start mandatory authenticator enrollment for Founder and Core Management.
+@router.post("/api/auth/2fa/setup")
+@limiter.limit("5/minute")
+async def two_factor_setup(body: dict, request: Request):
+    setup_token = str(body.get("setup_token") or "")
+    user, _ = await _two_factor_flow_user(setup_token, "setup")
+    if user.get("two_factor_enabled"):
+        raise HTTPException(409, "Authenticator two-factor authentication is already enabled.")
+    pending_secret = user.get("two_factor_pending_secret")
+    pending_expiry = user.get("two_factor_pending_expires_at")
+    if not pending_secret or not pending_expiry or pending_expiry <= utcnow():
+        pending_secret = pyotp.random_base32()
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {
+                "two_factor_pending_secret": pending_secret,
+                "two_factor_pending_expires_at": utcnow() + timedelta(minutes=10),
+            }},
+        )
+    issuer = "TechNova"
+    provisioning_uri = pyotp.TOTP(pending_secret).provisioning_uri(
+        name=str(user["email"]),
+        issuer_name=issuer,
+    )
+    return {
+        "issuer": issuer,
+        "account": str(user["email"]),
+        "secret": pending_secret,
+        "provisioning_uri": provisioning_uri,
+        "expires_in_minutes": 10,
+        "mandatory": True,
+    }
+
+
+# Purpose: Enable management TOTP and issue one-time recovery codes plus the first MFA session.
+@router.post("/api/auth/2fa/enable")
+@limiter.limit("6/minute")
+async def enable_two_factor(body: dict, request: Request):
+    setup_token = str(body.get("setup_token") or "")
+    user, challenge_id = await _two_factor_flow_user(setup_token, "setup")
+    code = str(body.get("code") or "").strip().replace(" ", "")
+    secret = user.get("two_factor_pending_secret")
+    pending_expiry = user.get("two_factor_pending_expires_at")
+    if not secret or not pending_expiry or pending_expiry <= utcnow():
+        raise HTTPException(410, "Authenticator setup expired. Start login again.")
+    if not pyotp.TOTP(secret).verify(code, valid_window=1):
+        raise HTTPException(400, "That authenticator code is not valid. Check the phone's time and try again.")
+    recovery_codes = [secrets.token_hex(4).upper() for _ in range(10)]
+    await _consume_two_factor_challenge(user, challenge_id, "setup")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {
+                "two_factor_enabled": True,
+                "two_factor_secret": secret,
+                "two_factor_enabled_at": utcnow(),
+                "two_factor_recovery_hashes": [token_hash(code) for code in recovery_codes],
+            },
+            "$unset": {
+                "two_factor_pending_secret": "",
+                "two_factor_pending_expires_at": "",
+            },
+        },
+    )
+    updated_user = await db.users.find_one({"_id": user["_id"]})
+    trusted_device_token = None
+    if body.get("remember_device") is True:
+        trusted_device_token = await _remember_two_factor_device(updated_user, request)
+    token = create_access_token(str(updated_user["_id"]), updated_user["role"], mfa_verified=True)
+    await audit(updated_user, "two_factor_enabled", str(updated_user["_id"]), {
+        "recovery_codes_issued": len(recovery_codes),
+        "trusted_device_created": bool(trusted_device_token),
+    }, request)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": clean_user(updated_user),
+        "recovery_codes": recovery_codes,
+        "trusted_device_token": trusted_device_token,
+        "message": "Authenticator protection is enabled. Save your recovery codes now; they are shown only once.",
+    }
+
+
+# Purpose: Complete a management login using a TOTP or one unused recovery code.
+@router.post("/api/auth/2fa/login")
+@limiter.limit("6/minute")
+async def verify_two_factor_login(body: dict, request: Request):
+    challenge_token = str(body.get("challenge_token") or "")
+    user, challenge_id = await _two_factor_flow_user(challenge_token, "login")
+    if not user.get("two_factor_enabled") or not user.get("two_factor_secret"):
+        raise HTTPException(409, "Authenticator enrollment is required. Sign in again.")
+    code = str(body.get("code") or "").strip().replace(" ", "")
+    recovery_code = str(body.get("recovery_code") or "").strip().replace("-", "").replace(" ", "").upper()
+    used_recovery = False
+    if recovery_code:
+        candidate_hash = token_hash(recovery_code)
+        recovery_hashes = user.get("two_factor_recovery_hashes") or []
+        if candidate_hash not in recovery_hashes:
+            raise HTTPException(401, "Recovery code is invalid or already used.")
+        consumed = await db.users.update_one(
+            {"_id": user["_id"], "two_factor_recovery_hashes": candidate_hash},
+            {"$pull": {"two_factor_recovery_hashes": candidate_hash}},
+        )
+        if consumed.modified_count != 1:
+            raise HTTPException(401, "Recovery code is invalid or already used.")
+        used_recovery = True
+    elif not pyotp.TOTP(user["two_factor_secret"]).verify(code, valid_window=1):
+        raise HTTPException(401, "Authenticator code is incorrect. Try again or use a recovery code.")
+    await _consume_two_factor_challenge(user, challenge_id, "login")
+    token = create_access_token(str(user["_id"]), user["role"], mfa_verified=True)
+    trusted_device_token = None
+    if body.get("remember_device") is True:
+        trusted_device_token = await _remember_two_factor_device(user, request)
+    remaining = max(0, len(user.get("two_factor_recovery_hashes") or []) - (1 if used_recovery else 0))
+    await audit(user, "login", str(user["_id"]), {
+        "mfa": "recovery_code" if used_recovery else "authenticator",
+        "trusted_device_created": bool(trusted_device_token),
+    }, request)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": clean_user(user),
+        "trusted_device_token": trusted_device_token,
+        "recovery_codes_remaining": remaining,
+    }
+
+
+# Purpose: Report management MFA and trusted-device state without exposing token material.
+@router.get("/api/auth/2fa/status")
+async def two_factor_status(user: dict = Depends(get_current_user)):
+    if user.get("role") not in {"Founder", "Core Management"}:
+        raise HTTPException(403, "Two-factor management settings are for management accounts.")
+    recovery_count = len(user.get("two_factor_recovery_hashes") or [])
+    trusted_count = await db.trusted_devices.count_documents({
+        "user_id": user["_id"],
+        "expires_at": {"$gt": utcnow()},
+    })
+    return {
+        "enabled": bool(user.get("two_factor_enabled")),
+        "mandatory": True,
+        "recovery_codes_remaining": recovery_count,
+        "trusted_devices": trusted_count,
+        "issuer": "TechNova",
+    }
+
+
+# Purpose: List only the signed-in management account's trusted browsers.
+@router.get("/api/auth/2fa/devices")
+async def list_two_factor_devices(user: dict = Depends(get_current_user)):
+    if user.get("role") not in {"Founder", "Core Management"}:
+        raise HTTPException(403, "Two-factor management settings are for management accounts.")
+    rows = await db.trusted_devices.find({
+        "user_id": user["_id"],
+        "expires_at": {"$gt": utcnow()},
+    }).sort("last_seen_at", -1).limit(50).to_list(50)
+    return [{
+        "id": str(row["_id"]),
+        "device": row.get("device_label", "Trusted browser"),
+        "created_at": row.get("created_at"),
+        "last_seen_at": row.get("last_seen_at"),
+        "expires_at": row.get("expires_at"),
+    } for row in rows]
+
+
+# Purpose: Revoke one trusted browser so its stored token cannot bypass the next MFA challenge.
+@router.delete("/api/auth/2fa/devices/{device_id}")
+async def revoke_two_factor_device(device_id: str, request: Request, user: dict = Depends(get_current_user)):
+    if user.get("role") not in {"Founder", "Core Management"}:
+        raise HTTPException(403, "Two-factor management settings are for management accounts.")
+    result = await db.trusted_devices.delete_one({
+        "_id": oid(device_id),
+        "user_id": user["_id"],
+    })
+    if result.deleted_count != 1:
+        raise HTTPException(404, "Trusted device not found.")
+    await audit(user, "trusted_device_revoked", device_id, {}, request)
+    return {"message": "Trusted device revoked. It must complete two-factor verification next time."}
+
 
 # Purpose: me handles the auth feature flow and returns its API result.
 @router.get("/api/auth/me")

@@ -496,6 +496,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials | None = De
         await resume_member_paused_tasks(user["_id"], utcnow())
     if not user or user.get("status") != "Active":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account is unavailable")
+    if user.get("role") in {"Founder", "Core Management"}:
+        if not user.get("two_factor_enabled") or payload.get("mfa_verified") is not True:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "Management accounts require authenticator two-factor authentication. Sign in again to complete setup or verification.",
+            )
     return user
 
 # Purpose: Create a reusable FastAPI role-check dependency for protected endpoints.

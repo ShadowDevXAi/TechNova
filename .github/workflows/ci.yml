@@ -46,6 +46,7 @@ jobs:
           from app.routes.push import router as push_router
           from app.routes.system import router as system_router
           from app.db import partial_object_id_index_is_current
+          from app.routes.auth import router as auth_router
           from app.core import (
               build_auto_archive_age_query,
               clean_task,
@@ -68,6 +69,12 @@ jobs:
           assert any(route.path == "/api/auto-tasks/archive-now" for route in system_router.routes), "Manual auto-archive route"
           assert any(route.path == "/api/admin/email/status" for route in system_router.routes), "SMTP status route"
           assert any(route.path == "/api/admin/email/test" for route in system_router.routes), "SMTP test route"
+          auth_paths = {route.path for route in auth_router.routes}
+          assert "/api/auth/2fa/setup" in auth_paths and "/api/auth/2fa/enable" in auth_paths, "Management MFA enrollment routes"
+          assert "/api/auth/2fa/login" in auth_paths and "/api/auth/2fa/status" in auth_paths, "Management MFA login/status routes"
+          assert "/api/auth/2fa/devices" in auth_paths, "Trusted-device route"
+          from app.security import create_access_token, decode_access_token
+          assert decode_access_token(create_access_token("ci-user", "Founder", mfa_verified=True))["mfa_verified"] is True, "MFA must be explicit in management JWTs"
           email_test_source = open("app/routes/system.py", encoding="utf-8").read()
           assert "Transactional email permission to All" in email_test_source, "Actionable Brevo permission error guidance"
 
