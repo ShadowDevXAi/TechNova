@@ -72,6 +72,15 @@ jobs:
           smtp_status = smtp_configuration_status()
           assert "password" not in smtp_status and "username" not in smtp_status, "SMTP credentials must never be returned"
           assert "api_key" not in smtp_status and "brevo_api_key" not in smtp_status, "Email API credentials must never be returned"
+          auth_source = open("app/routes/auth.py", encoding="utf-8").read()
+          member_source = open("app/routes/members.py", encoding="utf-8").read()
+          task_source = open("app/routes/tasks.py", encoding="utf-8").read()
+          core_source = open("app/core.py", encoding="utf-8").read()
+          assert "registration_received" in auth_source and "registration_pending" in auth_source, "Registration email notifications"
+          assert "smtp_configuration_status()" in auth_source, "Password resets must support HTTPS email providers"
+          assert "account_approved" in member_source and "account_suspended" in member_source, "Member lifecycle email notifications"
+          assert "task_comment" in task_source, "Task comments must notify the other party"
+          assert "penalty_recipient = await db.users.find_one" in core_source, "Penalty emails must load the actual member email"
 
           archive_cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
           archive_query = build_auto_archive_age_query("completion_confirmed_at", archive_cutoff)

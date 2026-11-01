@@ -109,8 +109,23 @@ async def create_member(data: MemberCreate, request: Request, actor: dict = Depe
     doc={"member_id":member_id,"name":data.name.strip(),"email":email,"password_hash":hash_password(data.password),"role":data.role,"team":data.team,"status":data.status,"created_at":utcnow(),"approved_at":utcnow() if data.status=="Active" else None}
     try: res=await db.users.insert_one(doc)
     except DuplicateKeyError: raise HTTPException(409,"Member ID collision; retry")
+    created_member = {**doc, "_id": res.inserted_id}
+    if doc["status"] == "Active":
+        await create_notification(
+            created_member,
+            "Your TechNova account is ready",
+            f'Your TechNova account has been created by {actor["name"]}. You can now sign in at {settings.public_app_url}. For security, your password is not included in this email.',
+            "account_created",
+        )
+    else:
+        await create_notification(
+            created_member,
+            "TechNova account created · approval pending",
+            "A TechNova account has been created for you and is waiting for administrator approval. You will receive an email when it is activated.",
+            "account_created",
+        )
     await audit(actor,"member_created",str(res.inserted_id),{"role":data.role},request)
-    return clean_user({**doc,"_id":res.inserted_id})
+    return clean_user(created_member)
 
 # Purpose: update member handles the members feature flow and returns its API result.
 @router.patch("/api/members/{member_id}")
@@ -132,7 +147,33 @@ async def update_member(member_id: str, data: MemberPatch, request: Request, act
         changes["team"] = team_name
     if actor["role"]!="Founder" and changes.get("status")=="Suspended": raise HTTPException(403,"Only Founder can suspend members")
     if changes.get("status")=="Active": changes["approved_at"]=utcnow()
-    if changes: await db.users.update_one({"_id":target["_id"]},{"$set":changes})
+    if changes:
+        await db.users.update_one({"_id":target["_id"]},{"$set":changes})
+    notification_fields = [field for field in ("role", "team", "status") if field in changes]
+    if notification_fields:
+        if changes.get("status") == "Suspended":
+            notification_title = "TechNova account suspended"
+            notification_message = "Your TechNova account has been suspended by club management. Contact the Founder if you need clarification."
+            notification_type = "account_suspended"
+        elif changes.get("status") == "Active":
+            notification_title = "TechNova account activated"
+            notification_message = f'Your TechNova account has been activated. You can now sign in at {settings.public_app_url}.'
+            notification_type = "account_activated"
+        else:
+            notification_title = "TechNova membership updated"
+            parts = []
+            if "role" in changes:
+                parts.append(f'Your club role is now {changes["role"]}.')
+            if "team" in changes:
+                parts.append(f'Your assigned team is now {changes["team"]}.')
+            notification_message = " ".join(parts) or "Your TechNova membership details were updated by club management."
+            notification_type = "membership_updated"
+        await create_notification(
+            target,
+            notification_title,
+            notification_message,
+            notification_type,
+        )
     await audit(actor,"member_updated",member_id,{"fields":list(changes)},request)
     return clean_user(await db.users.find_one({"_id":target["_id"]}))
 
@@ -142,7 +183,15 @@ async def approve_member(member_id: str, request: Request, actor: dict = Depends
     target=await db.users.find_one({"_id":oid(member_id)})
     if not target: raise HTTPException(404,"Member not found")
     if target["role"]=="Founder": raise HTTPException(403,"Invalid target")
+    was_active = target.get("status") == "Active"
     await db.users.update_one({"_id":target["_id"]},{"$set":{"status":"Active","approved_at":utcnow()}})
+    if not was_active:
+        await create_notification(
+            target,
+            "Your TechNova registration has been approved",
+            f'Your membership has been approved by {actor["name"]}. You can now sign in at {settings.public_app_url}. Welcome to TechNova!',
+            "account_approved",
+        )
     await audit(actor,"member_approved",member_id,{},request)
     return clean_user(await db.users.find_one({"_id":target["_id"]}))
 
@@ -152,8 +201,16 @@ async def deactivate_member(member_id: str, request: Request, actor: dict = Depe
     target=await db.users.find_one({"_id":oid(member_id)})
     if not target: raise HTTPException(404,"Member not found")
     if target["role"]=="Founder": raise HTTPException(403,"Founder account cannot be deleted")
+    was_active = target.get("status") != "Suspended"
     await db.users.update_one({"_id":target["_id"]},{"$set":{"status":"Suspended","suspended_at":utcnow()}})
     await db.cards.update_many({"member_id":str(target["_id"]),"status":"Active"},{"$set":{"status":"Revoked","revoked_at":utcnow()}})
+    if was_active:
+        await create_notification(
+            target,
+            "TechNova account suspended",
+            "Your TechNova account has been suspended by the Founder and your active digital ID cards have been revoked. Contact club management for more information.",
+            "account_suspended",
+        )
     await audit(actor,"member_suspended",member_id,{},request)
     return {"message":"Member suspended and active cards revoked"}
 

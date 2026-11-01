@@ -24,8 +24,26 @@ async def register(data: RegisterIn, request: Request):
         result = await db.users.insert_one(doc)
     except DuplicateKeyError:
         raise HTTPException(409,"Could not allocate member ID; please retry")
+    pending_member = {**doc, "_id": result.inserted_id}
+    await create_notification(
+        pending_member,
+        "TechNova registration received",
+        "Your TechNova club registration has been received. Your account is pending administrator approval. You will receive another email when it is approved.",
+        "registration_received",
+    )
+    managers = await db.users.find({
+        "role": {"$in": ["Founder", "Core Management"]},
+        "status": "Active",
+    }).limit(100).to_list(100)
+    for manager in managers:
+        await create_notification(
+            manager,
+            "New member registration awaiting approval",
+            f'{doc["name"]} ({doc["member_id"]}) has registered and is waiting for TechNova account approval.',
+            "registration_pending",
+        )
     await audit(None,"registration_submitted",str(result.inserted_id),{"email":email},request)
-    return {"message":"Registration submitted. A club administrator must approve your account before you can sign in.","member_id":doc["member_id"]}
+    return {"message":"Registration submitted. A confirmation email has been sent if email delivery is configured. A club administrator must approve your account before you can sign in.","member_id":doc["member_id"]}
 
 # Purpose: login handles the auth feature flow and returns its API result.
 @router.post("/api/auth/login")
@@ -82,8 +100,14 @@ async def change_password(body: dict, user: dict = Depends(get_current_user)):
     if not verify_password(old,user["password_hash"]):
         raise HTTPException(400,"Current password is incorrect")
     await db.users.update_one({"_id":user["_id"]},{"$set":{"password_hash":hash_password(new),"password_changed_at":utcnow()}})
+    await create_notification(
+        user,
+        "TechNova password changed",
+        "Your TechNova account password was changed. If you did not make this change, contact the club Founder immediately.",
+        "account_security",
+    )
     await audit(user,"password_changed",str(user["_id"]))
-    return {"message":"Password changed"}
+    return {"message":"Password changed. A security confirmation email will be sent if email delivery is available."}
 
 # Purpose: password reset request handles the auth feature flow and returns its API result.
 @router.post("/api/auth/password-reset/request")
@@ -110,8 +134,12 @@ async def password_reset_request(body: dict, request: Request):
             # Local-development convenience only; disable this outside local development.
             response["development_reset_token"] = raw
         elif delivery_mode == "email":
-            if not (settings.smtp_host and settings.smtp_from_email):
-                raise HTTPException(503, "Password reset email is not configured")
+            email_status = smtp_configuration_status()
+            if not email_status["configured"]:
+                raise HTTPException(
+                    503,
+                    "Password reset email is not configured. Check the Email configuration in Founder Settings.",
+                )
             try:
                 await asyncio.to_thread(
                     send_email_message,
@@ -123,7 +151,7 @@ async def password_reset_request(body: dict, request: Request):
                 )
             except Exception:
                 logger.exception("Password reset email delivery failed (user_id=%s)", user["_id"])
-                raise HTTPException(503, "Could not deliver password reset email; check SMTP configuration and backend logs")
+                raise HTTPException(503, "Could not deliver password reset email; check the configured email provider and backend logs")
     return response
 
 # Purpose: password reset confirm handles the auth feature flow and returns its API result.

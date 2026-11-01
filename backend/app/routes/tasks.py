@@ -917,6 +917,44 @@ async def add_task_comment(task_id: str, body: dict, request: Request, user: dic
         raise HTTPException(422, "Comment must be 1–2000 characters")
     doc = {"task_id": task["_id"], "author_id": user["_id"], "author": user["name"], "role": user["role"], "text": text.strip(), "created_at": utcnow()}
     result = await db.task_comments.insert_one(doc)
+    if user.get("role") in PRIVILEGED:
+        recipient = await db.users.find_one({
+            "_id": task.get("assignee_id"),
+            "status": "Active",
+        })
+        if recipient and recipient["_id"] != user["_id"]:
+            await create_notification(
+                recipient,
+                "New comment on your TechNova task",
+                f'{user["name"]} commented on "{task.get("title", "your task")}": {text.strip()}',
+                "task_comment",
+                task_id=task_id,
+            )
+    else:
+        creator_id = task.get("created_by")
+        recipient = await db.users.find_one({"_id": creator_id, "status": "Active"}) if creator_id else None
+        if recipient and recipient["_id"] != user["_id"]:
+            await create_notification(
+                recipient,
+                "New comment on an assigned task",
+                f'{user["name"]} commented on "{task.get("title", "task")}": {text.strip()}',
+                "task_comment",
+                task_id=task_id,
+            )
+        elif not recipient:
+            reviewers = await db.users.find({
+                "role": {"$in": ["Founder", "Core Management"]},
+                "status": "Active",
+                "_id": {"$ne": user["_id"]},
+            }).limit(50).to_list(50)
+            for reviewer in reviewers:
+                await create_notification(
+                    reviewer,
+                    "New comment on an assigned task",
+                    f'{user["name"]} commented on "{task.get("title", "task")}": {text.strip()}',
+                    "task_comment",
+                    task_id=task_id,
+                )
     await audit(user, "task_comment_added", task_id, {}, request)
     return {"id": str(result.inserted_id), "author": doc["author"], "role": doc["role"], "text": doc["text"], "created_at": doc["created_at"]}
 

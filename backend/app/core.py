@@ -1038,12 +1038,19 @@ async def run_daily_maintenance() -> dict:
                 "actor_id": None, "created_at": now,
             })
             penalties_applied += 1
-            await create_notification(
-                {"_id": task["assignee_id"], "name": task.get("assignee_name", "Member"), "email": ""},
-                "Task deadline missed · credit penalty",
-                f'{task.get("title", "Task")} was not submitted by its due date. {points} credits (rank {task.get("difficulty_rank", "F")}) were deducted. This penalty is applied only once.',
-                "credit_penalty", task_id=str(task["_id"]),
-            )
+            penalty_recipient = await db.users.find_one({"_id": task["assignee_id"]})
+            if penalty_recipient:
+                await create_notification(
+                    penalty_recipient,
+                    "Task deadline missed · credit penalty",
+                    f'{task.get("title", "Task")} was not submitted by its due date. {points} credits (rank {task.get("difficulty_rank", "F")}) were deducted. This penalty is applied only once.',
+                    "credit_penalty", task_id=str(task["_id"]),
+                )
+            else:
+                logger.warning(
+                    "Skipped task-penalty email because assignee no longer exists (task_id=%s)",
+                    task["_id"],
+                )
         except DuplicateKeyError:
             pass
         await db.tasks.update_one({"_id": task["_id"]}, {"$set": {
