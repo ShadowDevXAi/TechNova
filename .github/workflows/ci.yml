@@ -38,12 +38,14 @@ jobs:
         run: |
           python - <<'PY'
           from bson import ObjectId
+          from datetime import datetime, timezone
           from app.main import app
           from app.routes.hub import HUB_COLLECTIONS, HUB_STAFF
           from app.routes.push import router as push_router
           from app.routes.system import router as system_router
           from app.db import partial_object_id_index_is_current
           from app.core import (
+              build_auto_archive_age_query,
               clean_task,
               founder_progression_details,
               member_level_details,
@@ -58,6 +60,12 @@ jobs:
           assert HUB_STAFF == {"Founder", "Core Management", "Faculty"}, "Hub staff roles"
           assert any(route.path == "/api/push/register" for route in push_router.routes), "Push registration route"
           assert any(route.path == "/api/health" for route in system_router.routes), "Health route"
+          assert any(route.path == "/api/auto-tasks/archive-now" for route in system_router.routes), "Manual auto-archive route"
+
+          archive_cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
+          archive_query = build_auto_archive_age_query("completion_confirmed_at", archive_cutoff)
+          assert archive_query["$or"][0] == {"completion_confirmed_at": {"$lte": archive_cutoff}}, "Completed task retention cutoff"
+          assert archive_query["$or"][1]["updated_at"] == {"$lte": archive_cutoff}, "Legacy completion timestamp fallback"
 
           valid_index = {
               "unique": True,

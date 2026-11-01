@@ -437,10 +437,28 @@ export default function createPortalActions(context) {
     try {
       const result = await api("/auto-tasks/settings", token, {
         method: "PUT",
-        body: JSON.stringify({ mode: autoTaskSettings.mode, daily_target: Number(autoTaskSettings.daily_target) }),
+        body: JSON.stringify({
+          mode: autoTaskSettings.mode,
+          daily_target: Number(autoTaskSettings.daily_target),
+          auto_archive_enabled: Boolean(autoTaskSettings.auto_archive_enabled),
+          auto_archive_after_days: Number(autoTaskSettings.auto_archive_after_days),
+        }),
       });
       setAutoTaskSettings(result);
       notify("Daily generation settings saved.");
+    } catch (e) { fail(e); }
+    finally { setAutoTaskBusy(false); }
+  }
+
+  // Purpose: Run the completed-task auto-archive cleanup on demand.
+  async function runAutoArchiveNow() {
+    if (!autoTaskSettings.auto_archive_enabled) return;
+    if (!confirm("Archive all completed tasks and closed shared missions older than " + Number(autoTaskSettings.auto_archive_after_days) + " days? Active, paused and review tasks will remain untouched.")) return;
+    setAutoTaskBusy(true);
+    try {
+      const result = await api("/auto-tasks/archive-now", token, { method: "POST" });
+      await refresh();
+      notify(result.message || (result.total_archived || 0) + " eligible task(s) archived.");
     } catch (e) { fail(e); }
     finally { setAutoTaskBusy(false); }
   }
@@ -882,6 +900,7 @@ export default function createPortalActions(context) {
     deleteDailySchedule,
     saveAutoTaskSettings,
     generateAutoTasksNow,
+    runAutoArchiveNow,
     disciplineMember,
     reinstateMember,
     respondToCommonTask,

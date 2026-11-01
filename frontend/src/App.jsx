@@ -73,7 +73,7 @@ function App() {
   const [teams, setTeams] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [databaseStats, setDatabaseStats] = useState(null);
-  const [autoTaskSettings, setAutoTaskSettings] = useState({ mode: "custom", daily_target: 5, unlimited_daily_cap: 20, generated_today: 0, open_today: 0, total_generated: 0, remaining_today: 5 });
+  const [autoTaskSettings, setAutoTaskSettings] = useState({ mode: "custom", daily_target: 5, unlimited_daily_cap: 20, generated_today: 0, open_today: 0, total_generated: 0, remaining_today: 5, auto_archive_enabled: true, auto_archive_after_days: 30 });
   const [autoTaskBusy, setAutoTaskBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
@@ -349,6 +349,7 @@ function App() {
     deleteDailySchedule,
     saveAutoTaskSettings,
     generateAutoTasksNow,
+    runAutoArchiveNow,
     disciplineMember,
     reinstateMember,
     respondToCommonTask,
@@ -1830,9 +1831,33 @@ function App() {
                           )}
                         </div>
                         <small className="auto-task-safety-note">{autoTaskSettings.mode === "unlimited" ? "Unlimited mode publishes up to 20 missions per day to protect Gemini API usage and the 512 MB database." : "Custom mode publishes up to your selected number per day (maximum 50)."}</small>
+                        <div className="auto-task-setting-row">
+                          <label>Automatic task archiving
+                            <select
+                              value={autoTaskSettings.auto_archive_enabled ? "enabled" : "disabled"}
+                              onChange={(e) => setAutoTaskSettings((current) => ({ ...current, auto_archive_enabled: e.target.value === "enabled" }))}
+                            >
+                              <option value="enabled">Enabled</option>
+                              <option value="disabled">Disabled</option>
+                            </select>
+                          </label>
+                          <label>Keep completed tasks for (days)
+                            <input
+                              type="number"
+                              min="1"
+                              max="3650"
+                              value={autoTaskSettings.auto_archive_after_days}
+                              onChange={(e) => setAutoTaskSettings((current) => ({ ...current, auto_archive_after_days: e.target.value }))}
+                            />
+                          </label>
+                        </div>
+                        <small className="auto-task-safety-note">
+                          When enabled, completed assigned tasks and closed shared missions are automatically archived after the selected number of days. Active, paused and review tasks are never archived. Archived records stay in the database for history, audit and XP.
+                        </small>
                         <div className="auto-task-actions">
-                          <button className="primary" onClick={saveAutoTaskSettings} disabled={autoTaskBusy}>Save generation settings</button>
+                          <button className="primary" onClick={saveAutoTaskSettings} disabled={autoTaskBusy}>Save automation settings</button>
                           <button className="secondary" onClick={generateAutoTasksNow} disabled={autoTaskBusy}>Generate now</button>
+                          <button className="secondary" onClick={runAutoArchiveNow} disabled={autoTaskBusy || !autoTaskSettings.auto_archive_enabled}>Archive eligible now</button>
                         </div>
                       </>
                     ) : (

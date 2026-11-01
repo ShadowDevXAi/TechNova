@@ -82,24 +82,60 @@ async def get_auto_task_settings(actor: dict = Depends(allow("Founder", "Core Ma
 # Purpose: update auto task settings handles the system feature flow and returns its API result.
 @router.put("/api/auto-tasks/settings")
 async def update_auto_task_settings(body: dict, request: Request, actor: dict = Depends(allow("Founder"))):
-    mode = body.get("mode", "custom")
+    existing = await db.app_settings.find_one({"_id": "auto_daily_task_config"}) or {}
+    mode = body.get("mode", existing.get("mode", "custom"))
     if mode not in {"custom", "unlimited"}:
         raise HTTPException(422, "Mode must be custom or unlimited")
     try:
-        daily_target = int(body.get("daily_target", 5))
+        daily_target = int(body.get("daily_target", existing.get("daily_target", 5)))
     except (TypeError, ValueError):
         raise HTTPException(422, "Daily target must be a whole number")
     if daily_target < 1 or daily_target > 50:
         raise HTTPException(422, "Custom daily target must be between 1 and 50")
+
+    archive_enabled = body.get("auto_archive_enabled", existing.get("auto_archive_enabled", True))
+    if not isinstance(archive_enabled, bool):
+        raise HTTPException(422, "Auto-archive enabled must be true or false")
+    try:
+        archive_after_days = int(body.get("auto_archive_after_days", existing.get("auto_archive_after_days", 30)))
+    except (TypeError, ValueError):
+        raise HTTPException(422, "Auto-archive retention must be a whole number of days")
+    if archive_after_days < 1 or archive_after_days > 3650:
+        raise HTTPException(422, "Auto-archive retention must be between 1 and 3650 days")
+
     await db.app_settings.update_one(
         {"_id": "auto_daily_task_config"},
-        {"$set": {"mode": mode, "daily_target": daily_target, "updated_at": utcnow(), "updated_by": actor["_id"]}},
+        {"$set": {
+            "mode": mode,
+            "daily_target": daily_target,
+            "auto_archive_enabled": archive_enabled,
+            "auto_archive_after_days": archive_after_days,
+            "updated_at": utcnow(),
+            "updated_by": actor["_id"],
+        }},
         upsert=True,
     )
     await audit(actor, "auto_daily_task_settings_updated", "auto_daily_task_config", {
-        "mode": mode, "daily_target": daily_target, "unlimited_daily_cap": 20,
+        "mode": mode,
+        "daily_target": daily_target,
+        "unlimited_daily_cap": 20,
+        "auto_archive_enabled": archive_enabled,
+        "auto_archive_after_days": archive_after_days,
     }, request)
     return await auto_task_generation_status()
+
+
+# Purpose: run the configured completed-task archive immediately.
+@router.post("/api/auto-tasks/archive-now")
+async def archive_eligible_tasks_now(request: Request, actor: dict = Depends(allow("Founder"))):
+    result = await auto_archive_old_tasks(force=True)
+    await audit(actor, "auto_task_archive_requested", "retention_policy", {
+        "enabled": result.get("enabled", False),
+        "tasks_archived": result.get("tasks_archived", 0),
+        "common_tasks_archived": result.get("common_tasks_archived", 0),
+        "retention_days": result.get("retention_days"),
+    }, request)
+    return {"message": result.get("message") or f'Archive completed: {result.get("total_archived", 0)} task(s) archived.', **result}
 
 
 # Purpose: generate auto tasks now handles the system feature flow and returns its API result.

@@ -482,7 +482,20 @@ async def auto_task_generation_config() -> dict:
         daily_target = max(1, min(50, int(saved.get("daily_target", 5))))
     except (TypeError, ValueError):
         daily_target = 5
-    return {"mode": mode, "daily_target": daily_target, "unlimited_daily_cap": 20}
+    archive_enabled = saved.get("auto_archive_enabled", True)
+    if not isinstance(archive_enabled, bool):
+        archive_enabled = True
+    try:
+        archive_after_days = max(1, min(3650, int(saved.get("auto_archive_after_days", 30))))
+    except (TypeError, ValueError):
+        archive_after_days = 30
+    return {
+        "mode": mode,
+        "daily_target": daily_target,
+        "unlimited_daily_cap": 20,
+        "auto_archive_enabled": archive_enabled,
+        "auto_archive_after_days": archive_after_days,
+    }
 
 
 # Purpose: Summarize today's generated, open and total automatic shared tasks.
@@ -584,6 +597,102 @@ async def generate_automatic_daily_tasks() -> dict:
             break
     return {"generated": created, "source": ", ".join(sorted(sources)) or "none",
             **(await auto_task_generation_status())}
+
+
+def build_auto_archive_age_query(reference_field: str, cutoff: datetime) -> dict:
+    """Build a retention query with safe fallbacks for older task records."""
+    return {
+        "$or": [
+            {reference_field: {"$lte": cutoff}},
+            {reference_field: None, "updated_at": {"$lte": cutoff}},
+            {reference_field: None, "updated_at": None, "created_at": {"$lte": cutoff}},
+        ]
+    }
+
+
+# Purpose: Archive completed work and closed common missions after the configured retention period.
+async def auto_archive_old_tasks(force: bool = False) -> dict:
+    """Soft-archive only completed tasks and closed missions; never remove active work."""
+    config = await auto_task_generation_config()
+    days = config["auto_archive_after_days"]
+    if not config["auto_archive_enabled"]:
+        return {
+            "enabled": False,
+            "retention_days": days,
+            "tasks_archived": 0,
+            "common_tasks_archived": 0,
+            "total_archived": 0,
+            "message": "Automatic task archiving is disabled.",
+        }
+
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+    sweep_id = "auto_task_archive_sweep"
+    previous_sweep = await db.app_settings.find_one({"_id": sweep_id}) or {}
+    if not force and previous_sweep.get("sweep_date") == today:
+        return {
+            "enabled": True,
+            "retention_days": days,
+            "tasks_archived": 0,
+            "common_tasks_archived": 0,
+            "total_archived": 0,
+            "already_ran_today": True,
+        }
+
+    now = utcnow()
+    cutoff = now - timedelta(days=days)
+    archive_fields = {
+        "deleted_at": now,
+        "deleted_by": None,
+        "task_state": "Deleted",
+        "task_state_reason": f"Automatically archived after {days} days",
+        "auto_archived_at": now,
+        "auto_archive_reason": "retention_policy",
+        "updated_at": now,
+    }
+    completed_tasks = await db.tasks.update_many(
+        {
+            "status": "Done",
+            "deleted_at": {"$exists": False},
+            **build_auto_archive_age_query("completion_confirmed_at", cutoff),
+        },
+        {"$set": archive_fields},
+    )
+    closed_common_tasks = await db.common_tasks.update_many(
+        {
+            "status": "Closed",
+            "deleted_at": {"$exists": False},
+            **build_auto_archive_age_query("closed_at", cutoff),
+        },
+        {"$set": {**archive_fields, "status": "Deleted"}},
+    )
+    task_count = completed_tasks.modified_count
+    common_count = closed_common_tasks.modified_count
+    await db.app_settings.update_one(
+        {"_id": sweep_id},
+        {"$set": {
+            "sweep_date": today,
+            "last_run_at": now,
+            "retention_days": days,
+            "tasks_archived": task_count,
+            "common_tasks_archived": common_count,
+        }},
+        upsert=True,
+    )
+    if task_count or common_count:
+        await audit(None, "tasks_auto_archived", "retention_policy", {
+            "retention_days": days,
+            "tasks_archived": task_count,
+            "common_tasks_archived": common_count,
+        })
+    return {
+        "enabled": True,
+        "retention_days": days,
+        "tasks_archived": task_count,
+        "common_tasks_archived": common_count,
+        "total_archived": task_count + common_count,
+        "checked_at": now.isoformat(),
+        "already_ran_today": False,
+    }
 
 
 # Purpose: Migrate legacy generated daily tasks into the shared task-board model.
@@ -869,6 +978,7 @@ async def run_daily_maintenance() -> dict:
             "suspension_until": until.isoformat(),
         })
 
+    auto_archive = await auto_archive_old_tasks()
     automatic_daily = await generate_automatic_daily_tasks()
 
     return {
@@ -878,6 +988,7 @@ async def run_daily_maintenance() -> dict:
         "automatic_task_source": automatic_daily["source"],
         "daily_missions_closed": closed_daily_missions.modified_count,
         "discipline_cleanup": discipline_cleanup,
+        "auto_archive": auto_archive,
         "late_penalties_applied": penalties_applied,
         "members_warned_for_missed_tasks": warnings_sent,
         "members_auto_suspended": auto_suspended,
