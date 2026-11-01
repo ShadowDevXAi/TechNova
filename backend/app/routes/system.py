@@ -34,6 +34,13 @@ async def health():
     return {"status": "ok", "service": "technova-api", "database": "connected"}
 
 
+# Purpose: report safe attachment-storage readiness for the Founder.
+@router.get("/api/admin/storage/status")
+async def attachment_storage_status(actor: dict = Depends(allow("Founder"))):
+    from ..storage import attachment_storage_status as get_storage_status
+    return get_storage_status()
+
+
 # Purpose: database stats handles the system feature flow and returns its API result.
 @router.get("/api/admin/database-stats")
 async def database_stats(actor: dict = Depends(allow("Founder", "Core Management"))):

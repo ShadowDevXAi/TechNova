@@ -10,6 +10,8 @@ import logging
 
 from fastapi import APIRouter
 from ..core import *  # Shared database, schemas, authorization and business helpers.
+from ..storage import store_attachment, read_attachment
+from ..config import settings
 
 router = APIRouter()
 logger = logging.getLogger("technova.tasks")
@@ -866,10 +868,20 @@ async def upload_task_attachment(task_id: str, request: Request, file: UploadFil
     import uuid
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", file.filename or "attachment")[:120]
     stored = f"{uuid.uuid4().hex}_{safe_name}"
-    os.makedirs("/app/uploads", exist_ok=True)
-    with open(os.path.join("/app/uploads", stored), "wb") as handle:
-        handle.write(data)
-    doc = {"task_id": task["_id"], "filename": safe_name, "stored_name": stored, "content_type": file.content_type, "size": len(data), "uploaded_by": user["_id"], "created_at": utcnow()}
+    storage_key = f"tasks/{task['_id']}/{stored}"
+    try:
+        storage_meta = await asyncio.to_thread(store_attachment, storage_key, data, file.content_type)
+    except Exception as exc:
+        logger.exception("Task attachment storage failed (task_id=%s backend=%s)", task_id, settings.attachment_storage_provider)
+        raise HTTPException(503, "Attachment storage is unavailable. Check the backend storage configuration.") from exc
+    doc = {
+        "task_id": task["_id"], "filename": safe_name,
+        "stored_name": storage_meta.get("stored_name"),
+        "storage_backend": storage_meta.get("storage_backend", "local"),
+        "storage_key": storage_meta.get("storage_key"),
+        "content_type": file.content_type, "size": len(data),
+        "uploaded_by": user["_id"], "created_at": utcnow(),
+    }
     result = await db.attachments.insert_one(doc)
     await audit(user, "task_attachment_uploaded", str(result.inserted_id), {}, request)
     return {"id": str(result.inserted_id), "filename": safe_name, "content_type": file.content_type, "size": len(data)}
@@ -894,10 +906,19 @@ async def download_attachment(attachment_id: str, user: dict = Depends(get_curre
     task = await db.tasks.find_one({"_id": item["task_id"]})
     if not task or (user["role"] not in PRIVILEGED and task["assignee_id"] != user["_id"]):
         raise HTTPException(403, "You cannot download this attachment")
-    path = os.path.join("/app/uploads", item["stored_name"])
-    if not os.path.isfile(path):
+    try:
+        data = await asyncio.to_thread(read_attachment, item)
+    except FileNotFoundError:
         raise HTTPException(404, "Attachment file is missing")
-    return FileResponse(path, media_type=item["content_type"], filename=item["filename"])
+    except Exception as exc:
+        logger.exception("Task attachment download failed (attachment_id=%s)", attachment_id)
+        raise HTTPException(503, "Attachment storage is currently unavailable.") from exc
+    safe_filename = re.sub(r"[^a-zA-Z0-9._-]", "_", item.get("filename") or "attachment")[:120]
+    return StreamingResponse(
+        iter([data]),
+        media_type=item.get("content_type") or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+    )
 
 # Purpose: get task comments handles the tasks feature flow and returns its API result.
 @router.get("/api/tasks/{task_id}/comments")

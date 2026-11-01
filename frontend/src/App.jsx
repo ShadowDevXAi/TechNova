@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import TechNovaHub from "./TechNovaHub";
 import PushNotificationSettings from "./components/PushNotificationSettings.jsx";
 import TwoFactorSettings from "./components/TwoFactorSettings.jsx";
+import StorageSettings from "./components/StorageSettings.jsx";
 import { listenForForegroundMessages } from "./firebase.js";
 import { api, API_BASE } from "./api/client.js";
 import TechNovaLogo from "./components/TechNovaLogo.jsx";
@@ -2432,6 +2433,7 @@ function App() {
               </div>
               <div className="panel settings">
                 {isAdmin && <TwoFactorSettings token={token} />}
+                {isFounder && <StorageSettings token={token} />}
                 <PushNotificationSettings token={token} />
                 {isFounder && (
                   <div className="email-delivery-panel">

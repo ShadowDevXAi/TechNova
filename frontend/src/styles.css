@@ -8393,3 +8393,10 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
   .two-factor-device { align-items:flex-start; }
   .two-factor-recovery-grid { grid-template-columns:1fr 1fr; }
 }
+
+/* Founder diagnostics for durable task attachments */
+.storage-settings { border:1px solid var(--line,#d9deea); border-radius:16px; padding:18px; margin:0 0 22px; }
+.storage-settings-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.storage-settings h3 { margin:5px 0; }
+.storage-settings p,.storage-settings small { color:var(--muted,#697386); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.storage-settings-head p { margin:0; }

@@ -69,6 +69,7 @@ jobs:
           assert any(route.path == "/api/auto-tasks/archive-now" for route in system_router.routes), "Manual auto-archive route"
           assert any(route.path == "/api/admin/email/status" for route in system_router.routes), "SMTP status route"
           assert any(route.path == "/api/admin/email/test" for route in system_router.routes), "SMTP test route"
+          assert any(route.path == "/api/admin/storage/status" for route in system_router.routes), "Storage diagnostics route"
           auth_paths = {route.path for route in auth_router.routes}
           assert "/api/auth/2fa/setup" in auth_paths and "/api/auth/2fa/enable" in auth_paths, "Management MFA enrollment routes"
           assert "/api/auth/2fa/login" in auth_paths and "/api/auth/2fa/status" in auth_paths, "Management MFA login/status routes"
@@ -95,6 +96,9 @@ jobs:
           assert "completeTwoFactorSetup" in app_source and "QRCodeSVG" in app_source, "Management authenticator enrollment UI"
           assert "TwoFactorSettings" in app_source, "Trusted-device security settings UI"
           assert "build_task_sms_summary" in core_source, "Compact task SMS summary helper"
+          from app.storage import attachment_storage_status
+          local_storage = attachment_storage_status()
+          assert local_storage["provider"] == "Local disk" and local_storage["configured"], "Local development storage fallback"
           assert "create_task_notification" in task_source, "Task event emails use full task summary"
           sample_summary = {
               "title": "Calculate total marks", "description": "Read 5 subject marks and calculate the sum.",
