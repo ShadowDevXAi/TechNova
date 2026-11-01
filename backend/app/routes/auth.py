@@ -435,6 +435,19 @@ async def contact_notification_status(user: dict = Depends(get_current_user)):
 @router.post("/api/auth/contact/phone/request")
 @limiter.limit("3/hour")
 async def request_phone_verification(body: dict, request: Request, user: dict = Depends(get_current_user)):
+    """
+    Start (or resend) phone verification for the signed-in account.
+
+    Flow:
+    1. Validate the international-format phone number and explicit SMS consent.
+    2. Confirm the SMS provider is configured and the number is not verified elsewhere.
+    3. Enforce a 60-second resend cooldown (plus the route's hourly rate limit).
+    4. Generate a six-digit OTP, store only its hash, and set a 10-minute expiry.
+    5. Send the OTP through Brevo. If delivery fails, remove the pending OTP data.
+
+    Calling this endpoint again after the cooldown sends a fresh code and
+    replaces the previous pending code; the previous code can no longer verify.
+    """
     phone = str(body.get("phone_number") or "").strip()
     consent = body.get("consent") is True
     if not re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
@@ -454,19 +467,15 @@ async def request_phone_verification(body: dict, request: Request, user: dict = 
     last_requested = user.get("phone_verification_requested_at")
     if last_requested and (utcnow() - normalize_utc_datetime(last_requested)).total_seconds() < 60:
         raise HTTPException(429, "Please wait at least 60 seconds before requesting another verification code.")
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    await db.users.update_one(
+    # Generate a cryptographically random six-digit OTP; never store the raw code in MongoDB.\n    code = f"{secrets.randbelow(1_000_000):06d}"\n    await db.users.update_one(
         {"_id": user["_id"]},
         {"$set": {
             "phone_number_pending": phone,
-            "phone_verification_code_hash": token_hash(code),
-            "phone_verification_expires_at": utcnow() + timedelta(minutes=10),
+            "phone_verification_code_hash": token_hash(code),  # Compare hashes during confirmation.\n            "phone_verification_expires_at": utcnow() + timedelta(minutes=10),  # OTP expires after 10 minutes.
             "phone_verification_requested_at": utcnow(),
         }},
     )
-    try:
-        receipt = await asyncio.to_thread(
-            send_brevo_sms_message,
+    # Send SMS outside the async event loop so the network request does not block other API work.\n    try:\n        receipt = await asyncio.to_thread(\n            send_brevo_sms_message,
             phone,
             f"TechNova verification code: {code}. It expires in 10 minutes.",
         )
@@ -492,15 +501,21 @@ async def request_phone_verification(body: dict, request: Request, user: dict = 
 @router.post("/api/auth/contact/phone/confirm")
 @limiter.limit("6/hour")
 async def confirm_phone_verification(body: dict, request: Request, user: dict = Depends(get_current_user)):
+    """
+    Confirm the OTP sent to the pending phone number.
+
+    Reject malformed, missing, expired, or incorrect codes. On success, move
+    the pending number into the verified account field, record consent, clear
+    all temporary OTP data, and leave SMS alerts disabled until separately
+    enabled in notification preferences.
+    """
     code = str(body.get("code") or "").strip()
     pending_phone = user.get("phone_number_pending")
     expected_hash = user.get("phone_verification_code_hash")
     expires_at = user.get("phone_verification_expires_at")
     if not re.fullmatch(r"[0-9]{6}", code):
         raise HTTPException(422, "Enter the six-digit verification code.")
-    if not pending_phone or not expected_hash or not expires_at or normalize_utc_datetime(expires_at) <= utcnow():
-        raise HTTPException(410, "The phone verification code has expired. Request another code.")
-    if not secrets.compare_digest(token_hash(code), expected_hash):
+    # Normalize MongoDB timestamps before comparing expiry with timezone-aware UTC.\n    if not pending_phone or not expected_hash or not expires_at or normalize_utc_datetime(expires_at) <= utcnow():\n        raise HTTPException(410, "The phone verification code has expired. Request another code.")\n    # Constant-time hash comparison avoids comparing the submitted OTP with a stored plaintext value.\n    if not secrets.compare_digest(token_hash(code), expected_hash):
         raise HTTPException(400, "The phone verification code is incorrect.")
     try:
         await db.users.update_one(
@@ -510,7 +525,7 @@ async def confirm_phone_verification(body: dict, request: Request, user: dict = 
                     "phone_number": pending_phone,
                     "phone_verified_at": utcnow(),
                     "sms_consent_at": utcnow(),
-                    "notification_preferences.sms_enabled": False,
+                    "notification_preferences.sms_enabled": False,  # Verification does not silently opt the user into alerts.
                 },
                 "$unset": {
                     "phone_number_pending": "",
