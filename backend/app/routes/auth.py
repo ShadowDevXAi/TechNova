@@ -427,7 +427,7 @@ async def contact_notification_status(user: dict = Depends(get_current_user)):
             "push_enabled": preferences.get("push_enabled", True) is not False,
             "sms_enabled": preferences.get("sms_enabled") is True,
         },
-        "sms_provider": sms_configuration_status(),
+        "phone_verification_enabled": settings.phone_verification_enabled,\n        "sms_provider": sms_configuration_status(),
     }
 
 
@@ -448,8 +448,7 @@ async def request_phone_verification(body: dict, request: Request, user: dict = 
     Calling this endpoint again after the cooldown sends a fresh code and
     replaces the previous pending code; the previous code can no longer verify.
     """
-    phone = str(body.get("phone_number") or "").strip()
-    consent = body.get("consent") is True
+    # Feature is intentionally paused. Remove this guard only when the owner activates phone verification.\n    if not settings.phone_verification_enabled:\n        raise HTTPException(503, "Phone verification is temporarily disabled by the TechNova owner.")\n    phone = str(body.get("phone_number") or "").strip()\n    consent = body.get("consent") is True
     if not re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
         raise HTTPException(422, "Enter a phone number in international format, for example +919876543210.")
     if not consent:
@@ -467,15 +466,21 @@ async def request_phone_verification(body: dict, request: Request, user: dict = 
     last_requested = user.get("phone_verification_requested_at")
     if last_requested and (utcnow() - normalize_utc_datetime(last_requested)).total_seconds() < 60:
         raise HTTPException(429, "Please wait at least 60 seconds before requesting another verification code.")
-    # Generate a cryptographically random six-digit OTP; never store the raw code in MongoDB.\n    code = f"{secrets.randbelow(1_000_000):06d}"\n    await db.users.update_one(
+    # Generate a cryptographically random six-digit OTP; never store the raw code in MongoDB.
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    await db.users.update_one(
         {"_id": user["_id"]},
         {"$set": {
             "phone_number_pending": phone,
-            "phone_verification_code_hash": token_hash(code),  # Compare hashes during confirmation.\n            "phone_verification_expires_at": utcnow() + timedelta(minutes=10),  # OTP expires after 10 minutes.
+            "phone_verification_code_hash": token_hash(code),  # Compare hashes during confirmation.
+            "phone_verification_expires_at": utcnow() + timedelta(minutes=10),  # OTP expires after 10 minutes.
             "phone_verification_requested_at": utcnow(),
         }},
     )
-    # Send SMS outside the async event loop so the network request does not block other API work.\n    try:\n        receipt = await asyncio.to_thread(\n            send_brevo_sms_message,
+    # Send SMS outside the async event loop so the network request does not block other API work.
+    try:
+        receipt = await asyncio.to_thread(
+            send_brevo_sms_message,
             phone,
             f"TechNova verification code: {code}. It expires in 10 minutes.",
         )
@@ -509,13 +514,16 @@ async def confirm_phone_verification(body: dict, request: Request, user: dict = 
     all temporary OTP data, and leave SMS alerts disabled until separately
     enabled in notification preferences.
     """
-    code = str(body.get("code") or "").strip()
-    pending_phone = user.get("phone_number_pending")
+    # Feature is intentionally paused. Remove this guard only when the owner activates phone verification.\n    if not settings.phone_verification_enabled:\n        raise HTTPException(503, "Phone verification is temporarily disabled by the TechNova owner.")\n    code = str(body.get("code") or "").strip()\n    pending_phone = user.get("phone_number_pending")
     expected_hash = user.get("phone_verification_code_hash")
     expires_at = user.get("phone_verification_expires_at")
     if not re.fullmatch(r"[0-9]{6}", code):
         raise HTTPException(422, "Enter the six-digit verification code.")
-    # Normalize MongoDB timestamps before comparing expiry with timezone-aware UTC.\n    if not pending_phone or not expected_hash or not expires_at or normalize_utc_datetime(expires_at) <= utcnow():\n        raise HTTPException(410, "The phone verification code has expired. Request another code.")\n    # Constant-time hash comparison avoids comparing the submitted OTP with a stored plaintext value.\n    if not secrets.compare_digest(token_hash(code), expected_hash):
+    # Normalize MongoDB timestamps before comparing expiry with timezone-aware UTC.
+    if not pending_phone or not expected_hash or not expires_at or normalize_utc_datetime(expires_at) <= utcnow():
+        raise HTTPException(410, "The phone verification code has expired. Request another code.")
+    # Constant-time hash comparison avoids comparing the submitted OTP with a stored plaintext value.
+    if not secrets.compare_digest(token_hash(code), expected_hash):
         raise HTTPException(400, "The phone verification code is incorrect.")
     try:
         await db.users.update_one(
@@ -554,7 +562,7 @@ async def update_contact_notification_preferences(body: dict, request: Request, 
         "sms_enabled": current.get("sms_enabled") is True,
         **changes,
     }
-    if updated["sms_enabled"] and not (user.get("phone_verified_at") and user.get("sms_consent_at") and user.get("phone_number")):
+    if updated["sms_enabled"] and not settings.phone_verification_enabled:\n        raise HTTPException(503, "SMS notifications are temporarily disabled by the TechNova owner.")\n    if updated["sms_enabled"] and not (user.get("phone_verified_at") and user.get("sms_consent_at") and user.get("phone_number")):
         raise HTTPException(409, "Verify your phone number and give SMS consent before enabling SMS alerts.")
     await db.users.update_one(
         {"_id": user["_id"]},
