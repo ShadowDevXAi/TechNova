@@ -113,7 +113,7 @@ export default function ContactNotificationSettings({ token }) {
           SMS is not ready yet. {smsProvider.missing?.length ? `The backend is missing: ${smsProvider.missing.join(", ")}. ` : ""}The Founder must add the required SMS credentials and an approved sender in the backend Render environment, then redeploy. The SMS provider must also have transactional SMS permission and sufficient credits.
         </p>
       )}
-      {status?.phone_verified ? (
+      {!status?.phone_verification_enabled ? (\n        <div className="contact-notification-note" role="status">\n          <b>Phone verification is temporarily paused.</b>\n          <p>The OTP, phone verification and SMS notification functions are kept in the project but are disabled. They will be activated only when the TechNova owner decides to enable them.</p>\n        </div>\n      ) : status?.phone_verified ? (
         <div className="contact-verified-phone">
           <div><b>Verified phone</b><strong>{status.phone_masked}</strong><small>Verification consent recorded. SMS alerts still require separate opt-in.</small></div>
           <button type="button" className="secondary" onClick={removePhone} disabled={busy}>Remove</button>
@@ -155,7 +155,7 @@ export default function ContactNotificationSettings({ token }) {
             <input
               type="checkbox"
               checked={Boolean(preferences[key])}
-              disabled={key === "sms_enabled" && (!status?.phone_verified || !status?.sms_consent)}
+              disabled={key === "sms_enabled" && (!status?.phone_verification_enabled || !status?.phone_verified || !status?.sms_consent)}
               onChange={(event) => setPreferences((current) => ({...current, [key]: event.target.checked}))}
             />
           </label>
