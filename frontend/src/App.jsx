@@ -414,6 +414,7 @@ function App() {
     reinstateMember,
     respondToCommonTask,
     markNotificationRead,
+    markAllNotificationsRead,
     uploadAttachment,
     downloadReviewAttachment,
     openTaskSubmission,
