@@ -386,7 +386,7 @@ async def create_task(data: TaskCreate, request: Request, actor: dict = Depends(
             "status": "Todo",
             "submission_note": "",
             "assignment_group_id": group_id,
-            "daily_schedule_id": schedule_id,
+            **({"daily_schedule_id": schedule_id} if schedule_id is not None else {}),
         }
         result = await db.tasks.insert_one(doc)
         doc["_id"] = result.inserted_id
