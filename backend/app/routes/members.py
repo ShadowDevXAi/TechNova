@@ -183,6 +183,8 @@ async def approve_member(member_id: str, request: Request, actor: dict = Depends
     target=await db.users.find_one({"_id":oid(member_id)})
     if not target: raise HTTPException(404,"Member not found")
     if target["role"]=="Founder": raise HTTPException(403,"Invalid target")
+    if target.get("email_verification_required") and not target.get("email_verified_at"):
+        raise HTTPException(409, "This Member must verify their email address before account approval.")
     was_active = target.get("status") == "Active"
     await db.users.update_one({"_id":target["_id"]},{"$set":{"status":"Active","approved_at":utcnow()}})
     if not was_active:

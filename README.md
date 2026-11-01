@@ -93,7 +93,7 @@ Role checks are enforced by FastAPI, not just hidden frontend buttons. Treat thi
 - Do not store sensitive government identifiers, passwords in plain text, or unnecessary student information.
 
 ## Current scope and honest limitations
-TechNova includes role-based access, tasks, review, QR verification, credits, Hub workflows, in-app/email/push notification code, and mandatory authenticator MFA for Founder/Core Management. It is not a certified production release. Remaining deployment-dependent work includes a real SMS provider, durable cloud object storage and malware scanning, email verification, polished front/back ID PDFs, a secure isolated code-execution service, richer project milestones, and full automated API/browser end-to-end tests. Review the authorization model and deploy only after tests, backups, HTTPS, and secret management are in place.
+TechNova includes role-based access, tasks, review, QR verification, credits, Hub workflows, in-app/email/push notifications, opt-in Brevo SMS integration, mandatory authenticator MFA for Founder/Core Management, public-signup email verification, and an S3-compatible attachment adapter. It is not a certified production release. Remaining work includes configuring and testing SMS sender permissions/credits, configuring a durable object-storage bucket, malware scanning, polished front/back ID PDFs, a secure isolated code-execution service, richer project milestones, and full automated API/browser end-to-end tests. Review the authorization model and deploy only after tests, backups, HTTPS, and secret management are in place.
 
 
 ## Member credits, ranks and leaderboard

@@ -91,6 +91,8 @@ function App() {
   const [modal, setModal] = useState("");
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
+  const [verificationResendBusy, setVerificationResendBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [authMode, setAuthMode] = useState("login");
@@ -155,6 +157,28 @@ function App() {
     setError(e.requestId ? message + " (Error ID: " + e.requestId + ")" : message);
   };
 
+  // Purpose: Ask for a new email verification link without exposing account existence.
+  async function resendEmailVerification() {
+    if (!auth.email.trim()) {
+      setError("Enter your email address first.");
+      return;
+    }
+    setVerificationResendBusy(true);
+    setError("");
+    setAuthNotice("");
+    try {
+      const result = await api("/auth/email-verification/resend", "", {
+        method: "POST",
+        body: JSON.stringify({ email: auth.email.trim() }),
+      });
+      setAuthNotice(result.message);
+    } catch (err) {
+      setError(err.message || "Could not request a verification email.");
+    } finally {
+      setVerificationResendBusy(false);
+    }
+  }
+
   // Initial workspace loading and background refresh are managed by dedicated hooks.
   const load = useWorkspaceData({
     token, selected,
@@ -201,6 +225,24 @@ function App() {
       setVerifyToken(decodeURIComponent(p[1]));
       setVerifyResult(null);
       setAutoVerifyRoute(true);
+    }
+    const params = new URLSearchParams(window.location.search);
+    const emailToken = params.get("verify_email");
+    if (emailToken) {
+      api("/auth/email-verification/confirm", "", {
+        method: "POST",
+        body: JSON.stringify({ token: emailToken }),
+      }).then((result) => {
+        setAuthNotice(result.message || "Email verified. You can sign in after administrator approval.");
+        setAuthMode("login");
+        setAuth((current) => ({ ...current, password: "" }));
+      }).catch((err) => {
+        setError(err.message || "Email verification failed. Request a new link.");
+      }).finally(() => {
+        params.delete("verify_email");
+        const query = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (query ? "?" + query : "") + window.location.hash);
+      });
     }
   }, []);
 
@@ -677,6 +719,7 @@ function App() {
               ? "Create your student account. A club administrator must approve it."
               : "Request a reset token, then set a new password."}
           </p>
+          {authNotice && <div className="auth-success-notice" role="status">{authNotice}</div>}
           {error && (
             <div className="errorbox">
               <AlertTriangle size={16} />
@@ -810,20 +853,28 @@ function App() {
               onClick={() => {
                 setAuthMode(authMode === "login" ? "register" : "login");
                 setError("");
+                setAuthNotice("");
               }}
             >
               {authMode === "login" ? "Create an account" : "Sign in"}
             </button>{" "}
             {authMode === "login" && (
-              <button
-                onClick={() => {
-                  setAuthMode("reset");
-                  setResetToken("");
-                  setError("");
-                }}
-              >
-                Forgot password?
-              </button>
+              <>
+                <button type="button" onClick={resendEmailVerification} disabled={verificationResendBusy}>
+                  {verificationResendBusy ? "Sending…" : "Resend verification email"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("reset");
+                    setResetToken("");
+                    setError("");
+                    setAuthNotice("");
+                  }}
+                >
+                  Forgot password?
+                </button>
+              </>
             )}
           </div>
           <div className="authhint">

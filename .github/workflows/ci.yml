@@ -77,6 +77,7 @@ jobs:
           assert "/api/auth/2fa/setup" in auth_paths and "/api/auth/2fa/enable" in auth_paths, "Management MFA enrollment routes"
           assert "/api/auth/2fa/login" in auth_paths and "/api/auth/2fa/status" in auth_paths, "Management MFA login/status routes"
           assert "/api/auth/2fa/devices" in auth_paths, "Trusted-device route"
+          assert "/api/auth/email-verification/confirm" in auth_paths and "/api/auth/email-verification/resend" in auth_paths, "Email verification routes"
           from app.security import create_access_token, decode_access_token
           assert decode_access_token(create_access_token("ci-user", "Founder", mfa_verified=True))["mfa_verified"] is True, "MFA must be explicit in management JWTs"
           email_test_source = open("app/routes/system.py", encoding="utf-8").read()
@@ -90,6 +91,7 @@ jobs:
           task_source = open("app/routes/tasks.py", encoding="utf-8").read()
           core_source = open("app/core.py", encoding="utf-8").read()
           assert "registration_received" in auth_source and "registration_pending" in auth_source, "Registration email notifications"
+          assert "email_verification_required" in auth_source and "token_hash" in auth_source, "Signup email verification is enforced and tokens are hashed"
           assert "smtp_configuration_status()" in auth_source, "Password resets must support HTTPS email providers"
           assert "account_approved" in member_source and "account_suspended" in member_source, "Member lifecycle email notifications"
           assert "task_comment" in task_source, "Task comments must notify the other party"

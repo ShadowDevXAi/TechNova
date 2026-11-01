@@ -74,6 +74,7 @@ export default function createPortalActions(context) {
     setResetPassword,
     auth,
     setAuth,
+    setAuthNotice,
     memberForm,
     setMemberForm,
     taskForm,
@@ -138,8 +139,9 @@ export default function createPortalActions(context) {
           method: "POST",
           body: JSON.stringify(auth),
         });
-        notify(r.message);
+        setAuthNotice(r.message);
         setAuthMode("login");
+        setAuth((current) => ({ ...current, password: "" }));
       } else {
         let r = await api("/auth/login", "", {
           method: "POST",

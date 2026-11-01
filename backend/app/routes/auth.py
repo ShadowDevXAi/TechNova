@@ -22,20 +22,55 @@ async def register(data: RegisterIn, request: Request):
     email = str(data.email).lower()
     if await db.users.find_one({"email":email}):
         raise HTTPException(409,"An account with this email already exists")
-    # Public signups can only create pending Member accounts.
+    # Public signups can only create pending Member accounts. They must verify email before login/approval.
     member_id = await next_member_id("Member")
-    doc = {"member_id":member_id,"name":data.name.strip(),"email":email,"password_hash":hash_password(data.password),"role":"Member","team":data.team.strip() or "Unassigned","status":"Pending","created_at":utcnow(),"approved_at":None}
+    doc = {
+        "member_id": member_id, "name": data.name.strip(), "email": email,
+        "password_hash": hash_password(data.password), "role": "Member",
+        "team": data.team.strip() or "Unassigned", "status": "Pending",
+        "created_at": utcnow(), "approved_at": None,
+        "email_verification_required": True, "email_verified_at": None,
+    }
     try:
         result = await db.users.insert_one(doc)
     except DuplicateKeyError:
-        raise HTTPException(409,"Could not allocate member ID; please retry")
-    pending_member = {**doc, "_id": result.inserted_id}
-    await create_notification(
-        pending_member,
-        "TechNova registration received",
-        "Your TechNova club registration has been received. Your account is pending administrator approval. You will receive another email when it is approved.",
-        "registration_received",
-    )
+        raise HTTPException(409, "Could not allocate member ID; please retry")
+
+    verification_token = secrets.token_urlsafe(32)
+    await db.email_verifications.insert_one({
+        "user_id": result.inserted_id,
+        "token_hash": token_hash(verification_token),
+        "created_at": utcnow(),
+        "expires_at": utcnow() + timedelta(hours=24),
+    })
+    verification_url = settings.public_app_url.rstrip("/") + "/?verify_email=" + verification_token
+    try:
+        await asyncio.to_thread(
+            send_email_message,
+            email,
+            "Verify your TechNova email address",
+            "Welcome to TechNova. Verify this email address to continue your club registration:\n\n"
+            + verification_url
+            + "\n\nThis link expires in 24 hours. If you did not register, you can ignore this email.",
+        )
+        email_delivery_status = "sent"
+    except Exception as exc:
+        email_delivery_status = "failed"
+        logger.error("Registration verification email failed (user_id=%s error_type=%s)", result.inserted_id, type(exc).__name__)
+
+    # Keep the receipt in the in-app inbox without sending a duplicate email before verification.
+    await db.notifications.insert_one({
+        "user_id": result.inserted_id,
+        "type": "registration_received",
+        "title": "Verify your TechNova email",
+        "message": "A verification link was sent to your email if delivery is configured. Verify it before account approval.",
+        "task_id": None,
+        "common_task_id": None,
+        "read_at": None,
+        "created_at": utcnow(),
+        "email_delivery": {"status": "skipped_verification_pending", "updated_at": utcnow()},
+        "sms_delivery": {"status": "skipped_not_enabled", "updated_at": utcnow()},
+    })
     managers = await db.users.find({
         "role": {"$in": ["Founder", "Core Management"]},
         "status": "Active",
@@ -68,6 +103,11 @@ async def login(data: LoginIn, request: Request):
             reason_text = user.get("suspension_reason") or "Club rule review"
             raise HTTPException(403, f"Your account is temporarily suspended until {until_text}. Reason: {reason_text}")
         raise HTTPException(403, "Your account is suspended. Contact the Founder for reinstatement.")
+    if user.get("email_verification_required") and not user.get("email_verified_at"):
+        raise HTTPException(
+            403,
+            "Verify your email address before signing in. Use 'Resend verification email' on the sign-in screen if you need a new link.",
+        )
     if user["status"] != "Active":
         raise HTTPException(403,"Your account is pending approval or unavailable")
     if user.get("role") in {"Founder", "Core Management"}:
@@ -524,6 +564,80 @@ async def remove_verified_phone(request: Request, user: dict = Depends(get_curre
     )
     await audit(user, "phone_number_removed", str(user["_id"]), {}, request)
     return {"message": "Phone number removed and SMS alerts disabled."}
+
+
+# Purpose: Resend a fresh expiring verification link without revealing whether an email is registered.
+@router.post("/api/auth/email-verification/resend")
+@limiter.limit("3/hour")
+async def resend_email_verification(body: dict, request: Request):
+    email = str(body.get("email") or "").strip().lower()
+    response = {"message": "If this account needs verification, a new link will be sent when email delivery is available."}
+    if not email or len(email) > 320:
+        return response
+    user = await db.users.find_one({
+        "email": email,
+        "email_verification_required": True,
+        "email_verified_at": None,
+        "status": {"$ne": "Suspended"},
+    })
+    if not user or not smtp_configuration_status()["configured"]:
+        return response
+    verification_token = secrets.token_urlsafe(32)
+    await db.email_verifications.delete_many({"user_id": user["_id"]})
+    await db.email_verifications.insert_one({
+        "user_id": user["_id"],
+        "token_hash": token_hash(verification_token),
+        "created_at": utcnow(),
+        "expires_at": utcnow() + timedelta(hours=24),
+    })
+    verification_url = settings.public_app_url.rstrip("/") + "/?verify_email=" + verification_token
+    try:
+        await asyncio.to_thread(
+            send_email_message,
+            email,
+            "Verify your TechNova email address",
+            "Use this link to verify your TechNova account email address:\n\n"
+            + verification_url
+            + "\n\nThis link expires in 24 hours. If you did not request it, ignore this email.",
+        )
+    except Exception as exc:
+        logger.error("Email verification resend failed (user_id=%s error_type=%s)", user["_id"], type(exc).__name__)
+        return response
+    await audit(None, "email_verification_resent", str(user["_id"]), {}, request)
+    return response
+
+
+# Purpose: Confirm a single-use email verification token and unlock the account approval flow.
+@router.post("/api/auth/email-verification/confirm")
+@limiter.limit("10/hour")
+async def confirm_email_verification(body: dict, request: Request):
+    raw_token = str(body.get("token") or "").strip()
+    if len(raw_token) < 30 or len(raw_token) > 200:
+        raise HTTPException(422, "A valid email verification link is required.")
+    record = await db.email_verifications.find_one({
+        "token_hash": token_hash(raw_token),
+        "expires_at": {"$gt": utcnow()},
+    })
+    if not record:
+        raise HTTPException(400, "This email verification link is invalid or expired. Request a new one from the sign-in screen.")
+    consumed = await db.email_verifications.delete_one({
+        "_id": record["_id"],
+        "expires_at": {"$gt": utcnow()},
+    })
+    if consumed.deleted_count != 1:
+        raise HTTPException(409, "This email verification link has already been used.")
+    user = await db.users.find_one({"_id": record["user_id"]})
+    if not user:
+        raise HTTPException(404, "TechNova account not found.")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"email_verified_at": utcnow(), "email_verification_required": False}},
+    )
+    await audit(None, "email_verified", str(user["_id"]), {}, request)
+    return {
+        "message": "Email verified successfully. Your TechNova account is waiting for administrator approval.",
+        "member_id": user.get("member_id", ""),
+    }
 
 
 # Purpose: me handles the auth feature flow and returns its API result.
