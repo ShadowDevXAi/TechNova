@@ -125,6 +125,7 @@ async def verify_card(token: str, request: Request, actor: dict = Depends(allow(
         "role": member["role"],
         "team": member.get("team", "Unassigned"),
         "club": "TechNova",
+        "progression_type": progress.get("progression_type", "xp"),
         "xp": progress["xp"],
         "level": progress["level"],
         "level_title": progress["level_title"],

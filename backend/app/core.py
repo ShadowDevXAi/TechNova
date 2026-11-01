@@ -306,13 +306,41 @@ def member_level_details(xp: int) -> dict:
 
 
 # Purpose: Build one consistent XP and credit snapshot for a member profile or ID card.
+def founder_progression_details(completed: int, pending: int, credits: int) -> dict:
+    """Return the Founder's permanent identity without XP-based rank progression."""
+    return {
+        "progression_type": "founder",
+        "xp": None,
+        "level": None,
+        "level_title": "Founder · Origin Rank",
+        "level_start_xp": None,
+        "next_level_xp": None,
+        "xp_to_next_level": None,
+        "level_progress": None,
+        "completed_tasks": completed,
+        "pending_reviews": pending,
+        "credits": credits,
+        "credit_rank": "N/A",
+        "xp_approved": None,
+        "xp_pending_review": None,
+    }
+
+
+# Purpose: Build one consistent XP and credit snapshot for a member profile or ID card.
 async def member_progress_summary(member_id: ObjectId) -> dict:
-    """Calculate the same XP, level title and credit rank wherever progress is shown."""
+    """Return permanent Founder identity or normal XP progression for other roles."""
+    member = await db.users.find_one({"_id": member_id}, {"role": 1})
     completed = await db.tasks.count_documents({"assignee_id": member_id, "status": "Done"})
     pending = await db.tasks.count_documents({"assignee_id": member_id, "status": "Review"})
-    xp = completed * 100 + pending * 25
     credits = await member_credit_balance(member_id)
+
+    # Founder status is assigned by role and never earned, lost or upgraded through XP.
+    if member and member.get("role") == "Founder":
+        return founder_progression_details(completed, pending, credits)
+
+    xp = completed * 100 + pending * 25
     return {
+        "progression_type": "xp",
         "xp": xp,
         **member_level_details(xp),
         "completed_tasks": completed,

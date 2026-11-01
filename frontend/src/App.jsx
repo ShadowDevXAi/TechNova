@@ -1919,13 +1919,19 @@ function App() {
                           <span>{selected.member_id}</span>
                         </div>
                       </div>
-                      <section className="card-progression" aria-label="Member XP and level">
+                      <section className="card-progression" aria-label="TechNova progression and leadership rank">
                         <div className="card-progression-heading">
-                          <span>TECHNOVA PROGRESSION</span>
-                          {selectedProgress && <b>LEVEL {selectedProgress.level}</b>}
+                          <span>{selectedProgress?.progression_type === "founder" ? "TECHNOVA LEADERSHIP" : "TECHNOVA PROGRESSION"}</span>
+                          {selectedProgress && selectedProgress.progression_type !== "founder" && <b>LEVEL {selectedProgress.level}</b>}
                         </div>
                         {progressLoading && !selectedProgress ? (
                           <div className="card-progression-loading">Calculating member progress…</div>
+                        ) : selectedProgress?.progression_type === "founder" ? (
+                          <div className="founder-origin-panel">
+                            <div className="card-progression-title">{selectedProgress.level_title}</div>
+                            <p>Permanent leadership status — not earned through XP, tasks, or credits.</p>
+                            <span>Founder authority is role-based, never level-based.</span>
+                          </div>
                         ) : selectedProgress ? (
                           <>
                             <div className="card-progression-title">{selectedProgress.level_title}</div>
@@ -2128,7 +2134,12 @@ function App() {
                         <small>
                           {verifyResult.role} · {verifyResult.club}
                         </small>
-                        {verifyResult.level_title && (
+                        {verifyResult.progression_type === "founder" ? (
+                          <div className="verify-member-progress founder-origin-verify">
+                            <b>{verifyResult.level_title || "Founder · Origin Rank"}</b>
+                            <span>Permanent leadership status · Not XP-based</span>
+                          </div>
+                        ) : verifyResult.level_title && (
                           <div className="verify-member-progress">
                             <b>Level {verifyResult.level} · {verifyResult.level_title}</b>
                             <span>{Number(verifyResult.xp || 0).toLocaleString("en-IN")} XP</span>
