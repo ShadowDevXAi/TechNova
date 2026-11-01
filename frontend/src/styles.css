@@ -8421,3 +8421,62 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
 .contact-preference-row input { width:auto; }
 .contact-notification-success { color:#187447; font-size:12px; }
 .contact-notification-footnote { display:block; margin-top:12px; }
+
+
+/* Contact and alert settings — responsive layout and accessible controls */
+.contact-notification-settings,
+.contact-notification-settings * { box-sizing: border-box; }
+.contact-notification-settings { width:100%; min-width:0; overflow:hidden; }
+.contact-notification-settings .contact-notification-providers {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px;
+}
+.contact-notification-settings .contact-notification-providers span {
+  min-width:0; padding:12px; border:1px solid var(--line,rgba(148,163,184,.2));
+  border-radius:12px; background:rgba(20,38,58,.32);
+}
+.contact-notification-settings .contact-notification-providers small { overflow-wrap:anywhere; }
+.contact-notification-settings .contact-notification-note {
+  margin:12px 0; color:#f4d9a0; background:rgba(166,112,24,.14);
+  border:1px solid rgba(245,185,75,.25); border-radius:12px;
+}
+.contact-notification-settings .contact-phone-form label:not(.contact-consent) {
+  display:grid; gap:8px; width:100%; color:var(--text,#e8f1fb); font-size:12px;
+}
+.contact-notification-settings input[type="tel"],
+.contact-notification-settings input[inputmode="numeric"] {
+  width:100%; min-width:0; min-height:44px; padding:11px 13px;
+  border-radius:10px; border:1px solid var(--line,rgba(148,163,184,.28));
+  background:rgba(5,13,25,.72); color:var(--text,#e8f1fb);
+}
+.contact-notification-settings .contact-consent { display:flex!important; flex-direction:row!important; align-items:flex-start; gap:10px; }
+.contact-notification-settings .contact-consent input,
+.contact-notification-settings .contact-preference-row input {
+  flex:0 0 auto; width:18px!important; height:18px; min-height:18px; margin:2px 0 0;
+  accent-color:#55c9e8;
+}
+.contact-notification-settings .contact-preferences-form { gap:0; }
+.contact-notification-settings .contact-preference-row {
+  display:flex!important; flex-direction:row!important; align-items:center;
+  justify-content:space-between; gap:16px; width:100%; min-width:0;
+  padding:14px 4px; border-bottom:1px solid var(--line,rgba(148,163,184,.16));
+}
+.contact-notification-settings .contact-preference-row span { min-width:0; flex:1; }
+.contact-notification-settings .contact-preference-row small { line-height:1.5; }
+.contact-notification-settings button { min-height:42px; max-width:100%; }
+.contact-notification-settings button:disabled { opacity:.55; cursor:not-allowed; }
+@media (max-width:700px) {
+  .contact-notification-settings { padding:14px; border-radius:14px; }
+  .contact-notification-settings .contact-notification-providers { grid-template-columns:1fr; gap:8px; }
+  .contact-notification-settings .contact-notification-providers span { display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:12px; }
+  .contact-notification-settings .contact-notification-providers small { text-align:right; }
+  .contact-notification-settings .contact-phone-form form { max-width:none; width:100%; }
+  .contact-notification-settings .contact-phone-form button,
+  .contact-notification-settings .contact-preferences-form > button { width:100%; }
+  .contact-notification-settings .contact-verified-phone { align-items:flex-start; flex-direction:column; }
+}
+@media (max-width:380px) {
+  .contact-notification-settings { padding:11px; }
+  .contact-notification-settings .contact-notification-providers span { align-items:flex-start; flex-direction:column; }
+  .contact-notification-settings .contact-notification-providers small { text-align:left; }
+  .contact-notification-settings .contact-preference-row { gap:10px; }
+}
