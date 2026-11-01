@@ -660,6 +660,47 @@ export default function createPortalActions(context) {
     }
   }
 
+  // Purpose: Mark every unread inbox notification as read on the server.
+  // Each notification uses the same endpoint as the individual "Mark read" action.
+  async function markAllNotificationsRead() {
+    const unread = notifications.filter((item) => !item.read);
+    if (!unread.length) {
+      notify("All notifications are already marked as read.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        unread.map((item) =>
+          api("/notifications/" + item.id + "/read", token, { method: "POST" })
+        )
+      );
+      const successfulIds = new Set(
+        results.flatMap((result, index) =>
+          result.status === "fulfilled" ? [unread[index].id] : []
+        )
+      );
+      setNotifications((rows) =>
+        rows.map((row) =>
+          successfulIds.has(row.id) ? { ...row, read: true } : row
+        )
+      );
+      const failedCount = results.length - successfulIds.size;
+      if (failedCount) {
+        fail(new Error(
+          successfulIds.size + " notification(s) marked as read; " +
+          failedCount + " could not be updated. Please try again."
+        ));
+      } else {
+        notify("All " + successfulIds.size + " notifications marked as read.");
+      }
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Purpose: Mark one inbox notification as read.
   async function markNotificationRead(item) {
     try {
@@ -1059,6 +1100,7 @@ export default function createPortalActions(context) {
     reinstateMember,
     respondToCommonTask,
     markNotificationRead,
+    markAllNotificationsRead,
     uploadAttachment,
     downloadReviewAttachment,
     openTaskSubmission,
