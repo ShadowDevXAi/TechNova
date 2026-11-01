@@ -8480,3 +8480,117 @@ main,.content,.panel,.tablepanel,.task-page-compact,.task-operations-content,.ka
   .contact-notification-settings .contact-notification-providers small { text-align:left; }
   .contact-notification-settings .contact-preference-row { gap:10px; }
 }
+
+
+/* =========================================================
+   TechNova responsive polish — desktop, tablet and mobile
+   Appended intentionally so these layout refinements take
+   precedence over older component-specific declarations.
+   ========================================================= */
+:root { color-scheme: dark; }
+*, *::before, *::after { box-sizing: border-box; }
+html { min-width: 320px; scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { min-width: 320px; margin: 0; overflow-x: hidden; }
+#root { min-height: 100vh; width: 100%; overflow-x: clip; }
+img, svg, video, canvas { max-width: 100%; }
+button, input, select, textarea { font: inherit; }
+button { touch-action: manipulation; }
+input, select, textarea { min-width: 0; max-width: 100%; }
+:where(h1,h2,h3,h4,p,small,b,strong,span,label,code) { overflow-wrap: anywhere; }
+.shell { width: 100%; min-height: 100vh; min-width: 0; }
+.shell > main { min-width: 0; width: auto; max-width: 100%; }
+.shell > main > header { min-width: 0; }
+.shell > main > .content { min-width: 0; width: 100%; max-width: 100%; }
+.content > * { min-width: 0; max-width: 100%; }
+.content :where(.panel,.card,.settings,.tablepanel,.team,.verify) { min-width: 0; }
+.content :where(table) { max-width: 100%; }
+.content :where(pre, code) { overflow-wrap: anywhere; }
+.content :where(button,a) { -webkit-tap-highlight-color: transparent; }
+.content :where(input,select,textarea) { min-height: 42px; }
+.content :where(textarea) { resize: vertical; }
+:where(.panel,.settings,.tablepanel,.verify,.team,.authcard,.two-factor-settings,.storage-settings,.contact-notification-settings) {
+  border-radius: 16px;
+}
+:where(.panel,.settings,.tablepanel,.verify,.team) { min-width: 0; }
+:where(.grid,.stats,.cards,.overview-grid,.dashboard-grid) > * { min-width: 0; }
+:where(.overflow,.table-wrap,.table-scroll,.responsive-table) {
+  max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+:where(button,a,input,select,textarea,[tabindex]):focus-visible {
+  outline: 2px solid #54d7f2; outline-offset: 2px;
+}
+button:disabled { cursor: not-allowed; }
+@media (hover:hover) and (pointer:fine) {
+  .content button:not(:disabled) { transition: transform .16s ease, filter .16s ease, border-color .16s ease; }
+  .content button:not(:disabled):hover { filter: brightness(1.08); }
+}
+@media (max-width:1100px) {
+  .shell > main { min-width: 0; }
+  .shell > main > .content { padding-left: clamp(14px,2.4vw,24px); padding-right: clamp(14px,2.4vw,24px); }
+  .content :where(.stats,.overview-stats,.dashboard-stats) { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:760px) {
+  html, body, #root { width: 100%; overflow-x: hidden; }
+  .shell { display: block; width: 100%; min-height: 100dvh; }
+  .shell > main { width: 100%; max-width: 100%; margin: 0; }
+  .shell > main > header {
+    position: sticky; top: 0; z-index: 30; width: 100%; min-height: 58px;
+    gap: 9px; padding: 9px 12px; flex-wrap: nowrap;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  }
+  .shell > main > header .crumb { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shell > main > header .topright { min-width: 0; flex: 0 0 auto; gap: 8px; }
+  .shell > main > header .topright .search { display: none; }
+  .shell > main > header .system-status { display: none; }
+  .shell > main > header .avatar { flex: 0 0 auto; }
+  .shell > main > .content {
+    width: 100%; padding: 14px 12px 28px; margin: 0;
+    overflow-x: clip;
+  }
+  .sidebar { z-index: 60; height: 100dvh; max-height: 100dvh; overflow-y: auto; overscroll-behavior: contain; }
+  .sidebar-backdrop { z-index: 55; }
+  .sidebottom { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+  .content :where(.hero,.panelhead,.sectionhead,.pagehead) { min-width: 0; flex-wrap: wrap; gap: 12px; }
+  .content :where(.hero h1) { font-size: clamp(28px,7vw,42px); line-height: 1.08; }
+  .content :where(.stats,.overview-stats,.dashboard-stats) { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  .content :where(.card-grid,.cards-grid,.overview-grid,.dashboard-grid) { grid-template-columns: minmax(0,1fr); }
+  .content :where(.panel,.settings,.tablepanel,.verify,.team) { padding: 14px; border-radius: 14px; }
+  .content :where(.panelhead button,.sectionhead button,.pagehead button) { max-width: 100%; }
+  .content :where(.toolbar,.actions,.filters,.button-row) { flex-wrap: wrap; gap: 8px; }
+  .content :where(.toolbar button,.actions button,.button-row button) { min-height: 42px; }
+  .content :where(.modal,.dialog,.drawer) { width: min(100% - 20px, 620px); max-width: calc(100vw - 20px); max-height: calc(100dvh - 24px); overflow-y: auto; }
+  .authscreen { min-height: 100dvh; padding: 22px 14px max(22px,env(safe-area-inset-bottom)); }
+  .authcard { width: min(100%, 480px); max-width: 100%; padding: clamp(18px,5vw,26px); }
+  .authcard h1 { font-size: clamp(26px,7vw,36px); }
+  .authcard form { width: 100%; }
+  .authcard :where(input,select,textarea,button) { width: 100%; min-height: 44px; }
+  .authswitch { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+  .authswitch button { width: auto; }
+}
+@media (max-width:520px) {
+  .shell > main > header { padding-left: 10px; padding-right: 10px; }
+  .shell > main > header .crumb { font-size: 12px; }
+  .shell > main > header .topright .avatar { width: 32px; height: 32px; }
+  .shell > main > .content { padding: 11px 9px 24px; }
+  .content :where(.stats,.overview-stats,.dashboard-stats) { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .content :where(.panel,.settings,.tablepanel,.verify,.team) { padding: 12px; }
+  .content :where(button,.primary,.secondary) { min-height: 42px; }
+  .content :where(input,select,textarea) { font-size: 16px; }
+  .content :where(.form-grid,.form-row,.two-column,.split-layout) { grid-template-columns: minmax(0,1fr); }
+  .content :where(.modal,.dialog,.drawer) { width: calc(100vw - 14px); max-width: calc(100vw - 14px); }
+  .two-factor-recovery-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:360px) {
+  .shell > main > header .crumb { font-size: 11px; }
+  .shell > main > header .topright { gap: 5px; }
+  .shell > main > .content { padding-left: 7px; padding-right: 7px; }
+  .content :where(.stats,.overview-stats,.dashboard-stats) { gap: 6px; }
+  .content :where(.panel,.settings,.tablepanel,.verify,.team) { padding: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .content :where(.panel,.card,.settings,.tablepanel) { transition: border-color .18s ease, box-shadow .18s ease; }
+}
