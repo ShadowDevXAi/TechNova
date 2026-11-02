@@ -10687,3 +10687,235 @@ button:disabled { cursor: not-allowed; }
   }
   .task-page-compact .kanban-task-card h3 { font-size: 16px !important; }
 }
+
+
+/* TechNova mobile Kanban carousel — final override.
+   Swipe between workflow stages, then swipe cards inside the selected stage. */
+@media (max-width: 760px) {
+  .task-page-compact .kanban-task-board {
+    overflow: hidden !important;
+  }
+
+  .task-page-compact .kanban-mobile-nav {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    padding: 10px 15px 15px !important;
+  }
+  .task-page-compact .kanban-mobile-nav > span {
+    color: #9bb4cc !important;
+    font-size: 11px !important;
+    font-weight: 650 !important;
+    letter-spacing: .01em !important;
+  }
+  .task-page-compact .kanban-mobile-nav > div {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    gap: 8px !important;
+  }
+  .task-page-compact .kanban-mobile-nav button {
+    display: grid !important;
+    place-items: center !important;
+    width: 42px !important;
+    height: 42px !important;
+    padding: 0 !important;
+    border: 1px solid rgba(94, 205, 232, .32) !important;
+    border-radius: 13px !important;
+    background: linear-gradient(145deg, rgba(34, 102, 132, .42), rgba(14, 39, 61, .92)) !important;
+    color: #b8f2ff !important;
+    font-size: 25px !important;
+    line-height: 1 !important;
+    box-shadow: inset 0 1px rgba(255,255,255,.07), 0 5px 14px rgba(0,0,0,.16) !important;
+  }
+
+  /* The four workflow stages form one horizontal carousel. */
+  .task-page-compact .kanban-lanes {
+    display: flex !important;
+    flex-flow: row nowrap !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 3px 12px 18px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-x: contain !important;
+    scroll-snap-type: x mandatory !important;
+    scroll-padding-inline: 12px !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(83, 202, 231, .52) rgba(8, 25, 42, .65) !important;
+    touch-action: pan-x pan-y !important;
+  }
+  .task-page-compact .kanban-lanes::-webkit-scrollbar {
+    display: block !important;
+    height: 4px !important;
+  }
+  .task-page-compact .kanban-lanes::-webkit-scrollbar-thumb {
+    border-radius: 99px !important;
+    background: rgba(83, 202, 231, .58) !important;
+  }
+
+  .task-page-compact .kanban-lane {
+    display: flex !important;
+    flex: 0 0 min(88%, 440px) !important;
+    flex-direction: column !important;
+    align-self: stretch !important;
+    width: min(88%, 440px) !important;
+    min-width: min(88%, 440px) !important;
+    max-width: min(88%, 440px) !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 14px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(104, 198, 228, .27) !important;
+    border-radius: 19px !important;
+    background:
+      radial-gradient(ellipse at 0 0, rgba(61, 190, 222, .13), transparent 54%),
+      linear-gradient(155deg, #122940 0%, #0a192a 100%) !important;
+    box-shadow: 0 12px 28px rgba(0,0,0,.2), inset 0 1px rgba(255,255,255,.045) !important;
+    scroll-snap-align: start !important;
+    scroll-snap-stop: always !important;
+  }
+
+  .task-page-compact .kanban-lane-heading {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    gap: 9px !important;
+    min-height: 46px !important;
+    padding: 0 1px 12px !important;
+    border-bottom: 1px solid rgba(132, 177, 211, .19) !important;
+  }
+  .task-page-compact .kanban-lane-heading b {
+    flex: 1 1 auto !important;
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    color: #f1f8ff !important;
+  }
+  .task-page-compact .kanban-lane-count {
+    min-width: 30px !important;
+    height: 30px !important;
+    border-radius: 11px !important;
+    background: rgba(84, 179, 211, .16) !important;
+    border: 1px solid rgba(106, 204, 231, .22) !important;
+    color: #d9f8ff !important;
+  }
+  .task-page-compact .kanban-lane-card-nav {
+    display: flex !important;
+    gap: 5px !important;
+    margin-left: 2px !important;
+  }
+  .task-page-compact .kanban-lane-card-nav button {
+    display: grid !important;
+    place-items: center !important;
+    width: 30px !important;
+    height: 30px !important;
+    padding: 0 !important;
+    border: 1px solid rgba(94, 190, 220, .25) !important;
+    border-radius: 9px !important;
+    background: rgba(24, 75, 101, .42) !important;
+    color: #b7effb !important;
+    font-size: 19px !important;
+    line-height: 1 !important;
+  }
+  .task-page-compact .kanban-lane-card-nav button:disabled {
+    opacity: .28 !important;
+  }
+
+  /* Task cards are a second horizontal carousel inside each stage. */
+  .task-page-compact .kanban-lane-cards {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-flow: row nowrap !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 2px 1px 10px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-x: contain !important;
+    scroll-snap-type: x mandatory !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(83, 202, 231, .5) rgba(8, 25, 42, .55) !important;
+    touch-action: pan-x pan-y !important;
+  }
+  .task-page-compact .kanban-lane-cards::-webkit-scrollbar {
+    display: block !important;
+    height: 4px !important;
+  }
+  .task-page-compact .kanban-lane-cards::-webkit-scrollbar-thumb {
+    border-radius: 99px !important;
+    background: rgba(83, 202, 231, .55) !important;
+  }
+  .task-page-compact .kanban-lane-cards > .kanban-task-card,
+  .task-page-compact .kanban-lane-cards > .kanban-lane-empty {
+    display: flex !important;
+    flex: 0 0 100% !important;
+    flex-direction: column !important;
+    align-self: stretch !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 16px !important;
+    border: 1px solid rgba(118, 183, 220, .25) !important;
+    border-radius: 16px !important;
+    background: linear-gradient(150deg, #1a3049 0%, #10243a 100%) !important;
+    box-shadow: 0 8px 20px rgba(0,0,0,.19), inset 0 1px rgba(255,255,255,.04) !important;
+    scroll-snap-align: start !important;
+    scroll-snap-stop: always !important;
+    writing-mode: horizontal-tb !important;
+    overflow-wrap: anywhere !important;
+    touch-action: pan-y !important;
+  }
+  .task-page-compact .kanban-task-card,
+  .task-page-compact .kanban-task-card * {
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    writing-mode: horizontal-tb !important;
+    word-break: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+  .task-page-compact .kanban-task-card h3 {
+    width: 100% !important;
+    font-size: 17px !important;
+    line-height: 1.42 !important;
+    white-space: normal !important;
+  }
+  .task-page-compact .kanban-task-card > p {
+    font-size: 12px !important;
+    line-height: 1.65 !important;
+  }
+  .task-page-compact .kanban-task-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .task-page-compact .kanban-lane {
+    flex-basis: calc(100% - 4px) !important;
+    width: calc(100% - 4px) !important;
+    min-width: calc(100% - 4px) !important;
+    max-width: calc(100% - 4px) !important;
+  }
+  .task-page-compact .kanban-task-card h3 {
+    font-size: 16px !important;
+  }
+}
