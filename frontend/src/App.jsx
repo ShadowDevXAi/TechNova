@@ -1660,8 +1660,8 @@ function App() {
                 <div className="kanban-mobile-nav">
                   <span>Swipe to view all stages</span>
                   <div>
-                    <button type="button" aria-label="Previous task column" onClick={(e) => e.currentTarget.closest(".kanban-task-board")?.querySelector(".kanban-lanes")?.scrollBy({ left: -260, behavior: "smooth" })}>‹</button>
-                    <button type="button" aria-label="Next task column" onClick={(e) => e.currentTarget.closest(".kanban-task-board")?.querySelector(".kanban-lanes")?.scrollBy({ left: 260, behavior: "smooth" })}>›</button>
+                    <button type="button" aria-label="Previous task column" onClick={(e) => { const lanes = e.currentTarget.closest(".kanban-task-board")?.querySelector(".kanban-lanes"); if (lanes) lanes.scrollBy({ left: -Math.max(260, lanes.clientWidth * 0.88), behavior: "smooth" }); }}>‹</button>
+                    <button type="button" aria-label="Next task column" onClick={(e) => { const lanes = e.currentTarget.closest(".kanban-task-board")?.querySelector(".kanban-lanes"); if (lanes) lanes.scrollBy({ left: Math.max(260, lanes.clientWidth * 0.88), behavior: "smooth" }); }}>›</button>
                   </div>
                 </div>
                 <div className="kanban-lanes">
