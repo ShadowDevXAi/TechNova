@@ -45,39 +45,65 @@ async def register(data: RegisterIn, request: Request):
     except DuplicateKeyError:
         raise HTTPException(409, "Could not allocate member ID; please retry")
 
+    # Issue both a one-time link and a six-digit code in the same email.
     verification_token = secrets.token_urlsafe(32)
+    verification_code = f"{secrets.randbelow(1_000_000):06d}"
+    verification_now = utcnow()
     await db.email_verifications.insert_one({
         "user_id": result.inserted_id,
         "token_hash": token_hash(verification_token),
-        "created_at": utcnow(),
-        "expires_at": utcnow() + timedelta(hours=24),
+        "code_hash": token_hash(verification_code),
+        "code_expires_at": verification_now + timedelta(minutes=10),
+        "created_at": verification_now,
+        "expires_at": verification_now + timedelta(hours=24),
     })
     verification_url = settings.public_app_url.rstrip("/") + "/?verify_email=" + verification_token
+    email_body = (
+        "Welcome to TechNova! Verify this email address to continue your club registration.\n\n"
+        "OPTION 1 — Verify with this secure link (valid for 24 hours):\n"
+        + verification_url
+        + "\n\nOPTION 2 — Enter this six-digit code on the TechNova sign-in page (valid for 10 minutes):\n"
+        + verification_code
+        + "\n\nIf you did not register, you can ignore this email."
+    )
+    email_delivery = {"status": "failed", "updated_at": utcnow()}
     try:
-        await asyncio.to_thread(
+        receipt = await asyncio.to_thread(
             send_email_message,
             email,
             "Verify your TechNova email address",
-            "Welcome to TechNova. Verify this email address to continue your club registration:\n\n"
-            + verification_url
-            + "\n\nThis link expires in 24 hours. If you did not register, you can ignore this email.",
+            email_body,
         )
-        email_delivery_status = "sent"
+        email_delivery = {
+            "status": "sent",
+            "provider": receipt.get("provider", "Brevo HTTPS API"),
+            "message_id": receipt.get("message_id"),
+            "updated_at": utcnow(),
+        }
     except Exception as exc:
-        email_delivery_status = "failed"
-        logger.error("Registration verification email failed (user_id=%s error_type=%s)", result.inserted_id, type(exc).__name__)
+        # Keep the pending account and hashed verification challenges so the member can retry.
+        logger.exception(
+            "Registration verification email failed (user_id=%s provider=%s error_type=%s)",
+            result.inserted_id,
+            smtp_configuration_status().get("provider"),
+            type(exc).__name__,
+        )
 
-    # Keep the receipt in the in-app inbox without sending a duplicate email before verification.
+    # Persist the actual delivery outcome instead of displaying a false success message.
     await db.notifications.insert_one({
         "user_id": result.inserted_id,
         "type": "registration_received",
         "title": "Verify your TechNova email",
-        "message": "A verification link was sent to your email if delivery is configured. Verify it before account approval.",
+        "message": (
+            "Verification email sent. Use the link or six-digit code in your inbox."
+            if email_delivery["status"] == "sent"
+            else "Your account was created, but the verification email could not be delivered. Use Resend verification email after email settings are corrected."
+        ),
         "task_id": None,
         "common_task_id": None,
         "read_at": None,
         "created_at": utcnow(),
-        "email_delivery": {"status": "skipped_verification_pending", "updated_at": utcnow()},
+        "email_delivery": email_delivery,
         "sms_delivery": {"status": "skipped_not_enabled", "updated_at": utcnow()},
     })
     managers = await db.users.find({
@@ -91,8 +117,17 @@ async def register(data: RegisterIn, request: Request):
             f'{doc["name"]} ({doc["member_id"]}) has registered and is waiting for TechNova account approval.',
             "registration_pending",
         )
-    await audit(None,"registration_submitted",str(result.inserted_id),{"email":email},request)
-    return {"message":"Registration received. Check your inbox to verify your email. After verification, a club administrator must approve your account before you can sign in.","member_id":doc["member_id"]}
+    await audit(None,"registration_submitted",str(result.inserted_id),{"email":email,"email_delivery":email_delivery["status"]},request)
+    if email_delivery["status"] != "sent":
+        raise HTTPException(
+            502,
+            "Your TechNova account was created, but the verification email could not be sent. Check the email address, then use Resend verification email after the Founder fixes Brevo email settings.",
+        )
+    return {
+        "message": "Registration received. A verification email containing both a secure link and a six-digit code has been sent. Verify your email, then wait for administrator approval.",
+        "member_id": doc["member_id"],
+        "email_delivery": email_delivery["status"],
+    }
 
 # Purpose: login handles the auth feature flow and returns its API result.
 @router.post("/api/auth/login")
@@ -609,77 +644,137 @@ async def remove_verified_phone(request: Request, user: dict = Depends(get_curre
     return {"message": "Phone number removed and SMS alerts disabled."}
 
 
-# Purpose: Resend a fresh expiring verification link without revealing whether an email is registered.
+# Purpose: Resend both verification methods while preserving account-enumeration protection.
 @router.post("/api/auth/email-verification/resend")
 @limiter.limit("3/hour")
 async def resend_email_verification(body: dict, request: Request):
     email = str(body.get("email") or "").strip().lower()
-    response = {"message": "If this account needs verification, a new link will be sent when email delivery is available."}
+    response = {"message": "If this account needs verification, a new email will be sent when delivery is available."}
     if not email or len(email) > 320:
         return response
+
     user = await db.users.find_one({
         "email": email,
         "email_verification_required": True,
         "email_verified_at": None,
         "status": {"$ne": "Suspended"},
     })
-    if not user or not smtp_configuration_status()["configured"]:
+    if not user:
         return response
+
+    configuration = smtp_configuration_status()
+    if not configuration["configured"]:
+        logger.error(
+            "Verification resend blocked: email provider is not configured (user_id=%s missing=%s)",
+            user["_id"], configuration.get("missing", []),
+        )
+        raise HTTPException(
+            503,
+            "TechNova email delivery is not configured. Ask the Founder to configure BREVO_API_KEY and a verified SMTP_FROM_EMAIL sender in the backend Render environment.",
+        )
+
     verification_token = secrets.token_urlsafe(32)
+    verification_code = f"{secrets.randbelow(1_000_000):06d}"
+    now = utcnow()
     await db.email_verifications.delete_many({"user_id": user["_id"]})
     await db.email_verifications.insert_one({
         "user_id": user["_id"],
         "token_hash": token_hash(verification_token),
-        "created_at": utcnow(),
-        "expires_at": utcnow() + timedelta(hours=24),
+        "code_hash": token_hash(verification_code),
+        "code_expires_at": now + timedelta(minutes=10),
+        "created_at": now,
+        "expires_at": now + timedelta(hours=24),
     })
     verification_url = settings.public_app_url.rstrip("/") + "/?verify_email=" + verification_token
+    email_body = (
+        "Use either method to verify your TechNova email address.\n\n"
+        "OPTION 1 — Secure verification link (valid for 24 hours):\n"
+        + verification_url
+        + "\n\nOPTION 2 — Six-digit verification code (valid for 10 minutes):\n"
+        + verification_code
+        + "\n\nRequesting a new email invalidates any older link and code."
+    )
     try:
-        await asyncio.to_thread(
+        receipt = await asyncio.to_thread(
             send_email_message,
             email,
-            "Verify your TechNova email address",
-            "Use this link to verify your TechNova account email address:\n\n"
-            + verification_url
-            + "\n\nThis link expires in 24 hours. If you did not request it, ignore this email.",
+            "Your TechNova email verification",
+            email_body,
         )
     except Exception as exc:
-        logger.error("Email verification resend failed (user_id=%s error_type=%s)", user["_id"], type(exc).__name__)
-        return response
-    await audit(None, "email_verification_resent", str(user["_id"]), {}, request)
-    return response
+        logger.exception(
+            "Email verification resend failed (user_id=%s provider=%s error_type=%s)",
+            user["_id"], configuration.get("provider"), type(exc).__name__,
+        )
+        await db.email_verifications.delete_many({"user_id": user["_id"]})
+        raise HTTPException(
+            502,
+            "Brevo could not deliver the verification email. Check the backend Render logs and Brevo sender/API-key permissions, then try again.",
+        ) from exc
+
+    await audit(None, "email_verification_resent", str(user["_id"]), {
+        "provider": receipt.get("provider", configuration.get("provider")),
+        "message_id": receipt.get("message_id"),
+    }, request)
+    return {
+        "message": "A new verification email containing both a link and a six-digit code has been accepted by the email provider. Check your inbox and spam folder.",
+        "delivery": "accepted",
+    }
 
 
-# Purpose: Confirm a single-use email verification token and unlock the account approval flow.
+# Purpose: Verify email using either the secure link token or the six-digit email code.
 @router.post("/api/auth/email-verification/confirm")
 @limiter.limit("10/hour")
 async def confirm_email_verification(body: dict, request: Request):
     raw_token = str(body.get("token") or "").strip()
-    if len(raw_token) < 30 or len(raw_token) > 200:
-        raise HTTPException(422, "A valid email verification link is required.")
-    record = await db.email_verifications.find_one({
-        "token_hash": token_hash(raw_token),
-        "expires_at": {"$gt": utcnow()},
-    })
-    if not record:
-        raise HTTPException(400, "This email verification link is invalid or expired. Request a new one from the sign-in screen.")
-    consumed = await db.email_verifications.delete_one({
-        "_id": record["_id"],
-        "expires_at": {"$gt": utcnow()},
-    })
+    raw_code = str(body.get("code") or "").strip()
+    email = str(body.get("email") or "").strip().lower()
+
+    if raw_token:
+        if len(raw_token) < 30 or len(raw_token) > 200:
+            raise HTTPException(422, "A valid email verification link is required.")
+        record = await db.email_verifications.find_one({
+            "token_hash": token_hash(raw_token),
+            "expires_at": {"$gt": utcnow()},
+        })
+        if not record:
+            raise HTTPException(400, "This email verification link is invalid or expired. Request a new email.")
+    else:
+        if not email or len(email) > 320 or not re.fullmatch(r"[0-9]{6}", raw_code):
+            raise HTTPException(422, "Enter the email address and the six-digit verification code.")
+        user = await db.users.find_one({
+            "email": email,
+            "email_verification_required": True,
+            "email_verified_at": None,
+        })
+        if not user:
+            raise HTTPException(400, "No pending email verification was found for that address.")
+        record = await db.email_verifications.find_one({
+            "user_id": user["_id"],
+            "code_hash": token_hash(raw_code),
+            "code_expires_at": {"$gt": utcnow()},
+        })
+        if not record:
+            raise HTTPException(400, "The six-digit code is incorrect or expired. Request a new verification email.")
+
+    # Consume the challenge atomically so a link/code cannot be reused.
+    consumed = await db.email_verifications.delete_one({"_id": record["_id"]})
     if consumed.deleted_count != 1:
-        raise HTTPException(409, "This email verification link has already been used.")
+        raise HTTPException(409, "This verification method has already been used. Request a new email.")
     user = await db.users.find_one({"_id": record["user_id"]})
     if not user:
         raise HTTPException(404, "TechNova account not found.")
     await db.users.update_one(
-        {"_id": user["_id"]},
+        {"_id": user["_id"], "email_verified_at": None},
         {"$set": {"email_verified_at": utcnow(), "email_verification_required": False}},
     )
-    await audit(None, "email_verified", str(user["_id"]), {}, request)
+    await audit(None, "email_verified", str(user["_id"]), {
+        "method": "link" if raw_token else "code",
+    }, request)
     return {
         "message": "Email verified successfully. Your TechNova account is waiting for administrator approval.",
         "member_id": user.get("member_id", ""),
+        "method": "link" if raw_token else "code",
     }
 
 
