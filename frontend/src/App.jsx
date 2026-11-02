@@ -791,7 +791,7 @@ function App() {
                     maxLength={6}
                     required
                     value={emailVerificationCode}
-                    onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\\D/g, "").slice(0, 6))}
+                    onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     placeholder="000000"
                   />
                 </label>
@@ -946,6 +946,16 @@ function App() {
               </>
             )}
           </div>
+          {authMode === "verify-email" && (
+            <button
+              className="auth-link-button"
+              type="button"
+              onClick={resendEmailVerification}
+              disabled={verificationResendBusy}
+            >
+              {verificationResendBusy ? "Sending a new code…" : "Resend verification link and code"}
+            </button>
+          )}
           <div className="authhint">
             Public registration creates a pending Member account. Founder/Core
             roles can only be granted by authorized club management.
