@@ -1658,7 +1658,7 @@ function App() {
                   <span className="common-task-count">{filteredTaskRows.length} tasks</span>
                 </div>
                 <div className="kanban-mobile-nav">
-                  <span>Swipe to view all stages</span>
+                  <span>Swipe cards sideways in each stage</span>
                   <div>
                     <button type="button" aria-label="Previous task column" onClick={(e) => { const lanes = e.currentTarget.closest(".kanban-task-board")?.querySelector(".kanban-lanes"); if (lanes) lanes.scrollBy({ left: -Math.max(260, lanes.clientWidth * 0.88), behavior: "smooth" }); }}>‹</button>
                     <button type="button" aria-label="Next task column" onClick={(e) => { const lanes = e.currentTarget.closest(".kanban-task-board")?.querySelector(".kanban-lanes"); if (lanes) lanes.scrollBy({ left: Math.max(260, lanes.clientWidth * 0.88), behavior: "smooth" }); }}>›</button>
@@ -1678,6 +1678,10 @@ function App() {
                           <span className="kanban-lane-dot" />
                           <b>{lane.title}</b>
                           <span className="kanban-lane-count">{laneTasks.length}</span>
+                          <div className="kanban-lane-card-nav" aria-label={lane.title + " task navigation"}>
+                            <button type="button" aria-label={"Previous " + lane.title + " task"} disabled={laneTasks.length < 2} onClick={(e) => { const cards = e.currentTarget.closest(".kanban-lane")?.querySelector(".kanban-lane-cards"); if (cards) cards.scrollBy({ left: -Math.max(250, cards.clientWidth * 0.82), behavior: "smooth" }); }}>‹</button>
+                            <button type="button" aria-label={"Next " + lane.title + " task"} disabled={laneTasks.length < 2} onClick={(e) => { const cards = e.currentTarget.closest(".kanban-lane")?.querySelector(".kanban-lane-cards"); if (cards) cards.scrollBy({ left: Math.max(250, cards.clientWidth * 0.82), behavior: "smooth" }); }}>›</button>
+                          </div>
                         </header>
                         <div className="kanban-lane-cards">
                           {laneTasks.map((t) => (
