@@ -1685,7 +1685,7 @@ function App() {
                         </header>
                         <div className="kanban-lane-cards">
                           {laneTasks.map((t) => (
-                            <article className="kanban-task-card" key={t.id} role="button" tabIndex={0} aria-label={`View details for ${t.title}`} onClick={() => setSelectedTaskDetail(t)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedTaskDetail(t); } }}>
+                            <article className="kanban-task-card" key={t.id} role="button" tabIndex={0} aria-label={`View full details for ${t.title}`} onClick={(e) => { if (e.target.closest("button, select, label, input, a")) return; setSelectedTaskDetail(t); }} onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedTaskDetail(t); } }}>
                               <div className="kanban-task-top">
                                 <small>{t.id.slice(-6)} · {t.project || "Club project"}</small>
                                 <span className={"pill " + (t.priority || "Medium").toLowerCase()}>{t.priority || "Medium"}</span>
@@ -1727,6 +1727,7 @@ function App() {
                                 </label>
                               )}
                               <div className="kanban-card-actions">
+                                <span className="kanban-open-details-hint">Tap card to view all details ↗</span>
                                 <button className="textbtn" onClick={async () => {
                                   const comment = prompt("Add a task comment");
                                   if (comment) {
@@ -1790,6 +1791,15 @@ function App() {
                         <span><b>Reward</b>{selectedTaskDetail.status === "Done" ? (selectedTaskDetail.credits_awarded || 0) : (selectedTaskDetail.credits_reward || 5)} credits</span>
                         <span><b>Project</b>{selectedTaskDetail.project || "Club project"}</span>
                         <span><b>Language</b>{selectedTaskDetail.programming_language || "General"}</span>
+                        <span><b>Task ID</b>{selectedTaskDetail.id || "Not available"}</span>
+                        <span><b>Task state</b>{selectedTaskDetail.task_state || "Active"}</span>
+                        {selectedTaskDetail.recurrence && <span><b>Schedule</b>{selectedTaskDetail.recurrence}</span>}
+                        {selectedTaskDetail.auto_generated !== undefined && <span><b>Generated automatically</b>{selectedTaskDetail.auto_generated ? "Yes" : "No"}</span>}
+                        {selectedTaskDetail.generation_source && <span><b>Generation source</b>{selectedTaskDetail.generation_source}</span>}
+                        {selectedTaskDetail.created_at && <span><b>Created</b>{new Date(selectedTaskDetail.created_at).toLocaleString()}</span>}
+                        {selectedTaskDetail.updated_at && <span><b>Last updated</b>{new Date(selectedTaskDetail.updated_at).toLocaleString()}</span>}
+                        {selectedTaskDetail.credits_awarded !== undefined && <span><b>Credits awarded</b>{selectedTaskDetail.credits_awarded}</span>}
+                        {selectedTaskDetail.completion_confirmed_by_name && <span><b>Completion confirmed by</b>{selectedTaskDetail.completion_confirmed_by_name}</span>}
                         {selectedTaskDetail.submitted_at && <span><b>Submitted</b>{new Date(selectedTaskDetail.submitted_at).toLocaleString()}</span>}
                         {selectedTaskDetail.submission_attested !== undefined && <span><b>Member attestation</b>{selectedTaskDetail.submission_attested ? "Confirmed" : "Missing"}</span>}
                         {selectedTaskDetail.accepted_count !== undefined && <span><b>Accepted</b>{selectedTaskDetail.accepted_count ?? selectedTaskDetail.accepted_members?.length ?? 0} members</span>}
