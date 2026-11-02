@@ -93,6 +93,7 @@ function App() {
   const [error, setError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [verificationResendBusy, setVerificationResendBusy] = useState(false);
+  const [emailVerificationCode, setEmailVerificationCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [authMode, setAuthMode] = useState("login");
@@ -157,7 +158,32 @@ function App() {
     setError(e.requestId ? message + " (Error ID: " + e.requestId + ")" : message);
   };
 
-  // Purpose: Ask for a new email verification link without exposing account existence.
+  // Purpose: Verify a pending member account using the six-digit code delivered by Brevo.
+  async function confirmEmailCode(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    setAuthNotice("");
+    try {
+      const result = await api("/auth/email-verification/confirm", "", {
+        method: "POST",
+        body: JSON.stringify({
+          email: auth.email.trim(),
+          code: emailVerificationCode.trim(),
+        }),
+      });
+      setAuthNotice(result.message || "Email verified. Wait for administrator approval.");
+      setEmailVerificationCode("");
+      setAuthMode("login");
+      setAuth((current) => ({ ...current, password: "" }));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Purpose: Ask for a fresh email containing both a link and an OTP, without exposing account existence.
   async function resendEmailVerification() {
     if (!auth.email.trim()) {
       setError("Enter your email address first.");
@@ -735,10 +761,38 @@ function App() {
                 ? resetToken
                   ? confirmReset
                   : requestReset
+                : authMode === "verify-email"
+                ? confirmEmailCode
                 : login
             }
           >
-            {authMode === "reset" ? (
+            {authMode === "verify-email" ? (
+              <>
+                <label>
+                  Email address
+                  <input
+                    type="email"
+                    required
+                    value={auth.email}
+                    onChange={(e) => setAuth({ ...auth, email: e.target.value })}
+                    placeholder="you@example.com"
+                  />
+                </label>
+                <label>
+                  Six-digit email verification code
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    required
+                    value={emailVerificationCode}
+                    onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\\D/g, "").slice(0, 6))}
+                    placeholder="000000"
+                  />
+                </label>
+              </>
+            ) : authMode === "reset" ? (
               <>
                 {!resetToken && (
                   <label>
@@ -841,6 +895,8 @@ function App() {
                 ? "Sign in"
                 : authMode === "register"
                 ? "Submit registration"
+                : authMode === "verify-email"
+                ? "Verify email address"
                 : resetToken
                 ? "Set new password"
                 : "Request reset token"}
@@ -863,6 +919,12 @@ function App() {
             </button>{" "}
             {authMode === "login" && (
               <>
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode("verify-email"); setError(""); setAuthNotice(""); }}
+                >
+                  Verify with six-digit code
+                </button>
                 <button type="button" onClick={resendEmailVerification} disabled={verificationResendBusy}>
                   {verificationResendBusy ? "Sending…" : "Resend verification email"}
                 </button>
