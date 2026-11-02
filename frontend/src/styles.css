@@ -11025,3 +11025,38 @@ button:disabled { cursor: not-allowed; }
     max-width: 94% !important;
   }
 }
+
+
+/* Keep open daily mission cards compact too; the shared detail dialog remains full-size. */
+.task-page-compact .common-task-card {
+  padding: 14px !important;
+}
+.task-page-compact .common-task-card h3 {
+  margin: 9px 0 6px !important;
+  font-size: 15px !important;
+  line-height: 1.35 !important;
+}
+.task-page-compact .common-task-card > p {
+  margin: 0 0 8px !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+}
+.common-task-open-hint {
+  display: block !important;
+  margin: 5px 0 9px !important;
+  color: #8ebbd0 !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+}
+@media (max-width: 760px) {
+  .task-page-compact .common-task-card {
+    padding: 12px !important;
+    border-radius: 14px !important;
+  }
+  .task-page-compact .common-task-card h3 {
+    font-size: 14px !important;
+  }
+  .task-page-compact .common-task-card > p {
+    font-size: 10.5px !important;
+  }
+}
