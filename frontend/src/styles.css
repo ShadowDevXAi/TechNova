@@ -11230,3 +11230,109 @@ button:disabled { cursor: not-allowed; }
     transform: none;
   }
 }
+
+/* Unified task-card sizing: apply to every task card wherever it is rendered. */
+.kanban-task-card,
+.common-task-card {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  padding: 12px !important;
+  border-radius: 13px !important;
+  overflow-wrap: anywhere;
+}
+.kanban-task-card h3,
+.common-task-card h3 {
+  margin: 8px 0 6px !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  overflow-wrap: anywhere;
+}
+.kanban-task-card > p,
+.common-task-card > p {
+  margin: 0 0 9px !important;
+  font-size: 10px !important;
+  line-height: 1.55 !important;
+  min-height: 0 !important;
+}
+.kanban-task-details {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px !important;
+  padding: 9px !important;
+}
+.kanban-task-details span { min-width: 0; overflow-wrap: anywhere; }
+.kanban-card-actions { gap: 7px !important; }
+.common-task-actions { gap: 7px !important; }
+@media (min-width: 761px) {
+  .kanban-lanes {
+    display: flex;
+    flex-flow: row nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .kanban-lane {
+    flex: 0 0 clamp(245px, 27vw, 320px);
+    min-width: 245px;
+    max-width: 320px;
+  }
+  .kanban-lane-cards {
+    min-width: 0;
+    overflow-y: auto;
+  }
+  .kanban-task-card,
+  .common-task-card { padding: 11px !important; }
+}
+@media (max-width: 760px) {
+  .kanban-lanes {
+    display: flex !important;
+    flex-flow: row nowrap !important;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+  .kanban-lane {
+    flex: 0 0 min(86vw, 390px) !important;
+    width: min(86vw, 390px) !important;
+    min-width: min(86vw, 390px) !important;
+    max-width: min(86vw, 390px) !important;
+    max-height: none !important;
+    scroll-snap-align: start;
+  }
+  .kanban-lane-cards {
+    display: flex !important;
+    flex-flow: row nowrap !important;
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+  .kanban-lane-cards > .kanban-task-card {
+    flex: 0 0 94% !important;
+    width: 94% !important;
+    min-width: 94% !important;
+    max-width: 94% !important;
+    scroll-snap-align: start;
+    padding: 11px !important;
+  }
+  .kanban-task-card h3,
+  .common-task-card h3 { font-size: 13px !important; }
+  .kanban-task-card > p,
+  .common-task-card > p { font-size: 10px !important; }
+}
+@media (max-width: 420px) {
+  .kanban-lane {
+    flex-basis: 88vw !important;
+    width: 88vw !important;
+    min-width: 88vw !important;
+    max-width: 88vw !important;
+  }
+  .kanban-task-details { gap: 6px !important; padding: 8px !important; }
+  .kanban-task-details span { font-size: 9px !important; }
+  .kanban-card-actions button,
+  .common-task-actions button { min-height: 35px; padding: 7px 9px; }
+}
