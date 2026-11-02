@@ -1843,7 +1843,7 @@ function App() {
                 </div>
                 <div className="common-task-grid">
                   {commonTasks.map((item) => (
-                    <article className="common-task-card" key={item.id} role="button" tabIndex={0} aria-label={`View details for ${item.title}`} onClick={() => setSelectedTaskDetail(item)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedTaskDetail(item); } }}>
+                    <article className="common-task-card" key={item.id} role="button" tabIndex={0} aria-label={`View full details for ${item.title}`} onClick={(e) => { if (e.target.closest("button, select, label, input, a")) return; setSelectedTaskDetail(item); }} onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedTaskDetail(item); } }}>
                       <div className="common-task-meta">
                         <div className="common-task-badges">
                           <span className="pill">{item.priority}</span>
@@ -1856,6 +1856,7 @@ function App() {
                       </div>
                       <h3>{item.title}</h3>
                       <p>{item.description || "No additional description provided."}</p>
+                      <small className="common-task-open-hint">Tap mission to view all details ↗</small>
                       <small className="common-task-due">Due: {item.due_date || "No due date"}</small>
                       <div className="common-task-progress">
                         <div>
