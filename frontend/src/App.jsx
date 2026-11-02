@@ -739,13 +739,17 @@ function App() {
               ? "Welcome back."
               : authMode === "register"
               ? "Join TechNova."
+              : authMode === "verify-email"
+              ? "Verify your email."
               : "Reset your password."}
           </h1>
           <p>
             {authMode === "login"
               ? "Sign in to manage projects, tasks, and your digital club ID."
               : authMode === "register"
-              ? "Create your student account. Verify your email first, then wait for a club administrator to approve it."
+              ? "Create your student account. We will email both a secure verification link and a six-digit code."
+              : authMode === "verify-email"
+              ? "Enter the six-digit code sent to your email. You can also verify by opening the secure link in that email."
               : "Request a reset token, then set a new password."}
           </p>
           {authNotice && <div className="auth-success-notice" role="status">{authNotice}</div>}
