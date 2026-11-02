@@ -10071,3 +10071,236 @@ button:disabled { cursor: not-allowed; }
   }
   .task-page-compact .kanban-task-card h3 { font-size:14px!important; }
 }
+
+
+/* TechNova mobile task board — smooth horizontal stages + natural vertical page scroll */
+@media (max-width:760px) {
+  .task-page-compact {
+    width:100%;
+    min-width:0;
+    overflow:visible!important;
+    padding-bottom:calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+  .task-page-compact .kanban-task-board {
+    width:100%!important;
+    max-width:100%!important;
+    height:auto!important;
+    max-height:none!important;
+    overflow:visible!important;
+    padding-bottom:8px!important;
+    border-color:rgba(83,196,226,.26)!important;
+    background:
+      radial-gradient(ellipse at 8% 0%,rgba(43,151,190,.12),transparent 48%),
+      linear-gradient(155deg,#0d1b2d 0%,#081321 100%)!important;
+  }
+  .task-page-compact .kanban-board-heading {
+    padding:18px 16px 13px!important;
+  }
+  .task-page-compact .kanban-board-heading > div {
+    min-width:0!important;
+  }
+  .task-page-compact .kanban-board-heading .common-task-count {
+    padding:7px 10px!important;
+    border:1px solid rgba(87,207,232,.22)!important;
+    border-radius:999px!important;
+    background:rgba(34,145,178,.13)!important;
+    color:#a9edfa!important;
+    white-space:nowrap!important;
+  }
+  .task-page-compact .kanban-mobile-nav {
+    position:sticky!important;
+    left:0!important;
+    z-index:3!important;
+    padding:9px 15px 13px!important;
+    background:linear-gradient(180deg,rgba(10,23,38,.97),rgba(10,23,38,.88))!important;
+    backdrop-filter:blur(12px)!important;
+  }
+  .task-page-compact .kanban-mobile-nav > span {
+    font-size:11px!important;
+    letter-spacing:.01em!important;
+  }
+  .task-page-compact .kanban-mobile-nav button {
+    width:42px!important;
+    height:42px!important;
+    box-shadow:0 5px 14px rgba(0,0,0,.18)!important;
+    transition:transform .18s ease,border-color .18s ease,background .18s ease!important;
+  }
+  .task-page-compact .kanban-mobile-nav button:active {
+    transform:scale(.94)!important;
+  }
+  .task-page-compact .kanban-lanes {
+    height:auto!important;
+    max-height:none!important;
+    min-height:0!important;
+    align-items:stretch!important;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    padding:5px 13px 20px!important;
+    scroll-behavior:smooth!important;
+    scrollbar-width:thin!important;
+    scrollbar-color:rgba(76,190,219,.48) rgba(11,26,42,.45)!important;
+    scroll-snap-type:x mandatory!important;
+    overscroll-behavior-x:contain!important;
+  }
+  .task-page-compact .kanban-lanes::-webkit-scrollbar {
+    display:block!important;
+    height:5px!important;
+  }
+  .task-page-compact .kanban-lanes::-webkit-scrollbar-track {
+    border-radius:99px!important;
+    background:rgba(105,143,177,.12)!important;
+  }
+  .task-page-compact .kanban-lanes::-webkit-scrollbar-thumb {
+    border-radius:99px!important;
+    background:rgba(76,190,219,.5)!important;
+  }
+  .task-page-compact .kanban-lane {
+    flex:0 0 min(86vw,420px)!important;
+    width:min(86vw,420px)!important;
+    min-width:0!important;
+    max-width:420px!important;
+    height:auto!important;
+    max-height:none!important;
+    align-self:stretch!important;
+    overflow:visible!important;
+    padding:14px!important;
+    border-radius:17px!important;
+    background:linear-gradient(155deg,rgba(17,36,57,.98),rgba(9,22,37,.99))!important;
+    box-shadow:0 10px 25px rgba(0,0,0,.15),inset 0 1px rgba(255,255,255,.025)!important;
+  }
+  .task-page-compact .kanban-lane-heading {
+    position:relative!important;
+    min-height:48px!important;
+    padding:3px 2px 13px!important;
+    border-bottom-color:rgba(130,166,199,.17)!important;
+  }
+  .task-page-compact .kanban-lane-heading b {
+    font-size:14px!important;
+    letter-spacing:-.01em!important;
+  }
+  .task-page-compact .kanban-lane-count {
+    display:grid!important;
+    place-items:center!important;
+    min-width:29px!important;
+    height:29px!important;
+    border:1px solid rgba(128,169,202,.15)!important;
+    border-radius:10px!important;
+    background:rgba(116,157,195,.13)!important;
+    color:#dceeff!important;
+    font-size:11px!important;
+  }
+  .task-page-compact .kanban-lane-cards {
+    display:flex!important;
+    flex:0 0 auto!important;
+    flex-direction:column!important;
+    align-items:stretch!important;
+    gap:12px!important;
+    width:100%!important;
+    height:auto!important;
+    min-height:110px!important;
+    max-height:none!important;
+    overflow:visible!important;
+    padding:0!important;
+    touch-action:pan-y!important;
+  }
+  .task-page-compact .kanban-lane-cards > .kanban-task-card {
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    height:auto!important;
+    max-height:none!important;
+    padding:16px!important;
+    border:1px solid rgba(111,165,207,.23)!important;
+    border-radius:15px!important;
+    background:linear-gradient(150deg,rgba(25,47,70,.98),rgba(13,29,47,.99))!important;
+    box-shadow:0 8px 20px rgba(0,0,0,.17),inset 0 1px rgba(255,255,255,.025)!important;
+    transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease!important;
+    -webkit-tap-highlight-color:transparent!important;
+  }
+  .task-page-compact .kanban-lane-cards > .kanban-task-card:active {
+    transform:scale(.992)!important;
+    border-color:rgba(88,211,237,.48)!important;
+  }
+  .task-page-compact .kanban-task-top {
+    align-items:center!important;
+    gap:8px!important;
+  }
+  .task-page-compact .kanban-task-top > small {
+    font-size:10px!important;
+    line-height:1.55!important;
+  }
+  .task-page-compact .kanban-task-card h3 {
+    margin:13px 0 8px!important;
+    font-size:17px!important;
+    line-height:1.38!important;
+    letter-spacing:-.025em!important;
+    overflow-wrap:anywhere!important;
+  }
+  .task-page-compact .kanban-task-card > p {
+    margin:0 0 13px!important;
+    font-size:12px!important;
+    line-height:1.65!important;
+    color:#a8bad0!important;
+  }
+  .task-page-compact .kanban-task-tags {
+    gap:7px!important;
+    margin:12px 0!important;
+  }
+  .task-page-compact .kanban-task-tags > span {
+    min-height:27px!important;
+    padding:5px 9px!important;
+    font-size:10px!important;
+  }
+  .task-page-compact .kanban-task-details {
+    gap:11px 9px!important;
+    margin-top:13px!important;
+    padding:13px!important;
+    border-color:rgba(113,166,207,.17)!important;
+    border-radius:12px!important;
+    background:rgba(5,17,30,.48)!important;
+  }
+  .task-page-compact .kanban-task-details span {
+    font-size:11px!important;
+    line-height:1.5!important;
+  }
+  .task-page-compact .kanban-task-details b {
+    font-size:9px!important;
+    letter-spacing:.075em!important;
+  }
+  .task-page-compact .kanban-task-card .kanban-status-control {
+    gap:8px!important;
+    margin-top:14px!important;
+    font-size:11px!important;
+  }
+  .task-page-compact .kanban-task-card .kanban-status-control select {
+    min-height:48px!important;
+    padding:0 13px!important;
+    border-radius:11px!important;
+    font-size:13px!important;
+  }
+  .task-page-compact .kanban-task-card .kanban-card-actions {
+    gap:8px!important;
+    margin-top:14px!important;
+    padding-top:13px!important;
+  }
+  .task-page-compact .kanban-task-card .kanban-card-actions button,
+  .task-page-compact .kanban-task-card .kanban-card-actions .filebtn {
+    min-height:42px!important;
+    padding:9px 13px!important;
+    border-radius:10px!important;
+    font-size:11px!important;
+  }
+  .task-page-compact .kanban-lane-empty {
+    min-height:125px!important;
+    border-radius:13px!important;
+    background:rgba(5,17,30,.28)!important;
+  }
+}
+@media (max-width:390px) {
+  .task-page-compact .kanban-lane {
+    flex-basis:calc(100vw - 54px)!important;
+    width:calc(100vw - 54px)!important;
+  }
+  .task-page-compact .kanban-task-card h3 { font-size:16px!important; }
+  .task-page-compact .kanban-task-details { grid-template-columns:repeat(2,minmax(0,1fr))!important; }
+}
