@@ -11336,3 +11336,90 @@ button:disabled { cursor: not-allowed; }
   .kanban-card-actions button,
   .common-task-actions button { min-height: 35px; padding: 7px 9px; }
 }
+
+/* Task cards are previews only. Full metadata stays in the existing click-to-open detail dialog. */
+.task-page-compact .kanban-task-card .kanban-task-details,
+.task-page-compact .kanban-task-card .kanban-feedback,
+.task-page-compact .kanban-task-card .kanban-confirmed,
+.task-page-compact .kanban-task-card .kanban-paused-note {
+  display: none !important;
+}
+.task-page-compact .kanban-task-card > p {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
+  max-height: 3.1em !important;
+  margin: 0 0 7px !important;
+  font-size: 10px !important;
+  line-height: 1.55 !important;
+}
+.task-page-compact .kanban-task-card {
+  padding: 10px !important;
+  gap: 0 !important;
+}
+.task-page-compact .kanban-task-card .kanban-task-top small {
+  font-size: 9px !important;
+}
+.task-page-compact .kanban-task-card .kanban-task-tags {
+  gap: 5px !important;
+  margin: 6px 0 !important;
+}
+.task-page-compact .kanban-task-card .kanban-status-control {
+  margin-top: 8px !important;
+  gap: 5px !important;
+  font-size: 10px !important;
+}
+.task-page-compact .kanban-task-card .kanban-status-control select {
+  min-height: 38px !important;
+  font-size: 11px !important;
+}
+.task-page-compact .kanban-task-card .kanban-card-actions {
+  gap: 6px !important;
+  margin-top: 8px !important;
+  padding-top: 7px !important;
+}
+.task-page-compact .kanban-task-card .kanban-open-details-hint {
+  flex-basis: 100% !important;
+  font-size: 9px !important;
+}
+.task-page-compact .kanban-task-card .kanban-card-actions button,
+.task-page-compact .kanban-task-card .kanban-card-actions .filebtn {
+  min-height: 32px !important;
+  padding: 6px 9px !important;
+  font-size: 10px !important;
+}
+.task-page-compact .common-task-card .common-task-progress {
+  display: none !important;
+}
+.task-page-compact .common-task-card .common-task-due,
+.task-page-compact .common-task-card .common-task-creator {
+  display: none !important;
+}
+.task-page-compact .common-task-card > p {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
+  max-height: 3.1em !important;
+}
+@media (max-width: 760px) {
+  .task-page-compact .kanban-task-card {
+    padding: 9px !important;
+    border-radius: 12px !important;
+  }
+  .task-page-compact .kanban-task-card h3 {
+    margin: 6px 0 5px !important;
+    font-size: 13px !important;
+    line-height: 1.35 !important;
+  }
+  .task-page-compact .kanban-task-card .kanban-task-tags span {
+    font-size: 9px !important;
+  }
+  .task-page-compact .kanban-task-card .kanban-card-actions {
+    margin-top: 6px !important;
+    padding-top: 6px !important;
+  }
+}
