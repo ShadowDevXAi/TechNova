@@ -171,6 +171,11 @@ export default function createPortalActions(context) {
         }
       }
     } catch (e) {
+      if (authMode === "register" && [502, 503].includes(e.status)) {
+        // The pending account remains stored; move to sign-in so the member can resend after email setup is fixed.
+        setAuthMode("login");
+        setAuthNotice("Your account may have been created, but its verification email was not delivered. Correct Brevo settings, then use Resend verification email.");
+      }
       fail(e);
     } finally {
       setBusy(false);
