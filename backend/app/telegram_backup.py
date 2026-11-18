@@ -255,9 +255,10 @@ async def delivery_worker():
                         await db.telegram_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "failed"}})
                 except Exception:
                     logger.exception("Telegram delivery job failed id=%s", str(job.get("_id")))
+                    next_status = "failed" if int(job.get("attempts", 0)) >= 4 else "pending"
                     await db.telegram_jobs.update_one(
                         {"_id": job["_id"]},
-                        {"$set": {"status": "pending", "last_error": "Delivery failed"}}
+                        {"$set": {"status": next_status, "last_error": "Delivery failed"}}
                     )
             else:
                 await asyncio.sleep(3)
