@@ -1409,12 +1409,16 @@ async def lifespan(app: FastAPI):
     for name, description in [("Leadership","Club direction and planning"),("Web Development","Websites, interfaces, APIs"),("AI / ML","Applied AI and machine learning"),("Creative & Media","Design, animation, editing"),("Game Development","Game projects and prototyping")]:
         await db.teams.update_one({"name":name},{"$setOnInsert":{"name":name,"description":description,"created_at":utcnow()}},upsert=True)
     maintenance_task = asyncio.create_task(maintenance_worker())
+    from .telegram_backup import start_telegram_workers
+    telegram_tasks = await start_telegram_workers()
     yield
-    maintenance_task.cancel()
-    try:
-        await maintenance_task
-    except asyncio.CancelledError:
-        pass
+    for task in [maintenance_task, *telegram_tasks]:
+        task.cancel()
+    for task in [maintenance_task, *telegram_tasks]:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     client.close()
 
 
