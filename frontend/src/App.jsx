@@ -38,7 +38,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { Html5QrcodeScanner } from "html5-qrcode";
+// The camera scanner is loaded only when verification scanning is opened.
 
 
 // Shared API, branding, navigation and formatting utilities are imported above.
@@ -350,60 +350,67 @@ function App() {
   }, [page, token, user?.id, user?.member_id, selected?.id, ownCard?.member_id]);
 
   useEffect(() => {
-    if (!scanEnabled || page !== "Verification" || !isAdmin) return;
+    if (!scanEnabled || page !== "Verification" || !isAdmin) return undefined;
     let scanner;
-    try {
-      scanner = new Html5QrcodeScanner(
-        "technova-qr-reader",
-        {
-          fps: 10,
-          qrbox: { width: 230, height: 230 },
-          rememberLastUsedCamera: true,
-        },
-        false
-      );
-      scanner.render(
-        async (decodedText) => {
-          setVerifyToken(decodedText);
-          setScanEnabled(false);
-          let candidate = decodedText.trim();
-          try {
-            if (
-              candidate.startsWith("http://") ||
-              candidate.startsWith("https://")
-            ) {
-              const u = new URL(candidate);
-              candidate = u.pathname.split("/").filter(Boolean).pop() || "";
+    let cancelled = false;
+
+    // Keep the QR/camera library out of the initial application bundle.
+    import("html5-qrcode")
+      .then(({ Html5QrcodeScanner }) => {
+        if (cancelled) return;
+        scanner = new Html5QrcodeScanner(
+          "technova-qr-reader",
+          {
+            fps: 10,
+            qrbox: { width: 230, height: 230 },
+            rememberLastUsedCamera: true,
+          },
+          false
+        );
+        scanner.render(
+          async (decodedText) => {
+            setVerifyToken(decodedText);
+            setScanEnabled(false);
+            let candidate = decodedText.trim();
+            try {
+              if (
+                candidate.startsWith("http://") ||
+                candidate.startsWith("https://")
+              ) {
+                const u = new URL(candidate);
+                candidate = u.pathname.split("/").filter(Boolean).pop() || "";
+              }
+              setPendingReviewTasks([]);
+              setReviewQueueMemberId("");
+              const result = await api(
+                "/verify/" + encodeURIComponent(candidate),
+                token
+              );
+              setVerifyResult(result);
+              await loadPendingReviewTasksFor(result);
+            } catch (err) {
+              setVerifyResult({ valid: false, status: err.message });
+              setPendingReviewTasks([]);
+              setReviewQueueMemberId("");
             }
-            setPendingReviewTasks([]);
-            setReviewQueueMemberId("");
-            const result = await api(
-              "/verify/" + encodeURIComponent(candidate),
-              token
-            );
-            setVerifyResult(result);
-            await loadPendingReviewTasksFor(result);
-          } catch (err) {
-            setVerifyResult({ valid: false, status: err.message });
-            setPendingReviewTasks([]);
-            setReviewQueueMemberId("");
-          }
-          try {
-            await scanner.clear();
-          } catch {}
-        },
-        () => {}
-      );
-    } catch (err) {
-      setError(
-        "Camera scanner could not start. Allow camera access or paste the QR URL instead."
-      );
-      setScanEnabled(false);
-    }
+            try {
+              await scanner?.clear();
+            } catch {}
+          },
+          () => {}
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError(
+          "Camera scanner could not start. Allow camera access or paste the QR URL instead."
+        );
+        setScanEnabled(false);
+      });
+
     return () => {
-      if (scanner) {
-        scanner.clear().catch(() => {});
-      }
+      cancelled = true;
+      if (scanner) scanner.clear().catch(() => {});
     };
   }, [scanEnabled, page]);
 
