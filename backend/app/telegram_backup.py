@@ -11,7 +11,6 @@ import json
 import logging
 import re
 import urllib.error
-import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from bson import ObjectId
@@ -20,7 +19,6 @@ from .db import db
 from .storage import read_attachment
 
 logger = logging.getLogger("technova.telegram")
-POLL_SECONDS = 2
 MAX_BACKUP_CHUNK = 7 * 1024 * 1024
 REDACT_KEYS = re.compile(
     r"(password|passwd|secret|token|otp|credential|authorization|private.?key|"
@@ -153,6 +151,11 @@ async def create_database_backup():
             return
         raw = json.dumps(rows, ensure_ascii=False, separators=(",", ":")).encode()
         compressed = gzip.compress(raw, compresslevel=5)
+        if len(compressed) > MAX_BACKUP_CHUNK and len(rows) > 1:
+            midpoint = len(rows) // 2
+            await flush(rows[:midpoint])
+            await flush(rows[midpoint:])
+            return
         await _send_document(
             compressed, f"technova-backup-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{chunk_number:03d}.json.gz",
             f"TechNova database backup chunk {chunk_number}. Authentication secrets excluded.",
@@ -196,6 +199,7 @@ async def _process_attachment(job: dict):
     from bson import ObjectId
     item = await db.attachments.find_one({"_id": ObjectId(job["attachment_id"])})
     if not item:
+        await db.telegram_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "failed", "last_error": "Attachment record missing"}})
         return
     data = await asyncio.to_thread(read_attachment, item)
     if len(data) > 49 * 1024 * 1024:
@@ -232,6 +236,11 @@ async def enqueue_attachment(attachment_id: str):
 async def delivery_worker():
     while True:
         try:
+            stale_before = datetime.now(timezone.utc).timestamp() - 300
+            await db.telegram_jobs.update_many(
+                {"status": "processing", "locked_at": {"$lt": datetime.fromtimestamp(stale_before, timezone.utc)}},
+                {"$set": {"status": "pending", "last_error": "Recovered after worker restart"}},
+            )
             job = await db.telegram_jobs.find_one_and_update(
                 {"status": "pending", "attempts": {"$lt": 5}},
                 {"$set": {"status": "processing", "locked_at": datetime.now(timezone.utc)},
