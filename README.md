@@ -139,7 +139,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the frontend/backend folder
 
 ## Private Telegram backups (optional)
 
-The Telegram integration is **off by default**. It sends uploaded task attachments to a private Telegram channel asynchronously. The owner can use `/status`, `/backup`, and `/help`. Admin access is normally verified from the existing MongoDB `users` collection: a user must have `role: "Core Management"`, `status: "Active"`, and a matching `telegram_user_id` field. There is no separate `core_members` collection.
+The Telegram integration is **off by default**. It sends uploaded task attachments to a private Telegram channel asynchronously. Admin access is granted only to accounts verified on every command against the existing MongoDB `users` collection: `role: "Core Management"`, `status: "Active"`, and a matching `telegram_user_id`. There is no separate `core_members` collection. The configured owner ID is a separate owner identity and is the only account permitted to run `/backup`.
 
 Configure these variables on the backend host (never in frontend variables or source control):
 
@@ -147,7 +147,6 @@ Configure these variables on the backend host (never in frontend variables or so
 - `TELEGRAM_BOT_TOKEN` — token created with Telegram's official @BotFather.
 - `TELEGRAM_OWNER_ID` — numeric Telegram user ID permitted to issue all owner commands, including `/backup`.
 - `TELEGRAM_BACKUP_CHAT_ID` — private channel ID (often a negative numeric ID); add the bot as a channel administrator with permission to post.
-- `TELEGRAM_ADMIN_IDS` — optional emergency/legacy comma-separated numeric ID allowlist. Prefer MongoDB-linked Core Management accounts instead.
 
 **Link each Core Management account:** add `telegram_user_id` to that user's document in the `users` collection. Store the Telegram numeric user ID as a string, for example:
 
@@ -158,7 +157,7 @@ db.users.updateOne(
 )
 ```
 
-Replace the placeholder with the numeric ID of the Telegram account that will message the bot. Do not use the member ID, name, or email as a substitute. The bot checks this field together with the exact role and active status on every command, so deactivated or demoted accounts lose admin access automatically. Admins can use only `/start`, `/help`, and `/status`; only the configured owner can run `/backup`.
+Replace the placeholder with the numeric ID of the Telegram account that will message the bot. Do not use the member ID, name, or email as a substitute. The bot checks this field together with the exact role and active status on every command, so deactivated or demoted accounts lose admin access automatically. Only linked active Core Management users can use `/start`, `/help`, and `/status`. No environment-based admin allowlist exists. The configured owner can also use owner commands and is the only account permitted to run `/backup`.
 
 Keep the backend at one running instance while Telegram long polling is enabled; Telegram getUpdates polling must not be active in multiple replicas for the same bot token. Each authorized user must open a private chat with the bot and send `/start` once. Verify the bot is an administrator of the private channel before enabling the integration.
 
