@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     firebase_project_id: str = "technova-f4460"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    # Telegram secrets are supplied only through backend environment variables.
+    telegram_enabled: bool = False
+    telegram_bot_token: str = ""
+    telegram_owner_id: str = ""
+    telegram_backup_chat_id: str = ""
     # Task attachment storage: local is convenient for development; S3 supports durable R2/S3 storage.
     attachment_storage_provider: str = "local"
     s3_endpoint_url: str = ""
