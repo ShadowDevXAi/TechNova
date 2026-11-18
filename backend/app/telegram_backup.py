@@ -47,12 +47,27 @@ def telegram_status() -> dict:
 
 
 def _admin_ids() -> set[str]:
-    """Return numeric Telegram user IDs allowed basic non-destructive commands."""
+    """Return optional legacy numeric IDs allowed basic non-destructive commands."""
     return {
         item.strip()
         for item in settings.telegram_admin_ids.split(",")
         if item.strip().isdigit()
     }
+
+
+async def _is_active_core_member(sender_id: str) -> bool:
+    """Authorize a Telegram account only when linked to an active Core Management user."""
+    if not sender_id.isdigit():
+        return False
+    member = await db.users.find_one(
+        {
+            "telegram_user_id": sender_id,
+            "role": "Core Management",
+            "status": "Active",
+        },
+        {"_id": 1},
+    )
+    return member is not None
 
 def _api(method: str, payload: dict | None = None, multipart: tuple[str, bytes, str] | None = None):
     token = settings.telegram_bot_token.strip()
@@ -285,7 +300,9 @@ async def _handle_owner_command(update: dict):
     sender_id = str(sender.get("id", ""))
     owner_id = settings.telegram_owner_id.strip()
     is_owner = bool(owner_id and sender_id == owner_id)
-    is_admin = sender_id in _admin_ids()
+    # Admin access is verified against the existing users collection on every command.
+    # The environment allowlist remains as a backward-compatible emergency override.
+    is_admin = sender_id in _admin_ids() or await _is_active_core_member(sender_id)
     # Commands are accepted only in the sender's own private chat.
     if chat.get("type") != "private" or str(chat.get("id", "")) != sender_id:
         return
