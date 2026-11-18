@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     telegram_enabled: bool = False
     telegram_bot_token: str = ""
     telegram_owner_id: str = ""
+    # Comma-separated numeric Telegram user IDs with read-only /start and /status access.
+    telegram_admin_ids: str = ""
     telegram_backup_chat_id: str = ""
     # Task attachment storage: local is convenient for development; S3 supports durable R2/S3 storage.
     attachment_storage_provider: str = "local"
