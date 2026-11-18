@@ -139,18 +139,29 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the frontend/backend folder
 
 ## Private Telegram backups (optional)
 
-The Telegram integration is **off by default**. It sends uploaded task attachments to a private Telegram channel asynchronously. The owner can use `/status`, `/backup`, and `/help`; additional admin IDs can use only `/start`, `/status`, and `/help` in the bot's private chat.
+The Telegram integration is **off by default**. It sends uploaded task attachments to a private Telegram channel asynchronously. The owner can use `/status`, `/backup`, and `/help`. Admin access is normally verified from the existing MongoDB `users` collection: a user must have `role: "Core Management"`, `status: "Active"`, and a matching `telegram_user_id` field. There is no separate `core_members` collection.
 
 Configure these variables on the backend host (never in frontend variables or source control):
 
 - `TELEGRAM_ENABLED=true`
 - `TELEGRAM_BOT_TOKEN` — token created with Telegram's official @BotFather.
 - `TELEGRAM_OWNER_ID` — numeric Telegram user ID permitted to issue all owner commands, including `/backup`.
-- `TELEGRAM_ADMIN_IDS` — optional comma-separated numeric Telegram user IDs. Admins can use `/start`, `/help`, and `/status` only; they cannot run backups.
 - `TELEGRAM_BACKUP_CHAT_ID` — private channel ID (often a negative numeric ID); add the bot as a channel administrator with permission to post.
+- `TELEGRAM_ADMIN_IDS` — optional emergency/legacy comma-separated numeric ID allowlist. Prefer MongoDB-linked Core Management accounts instead.
 
-Keep the backend at one running instance while Telegram long polling is enabled; Telegram getUpdates polling must not be active in multiple replicas for the same bot token. The owner must open a private chat with the bot and send `/start` once. Verify the bot is an administrator of the private channel before enabling the integration.
+**Link each Core Management account:** add `telegram_user_id` to that user's document in the `users` collection. Store the Telegram numeric user ID as a string, for example:
 
-The owner and listed admins can send `/start`, `/help`, and `/status` in their own private chats. Only the owner can send `/backup` in the bot's private chat. The bot exports application collections as gzip-compressed JSON documents and separately sends stored task attachments. Passwords, password hashes, reset/verification/authentication tokens, OTPs, push tokens, API keys and service credentials are excluded. Attachment delivery is queued in MongoDB and does not block the upload request.
+```javascript
+db.users.updateOne(
+  { member_id: "TN-M-0002", role: "Core Management", status: "Active" },
+  { $set: { telegram_user_id: "YOUR_NUMERIC_TELEGRAM_USER_ID" } }
+)
+```
+
+Replace the placeholder with the numeric ID of the Telegram account that will message the bot. Do not use the member ID, name, or email as a substitute. The bot checks this field together with the exact role and active status on every command, so deactivated or demoted accounts lose admin access automatically. Admins can use only `/start`, `/help`, and `/status`; only the configured owner can run `/backup`.
+
+Keep the backend at one running instance while Telegram long polling is enabled; Telegram getUpdates polling must not be active in multiple replicas for the same bot token. Each authorized user must open a private chat with the bot and send `/start` once. Verify the bot is an administrator of the private channel before enabling the integration.
+
+The bot exports application collections as gzip-compressed JSON documents and separately sends stored task attachments. Passwords, password hashes, reset/verification/authentication tokens, OTPs, push tokens, API keys and service credentials are excluded. Attachment delivery is queued in MongoDB and does not block the upload request.
 
 **Privacy and retention:** Telegram is a third-party service and private channels are not end-to-end encrypted. Tell members which categories of data are backed up, obtain any required consent/legal basis, restrict channel membership, and define a retention/deletion policy before enabling this integration. Do not use this channel for highly confidential documents. The current upload integration covers task attachments; additional future upload endpoints must explicitly enqueue their files too.
