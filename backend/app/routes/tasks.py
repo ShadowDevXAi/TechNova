@@ -908,6 +908,12 @@ async def upload_task_attachment(task_id: str, request: Request, file: UploadFil
         "uploaded_by": user["_id"], "created_at": utcnow(),
     }
     result = await db.attachments.insert_one(doc)
+    # Persist a tiny queue record only; Telegram transfer runs out of band.
+    from ..telegram_backup import enqueue_attachment
+    try:
+        await enqueue_attachment(str(result.inserted_id))
+    except Exception:
+        logger.exception("Telegram attachment enqueue failed (attachment_id=%s)", str(result.inserted_id))
     await audit(user, "task_attachment_uploaded", str(result.inserted_id), {}, request)
     return {"id": str(result.inserted_id), "filename": safe_name, "content_type": file.content_type, "size": len(data)}
 
