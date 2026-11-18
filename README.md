@@ -136,3 +136,20 @@ TechNova includes role-based access, tasks, review, QR verification, credits, Hu
 ## Code map and module guide
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the frontend/backend folder map, the purpose of each module, and the conventions for adding new functions and endpoints.
+
+## Private Telegram backups (optional)
+
+The Telegram integration is **off by default**. It sends uploaded task attachments to a private Telegram channel asynchronously and supports owner-only `/status`, `/backup`, and `/help` commands in the bot's private chat.
+
+Configure these variables on the backend host (never in frontend variables or source control):
+
+- `TELEGRAM_ENABLED=true`
+- `TELEGRAM_BOT_TOKEN` — token created with Telegram's official @BotFather.
+- `TELEGRAM_OWNER_ID` — numeric Telegram user ID permitted to issue bot commands.
+- `TELEGRAM_BACKUP_CHAT_ID` — private channel ID (often a negative numeric ID); add the bot as a channel administrator with permission to post.
+
+Keep the backend at one running instance while Telegram long polling is enabled; Telegram getUpdates polling must not be active in multiple replicas for the same bot token. The owner must open a private chat with the bot and send `/start` once. Verify the bot is an administrator of the private channel before enabling the integration.
+
+The owner can send `/backup` in the bot's private chat. The bot exports application collections as gzip-compressed JSON documents and separately sends stored task attachments. Passwords, password hashes, reset/verification/authentication tokens, OTPs, push tokens, API keys and service credentials are excluded. Attachment delivery is queued in MongoDB and does not block the upload request.
+
+**Privacy and retention:** Telegram is a third-party service and private channels are not end-to-end encrypted. Tell members which categories of data are backed up, obtain any required consent/legal basis, restrict channel membership, and define a retention/deletion policy before enabling this integration. Do not use this channel for highly confidential documents. The current upload integration covers task attachments; additional future upload endpoints must explicitly enqueue their files too.
