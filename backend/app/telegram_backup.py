@@ -41,17 +41,8 @@ def telegram_status() -> dict:
         "enabled": bool(settings.telegram_enabled and configured),
         "configured": configured,
         "owner_allowlist_configured": bool(settings.telegram_owner_id.strip()),
-        "admin_allowlist_count": len(_admin_ids()),
+        "core_membership_admins_only": True,
         "channel_configured": bool(settings.telegram_backup_chat_id.strip()),
-    }
-
-
-def _admin_ids() -> set[str]:
-    """Return optional legacy numeric IDs allowed basic non-destructive commands."""
-    return {
-        item.strip()
-        for item in settings.telegram_admin_ids.split(",")
-        if item.strip().isdigit()
     }
 
 
@@ -300,9 +291,9 @@ async def _handle_owner_command(update: dict):
     sender_id = str(sender.get("id", ""))
     owner_id = settings.telegram_owner_id.strip()
     is_owner = bool(owner_id and sender_id == owner_id)
-    # Admin access is verified against the existing users collection on every command.
-    # The environment allowlist remains as a backward-compatible emergency override.
-    is_admin = sender_id in _admin_ids() or await _is_active_core_member(sender_id)
+    # Only active Core Management users linked in MongoDB receive admin access.
+    # The configured owner remains a separate owner-only identity for /backup.
+    is_admin = await _is_active_core_member(sender_id)
     # Commands are accepted only in the sender's own private chat.
     if chat.get("type") != "private" or str(chat.get("id", "")) != sender_id:
         return
