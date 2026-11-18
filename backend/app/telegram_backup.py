@@ -41,9 +41,24 @@ def telegram_status() -> dict:
         "enabled": bool(settings.telegram_enabled and configured),
         "configured": configured,
         "owner_allowlist_configured": bool(settings.telegram_owner_id.strip()),
+        "core_membership_admins_only": True,
         "channel_configured": bool(settings.telegram_backup_chat_id.strip()),
     }
 
+
+async def _is_active_core_member(sender_id: str) -> bool:
+    """Authorize a Telegram account only when linked to an active Core Management user."""
+    if not sender_id.isdigit():
+        return False
+    member = await db.users.find_one(
+        {
+            "telegram_user_id": sender_id,
+            "role": "Core Management",
+            "status": "Active",
+        },
+        {"_id": 1},
+    )
+    return member is not None
 
 def _api(method: str, payload: dict | None = None, multipart: tuple[str, bytes, str] | None = None):
     token = settings.telegram_bot_token.strip()
@@ -270,35 +285,46 @@ async def delivery_worker():
 
 
 async def _handle_owner_command(update: dict):
-    message = update.get("message") or update.get("channel_post") or {}
+    message = update.get("message") or {}
     sender = message.get("from") or {}
     chat = message.get("chat") or {}
+    sender_id = str(sender.get("id", ""))
     owner_id = settings.telegram_owner_id.strip()
-    if not owner_id or str(sender.get("id", "")) != owner_id:
+    is_owner = bool(owner_id and sender_id == owner_id)
+    # Only active Core Management users linked in MongoDB receive admin access.
+    # The configured owner remains a separate owner-only identity for /backup.
+    is_admin = await _is_active_core_member(sender_id)
+    # Commands are accepted only in the sender's own private chat.
+    if chat.get("type") != "private" or str(chat.get("id", "")) != sender_id:
         return
-    # Accept commands only in the owner's private chat, never groups or channels.
-    if chat.get("type") != "private" or str(chat.get("id", "")) != owner_id:
+    text = (message.get("text") or "").strip()
+    if not text or not (is_owner or is_admin):
         return
-    command = (message.get("text") or "").split()[0].split("@")[0].lower()
-    if command == "/start" or command == "/help":
-        await _send_message(
-            "TechNova owner bot\n/status — integration status\n/backup — export permitted database records and uploaded files\n/help — show commands",
-            chat_id=owner_id,
+    command = text.split()[0].split("@")[0].lower()
+    if command in {"/start", "/help"}:
+        commands = (
+            "TechNova admin bot\\n/status — view integration status\\n/help — show commands"
+            if is_admin and not is_owner else
+            "TechNova owner bot\\n/status — integration status\\n/backup — export permitted database records and uploaded files\\n/help — show commands"
         )
+        await _send_message(commands, chat_id=sender_id)
     elif command == "/status":
         jobs = await db.telegram_jobs.count_documents({"status": "pending"})
         await _send_message(
-            f"Telegram integration: {'enabled' if telegram_status()['enabled'] else 'not configured'}\nPending delivery jobs: {jobs}",
-            chat_id=owner_id,
+            f"Telegram integration: {'enabled' if telegram_status()['enabled'] else 'not configured'}\\nPending delivery jobs: {jobs}",
+            chat_id=sender_id,
         )
-    elif command == "/backup":
-        await _send_message("Owner backup started. Files will be delivered to the configured private channel.", chat_id=owner_id)
-        try:
-            await create_database_backup()
-        except Exception:
-            logger.exception("Owner-requested Telegram backup failed")
-            await _send_message("Backup failed. Check backend logs for the request ID and configuration.", chat_id=owner_id)
+    elif command == "/backup" and is_owner:
+        await _send_message("Owner backup started. Files will be delivered to the configured private channel.", chat_id=sender_id)
+        asyncio.create_task(_run_owner_backup(sender_id), name="telegram-owner-backup")
 
+
+async def _run_owner_backup(owner_id: str):
+    try:
+        await create_database_backup()
+    except Exception:
+        logger.exception("Owner-requested Telegram backup failed")
+        await _send_message("Backup failed. Check backend logs for details.", chat_id=owner_id)
 
 async def polling_worker():
     """Long-poll commands from Telegram; only the configured owner can invoke actions."""
