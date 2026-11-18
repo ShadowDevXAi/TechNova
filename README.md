@@ -139,7 +139,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the frontend/backend folder
 
 ## Private Telegram backups (optional)
 
-The Telegram integration is **off by default**. It sends uploaded task attachments to a private Telegram channel asynchronously and supports owner-only `/status`, `/backup`, and `/help` commands in the bot's private chat.
+The Telegram integration is **off by default**. It sends uploaded task attachments to a private Telegram channel asynchronously. The owner can use `/status`, `/backup`, and `/help`; additional admin IDs can use only `/start`, `/status`, and `/help` in the bot's private chat.
 
 Configure these variables on the backend host (never in frontend variables or source control):
 
