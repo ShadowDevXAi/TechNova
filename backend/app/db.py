@@ -101,3 +101,4 @@ async def ensure_indexes():
     await db.trusted_devices.create_index("expires_at", expireAfterSeconds=0)
     await db.task_comments.create_index([("task_id", 1), ("created_at", 1)])
     await db.attachments.create_index([("task_id", 1), ("created_at", -1)])
+    await db.telegram_jobs.create_index([("status", 1), ("created_at", 1)])
