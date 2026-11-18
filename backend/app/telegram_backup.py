@@ -41,9 +41,18 @@ def telegram_status() -> dict:
         "enabled": bool(settings.telegram_enabled and configured),
         "configured": configured,
         "owner_allowlist_configured": bool(settings.telegram_owner_id.strip()),
+        "admin_allowlist_count": len(_admin_ids()),
         "channel_configured": bool(settings.telegram_backup_chat_id.strip()),
     }
 
+
+def _admin_ids() -> set[str]:
+    """Return numeric Telegram user IDs allowed basic non-destructive commands."""
+    return {
+        item.strip()
+        for item in settings.telegram_admin_ids.split(",")
+        if item.strip().isdigit()
+    }
 
 def _api(method: str, payload: dict | None = None, multipart: tuple[str, bytes, str] | None = None):
     token = settings.telegram_bot_token.strip()
@@ -275,38 +284,26 @@ async def _handle_owner_command(update: dict):
     chat = message.get("chat") or {}
     sender_id = str(sender.get("id", ""))
     owner_id = settings.telegram_owner_id.strip()
-    admin_ids = {
-        item.strip() for item in settings.telegram_admin_ids.split(",") if item.strip()
-    }
     is_owner = bool(owner_id and sender_id == owner_id)
-    is_admin = sender_id in admin_ids
-    # Commands are accepted only in a matching private chat, never groups/channels.
+    is_admin = sender_id in _admin_ids()
+    # Commands are accepted only in the sender's own private chat.
     if chat.get("type") != "private" or str(chat.get("id", "")) != sender_id:
         return
-    if not (is_owner or is_admin):
-        return
     text = (message.get("text") or "").strip()
-    if not text:
+    if not text or not (is_owner or is_admin):
         return
     command = text.split()[0].split("@")[0].lower()
     if command in {"/start", "/help"}:
-        commands = [
-            "TechNova admin bot" if is_admin and not is_owner else "TechNova owner bot",
-            "/start — show this message",
-            "/status — integration and queue status",
-        ]
-        if is_owner:
-            commands.append("/backup — export permitted database records and uploaded files")
-        commands.append("/help — show commands")
-        await _send_message("\n".join(commands), chat_id=sender_id)
+        commands = (
+            "TechNova admin bot\\n/status — view integration status\\n/help — show commands"
+            if is_admin and not is_owner else
+            "TechNova owner bot\\n/status — integration status\\n/backup — export permitted database records and uploaded files\\n/help — show commands"
+        )
+        await _send_message(commands, chat_id=sender_id)
     elif command == "/status":
         jobs = await db.telegram_jobs.count_documents({"status": "pending"})
-        status = telegram_status()
         await _send_message(
-            f"Telegram integration: {'enabled' if status['enabled'] else 'not configured'}\n"
-            f"Bot configuration: {'complete' if status['configured'] else 'incomplete'}\n"
-            f"Pending delivery jobs: {jobs}\n"
-            f"Access: {'owner' if is_owner else 'admin (read-only)'}",
+            f"Telegram integration: {'enabled' if telegram_status()['enabled'] else 'not configured'}\\nPending delivery jobs: {jobs}",
             chat_id=sender_id,
         )
     elif command == "/backup" and is_owner:
@@ -314,13 +311,12 @@ async def _handle_owner_command(update: dict):
         asyncio.create_task(_run_owner_backup(sender_id), name="telegram-owner-backup")
 
 
-async def _run_owner_backup(chat_id: str):
+async def _run_owner_backup(owner_id: str):
     try:
         await create_database_backup()
     except Exception:
         logger.exception("Owner-requested Telegram backup failed")
-        await _send_message("Backup failed. Check backend logs for the request ID and configuration.", chat_id=chat_id)
-
+        await _send_message("Backup failed. Check backend logs for details.", chat_id=owner_id)
 
 async def polling_worker():
     """Long-poll commands from Telegram; only the configured owner can invoke actions."""
