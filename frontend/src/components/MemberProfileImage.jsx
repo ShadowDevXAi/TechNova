@@ -46,7 +46,7 @@ async function deriveImageKey(passphrase, salt) {
 }
 
 /** Member-only profile image UI. Passphrases and plaintext stay in this browser. */
-export default function MemberProfileImage({ token }) {
+export default function MemberProfileImage({ token, onDecrypted }) {
   const [storedImage, setStoredImage] = useState(null);
   const [passphrase, setPassphrase] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
@@ -77,10 +77,6 @@ export default function MemberProfileImage({ token }) {
     return () => { active = false; };
   }, [token]);
 
-  useEffect(() => () => {
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
-  }, [photoUrl]);
-
   async function unlockImage() {
     setError("");
     setMessage("");
@@ -97,8 +93,9 @@ export default function MemberProfileImage({ token }) {
         key,
         fromBase64(storedImage.ciphertext)
       );
-      const url = URL.createObjectURL(new Blob([clearBytes], { type: storedImage.media_type }));
+      const url = "data:" + storedImage.media_type + ";base64," + toBase64(new Uint8Array(clearBytes));
       setPhotoUrl(url);
+      onDecrypted?.(url);
       setMessage("Your image was decrypted locally in this browser.");
     } catch {
       setError("Could not decrypt this image. Check the passphrase; it cannot be reset by TechNova.");
@@ -156,7 +153,9 @@ export default function MemberProfileImage({ token }) {
         timeoutMs: 90000,
       });
       await loadEncryptedImage();
-      setPhotoUrl(URL.createObjectURL(file));
+      const localDataUrl = "data:" + file.type + ";base64," + toBase64(new Uint8Array(clearBytes));
+      setPhotoUrl(localDataUrl);
+      onDecrypted?.(localDataUrl);
       setMessage("Image encrypted in your browser and stored in the private Telegram channel.");
       form.reset();
     } catch (requestError) {
