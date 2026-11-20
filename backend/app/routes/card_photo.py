@@ -3,8 +3,6 @@
 Uploads are decoded and re-encoded as JPEG to strip metadata and reject malformed
 or unsupported image payloads. Photos are never served from a public object URL.
 """
-from __future__ import annotations
-
 import asyncio
 import io
 import secrets
@@ -139,7 +137,7 @@ async def upload_own_id_card_photo(
     )
     if previous:
         try:
-            await __import__("asyncio").to_thread(delete_attachment, previous)
+            await asyncio.to_thread(delete_attachment, previous)
         except Exception:
             pass
     await audit(user, "id_card_photo_uploaded", str(user["_id"]), {"content_type": "image/jpeg", "bytes": len(content)}, request)
