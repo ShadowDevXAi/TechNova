@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, API_BASE } from "../api/client.js";
 
 /**
@@ -14,6 +14,13 @@ export default function IdCardPhotoConsent({ token }) {
   const [photoUrl, setPhotoUrl] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const photoUrlRef = useRef("");
+
+  function setManagedPhotoUrl(nextUrl) {
+    if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+    photoUrlRef.current = nextUrl;
+    setPhotoUrl(nextUrl);
+  }
 
   async function refreshPhoto() {
     const response = await fetch(API_BASE + "/api/cards/me/photo", {
@@ -30,10 +37,7 @@ export default function IdCardPhotoConsent({ token }) {
       throw new Error(detail);
     }
     const blob = await response.blob();
-    setPhotoUrl((oldUrl) => {
-      if (oldUrl) URL.revokeObjectURL(oldUrl);
-      return URL.createObjectURL(blob);
-    });
+    setManagedPhotoUrl(URL.createObjectURL(blob));
   }
 
   useEffect(() => {
@@ -54,7 +58,8 @@ export default function IdCardPhotoConsent({ token }) {
       .finally(() => { if (active) setLoading(false); });
     return () => {
       active = false;
-      setPhotoUrl((oldUrl) => { if (oldUrl) URL.revokeObjectURL(oldUrl); return ""; });
+      if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+      photoUrlRef.current = "";
     };
   }, [token]);
 
@@ -70,7 +75,7 @@ export default function IdCardPhotoConsent({ token }) {
       setConsent(result.consent === true);
       setSavedConsent(result.consent === true);
       if (!nextConsent) {
-        setPhotoUrl((oldUrl) => { if (oldUrl) URL.revokeObjectURL(oldUrl); return ""; });
+        setManagedPhotoUrl("");
       }
       setMessage(nextConsent
         ? "Consent saved. Upload a separate photo below when you are ready."
@@ -85,7 +90,8 @@ export default function IdCardPhotoConsent({ token }) {
 
   async function uploadPhoto(event) {
     event.preventDefault();
-    const file = event.currentTarget.elements.id_card_photo.files?.[0];
+    const form = event.currentTarget;
+    const file = form.elements.id_card_photo.files?.[0];
     setError("");
     setMessage("");
     if (!file) {
@@ -103,7 +109,7 @@ export default function IdCardPhotoConsent({ token }) {
       await api("/cards/me/photo", token, { method: "POST", body, timeoutMs: 90000 });
       await refreshPhoto();
       setMessage("Your separate ID-card photo was securely uploaded.");
-      event.currentTarget.reset();
+      form.reset();
     } catch (requestError) {
       setError(requestError.message || "Could not upload your ID-card photo.");
     } finally {
@@ -117,7 +123,7 @@ export default function IdCardPhotoConsent({ token }) {
     setMessage("");
     try {
       await api("/cards/me/photo", token, { method: "DELETE" });
-      setPhotoUrl((oldUrl) => { if (oldUrl) URL.revokeObjectURL(oldUrl); return ""; });
+      setManagedPhotoUrl("");
       setMessage("Your ID-card photo was deleted.");
     } catch (requestError) {
       setError(requestError.message || "Could not delete your ID-card photo.");
