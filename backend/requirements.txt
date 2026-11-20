@@ -7,7 +7,7 @@ pydantic-settings==2.8.1
 python-jose[cryptography]==3.4.0
 pwdlib[argon2]==0.2.1
 python-multipart==0.0.20
-slowapi==0.1.9
+slowapi==0.1.10
 firebase-admin==7.7.0
 pyotp==2.9.0
 boto3==1.37.0
