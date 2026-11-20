@@ -4,7 +4,7 @@ This document defines conventions for extending the existing `/api` surface with
 
 ## Existing contract to preserve
 
-The current Hub uses `/api/hub/{collection}` and related routes for projects, challenges, events, resources, discussions, rewards, attendance, polls, mentorship, messages and certificates. Digital ID and encrypted profile images have dedicated route modules.
+The current Hub uses `/api/hub/{collection}` and related routes for projects, challenges, events, resources, discussions, rewards, attendance, polls, mentorship, messages and certificates. Digital ID and encrypted profile images have dedicated route modules. Phase 1A adds `/api/cards/me/photo-consent` (GET/PUT), a Member-owned preference endpoint. It records an explicit, revocable preference only; it does not upload or expose an image. Staff card verification may return the boolean `photo_consent` field, but never image bytes.
 
 Before adding a new route:
 1. Inspect the current frontend call sites and backend router.
