@@ -1,6 +1,8 @@
 """Fast, dependency-light regression checks for the existing ecosystem contracts."""
 
 import os
+import asyncio
+from io import BytesIO
 import sys
 import unittest
 from pathlib import Path
@@ -20,12 +22,15 @@ os.environ.setdefault("SMTP_HOST", "")
 os.environ.setdefault("SMTP_FROM_EMAIL", "")
 
 from fastapi import HTTPException
+from PIL import Image
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from fastapi.routing import APIRoute
 
 from app.main import api_app
 from app.routes.hub import HUB_COLLECTIONS, HUB_STAFF, project_join_is_allowed
 from app.routes.profile_image import _require_member
 from app.routes.card_photo_consent import _require_active_member, _require_member
+from app.routes.card_photo import _normalized_jpeg, _require_member as _require_card_photo_member
 from app.core import member_rank, task_credit_value
 
 
@@ -62,10 +67,6 @@ class EcosystemContractTests(unittest.TestCase):
             ("DELETE", "/api/cards/me/photo"),
             ("GET", "/api/verify/{token}/photo"),
             ("PUT", "/api/cards/me/photo-consent"),
-            ("POST", "/api/cards/me/photo"),
-            ("GET", "/api/cards/me/photo"),
-            ("DELETE", "/api/cards/me/photo"),
-            ("GET", "/api/verify/{token}/photo"),
             ("GET", "/api/hub/profile"),
             ("POST", "/api/hub/attendance/check-in"),
             ("POST", "/api/hub/events/{item_id}/rsvp"),
@@ -93,6 +94,30 @@ class EcosystemContractTests(unittest.TestCase):
         staff_dependency = staff_route.dependant.dependencies[0]
         nested_names = {getattr(dep.call, "__name__", "") for dep in staff_dependency.dependencies}
         self.assertIn("get_current_user", nested_names)
+
+    def test_card_photo_upload_normalizes_to_metadata_stripped_jpeg(self):
+        source = BytesIO()
+        Image.new("RGB", (128, 128), "white").save(source, format="PNG")
+        upload = StarletteUploadFile(filename="profile.png", file=BytesIO(source.getvalue()))
+        normalized = asyncio.run(_normalized_jpeg(upload))
+        result = Image.open(BytesIO(normalized))
+        self.assertEqual(result.format, "JPEG")
+        self.assertEqual(result.size, (128, 128))
+        self.assertFalse(result.getexif())
+
+    def test_card_photo_upload_rejects_unsupported_format(self):
+        source = BytesIO()
+        Image.new("RGB", (128, 128), "white").save(source, format="GIF")
+        upload = StarletteUploadFile(filename="profile.gif", file=BytesIO(source.getvalue()))
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(_normalized_jpeg(upload))
+        self.assertEqual(raised.exception.status_code, 415)
+
+    def test_card_photo_member_role_is_required(self):
+        self.assertIsNone(_require_card_photo_member({"role": "Member", "status": "Active"}))
+        with self.assertRaises(HTTPException) as raised:
+            _require_card_photo_member({"role": "Faculty", "status": "Active"})
+        self.assertEqual(raised.exception.status_code, 403)
 
     def test_id_card_photo_consent_is_owner_only_and_member_only(self):
         for method in ("GET", "PUT"):
