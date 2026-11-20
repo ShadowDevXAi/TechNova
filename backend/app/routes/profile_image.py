@@ -3,8 +3,6 @@
 Only ciphertext is sent to this API or Telegram. The member's passphrase stays
 in the browser and is never stored or transmitted to the backend.
 """
-from __future__ import annotations
-
 import asyncio
 import base64
 import re
