@@ -12,6 +12,9 @@ Set these values in the backend deployment environment (Render environment varia
 - `S3_REGION=auto` for R2, or the provider's region
 - `S3_ACCESS_KEY_ID`
 - `S3_SECRET_ACCESS_KEY`
+- `ID_PHOTO_CLAMAV_HOST` — private hostname or service name for a ClamAV daemon reachable by the backend
+- `ID_PHOTO_CLAMAV_PORT=3310` (optional; default 3310)
+- `ID_PHOTO_CLAMAV_TIMEOUT_SECONDS=8` (optional; default 8, maximum 30)
 
 Use a dedicated bucket or prefix for TechNova. Disable public bucket access and do not configure a public custom domain or public object URL for this bucket. The application serves photos only through authenticated API endpoints. Credentials must be stored as deployment secrets and must never be committed to Git.
 
@@ -34,6 +37,7 @@ Use a dedicated bucket or prefix for TechNova. Disable public bucket access and 
 4. Verify a valid active card as Founder/Core Management and confirm the photo loads.
 5. Withdraw consent and confirm the same photo endpoint no longer returns an image.
 6. Revoke the card or suspend the member and confirm photo access is denied.
-7. Confirm the bucket object is deleted or covered by the lifecycle cleanup rule.\n8. Test the ClamAV path with the standard EICAR test file in a non-production environment; confirm it is rejected and never stored.
+7. Confirm the bucket object is deleted or covered by the lifecycle cleanup rule.
+8. Test the ClamAV path with the standard EICAR test file in a non-production environment; confirm it is rejected and never stored.
 
 Do not enable production photo uploads until these staging checks pass.
