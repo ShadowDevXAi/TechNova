@@ -22,7 +22,9 @@ Every pull request should:
 - Founder/Core Management login → TOTP → trusted device → logout/revoke.
 - Member login → profile edit → encrypted private image upload/retrieve.
 - Card issue → QR verification → revoke → verification rejected.
-- Member ID-photo consent → staff verification shows only the consent state → withdrawal is reflected immediately; no photo is returned by the consent-only phase.
+- Member opts in → uploads a separate image → staff verifies an active card and views the photo → withdrawal disables retrieval and removes the active photo record.
+- Upload rejects oversized, malformed, animated, unsupported and over-dimension images; the stored image is re-encoded and served with private no-store headers.
+- Without configured durable private object storage, uploads fail closed with HTTP 503.
 - Task assignment → submission → review → credit award exactly once.
 - Hub event → RSVP → attendance check-in → duplicate check-in rejected.
 - Project visibility → join → unauthorized account denied.
