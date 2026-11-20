@@ -85,7 +85,7 @@ async def _remove_photo_for_owner(owner_id) -> None:
     # Remove metadata first: a storage failure must never leave the photo retrievable.
     await db.card_photos.delete_one({"_id": old["_id"]})
     try:
-        delete_attachment(old)
+        await asyncio.to_thread(delete_attachment, old)
     except Exception:
         # Orphaned private object is inaccessible and can be cleaned up by storage lifecycle.
         pass
