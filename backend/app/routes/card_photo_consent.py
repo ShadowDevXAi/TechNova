@@ -17,18 +17,22 @@ class CardPhotoConsentIn(BaseModel):
     consent: bool
 
 
-def _require_active_member(user: dict) -> None:
+def _require_member(user: dict) -> None:
     if user.get("role") != "Member":
         raise HTTPException(403, "ID-card photo consent is available to Member accounts only.")
+
+
+def _require_active_member(user: dict) -> None:
+    _require_member(user)
     if user.get("status") != "Active":
-        raise HTTPException(403, "Only active members can change ID-card photo consent.")
+        raise HTTPException(403, "Only active members can grant ID-card photo consent.")
 
 
 @router.get("/api/cards/me/photo-consent")
 @limiter.limit("30/minute")
 async def get_own_card_photo_consent(request: Request, user: dict = Depends(get_current_user)):
     """Return only the signed-in member's own ID-card photo consent state."""
-    _require_active_member(user)
+    _require_member(user)
     record = await db.users.find_one(
         {"_id": user["_id"]},
         {"id_card_photo_consent": 1, "id_card_photo_consent_at": 1, "id_card_photo_consent_revoked_at": 1},
@@ -50,7 +54,11 @@ async def update_own_card_photo_consent(
     user: dict = Depends(get_current_user),
 ):
     """Record explicit opt-in or immediate withdrawal for future ID-card photo use."""
-    _require_active_member(user)
+    if payload.consent:
+        _require_active_member(user)
+    else:
+        # Consent withdrawal remains available even if the account is suspended.
+        _require_member(user)
     now = utcnow()
     update = {
         "$set": {
