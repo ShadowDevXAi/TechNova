@@ -5,6 +5,7 @@ import TwoFactorSettings from "./components/TwoFactorSettings.jsx";
 import StorageSettings from "./components/StorageSettings.jsx";
 import ContactNotificationSettings from "./components/ContactNotificationSettings.jsx";
 import MemberProfileImage from "./components/MemberProfileImage.jsx";
+import IdCardPhotoConsent from "./components/IdCardPhotoConsent.jsx";
 import { listenForForegroundMessages } from "./firebase.js";
 import { api, API_BASE } from "./api/client.js";
 import TechNovaLogo from "./components/TechNovaLogo.jsx";
@@ -2430,6 +2431,9 @@ function App() {
                         <small>
                           {verifyResult.role} · {verifyResult.club}
                         </small>
+                        <small className="verify-photo-consent">
+                          ID-card photo consent: {verifyResult.photo_consent ? "Granted" : "Not granted"}
+                        </small>
                         {verifyResult.progression_type === "founder" ? (
                           <div className="verify-member-progress founder-origin-verify">
                             <b>{verifyResult.level_title || "Founder · Origin Rank"}</b>
@@ -2626,6 +2630,7 @@ function App() {
                   </div>
                 )}
                 {user.role === "Member" && <MemberProfileImage token={token} onDecrypted={setProfileImageDataUrl} />}
+                {user.role === "Member" && <IdCardPhotoConsent token={token} />}
                 <h3>Profile</h3>
                 <form onSubmit={saveProfile}>
                   <label>
