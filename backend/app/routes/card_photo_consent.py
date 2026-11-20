@@ -39,12 +39,16 @@ async def get_own_card_photo_consent(request: Request, user: dict = Depends(get_
         {"_id": user["_id"]},
         {"id_card_photo_consent": 1, "id_card_photo_consent_at": 1, "id_card_photo_consent_revoked_at": 1},
     ) or {}
+    consent_granted = record.get("id_card_photo_consent") is True
+    photo_record = await db.card_photos.find_one({"owner_id": user["_id"]}, {"_id": 1}) if consent_granted else None
+    photo_available = photo_record is not None
     return {
-        "consent": record.get("id_card_photo_consent") is True,
+        "consent": consent_granted,
         "consent_at": record.get("id_card_photo_consent_at"),
         "revoked_at": record.get("id_card_photo_consent_revoked_at"),
-        "photo_sharing_enabled": False,
-        "message": "This setting records your preference only. A separate secure card-photo upload and review is required before any photo can be displayed.",
+        "photo_uploaded": photo_available,
+        "photo_sharing_enabled": consent_granted and photo_available,
+        "message": "Your separate ID-card photo is available only to authorized staff during an active ID verification." if photo_available else "Upload a separate ID-card photo after granting consent.",
     }
 
 
