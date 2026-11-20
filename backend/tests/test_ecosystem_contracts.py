@@ -57,6 +57,10 @@ class EcosystemContractTests(unittest.TestCase):
             ("POST", "/api/profile-image"),
             ("GET", "/api/profile-image"),
             ("GET", "/api/cards/me/photo-consent"),
+            ("POST", "/api/cards/me/photo"),
+            ("GET", "/api/cards/me/photo"),
+            ("DELETE", "/api/cards/me/photo"),
+            ("GET", "/api/verify/{token}/photo"),
             ("PUT", "/api/cards/me/photo-consent"),
             ("POST", "/api/cards/me/photo"),
             ("GET", "/api/cards/me/photo"),
@@ -79,6 +83,16 @@ class EcosystemContractTests(unittest.TestCase):
                 for dependency in route.dependant.dependencies
             }
             self.assertIn("get_current_user", dependency_names)
+
+    def test_id_card_photo_endpoints_have_expected_authentication(self):
+        for method in ("POST", "GET", "DELETE"):
+            route = self.routes[(method, "/api/cards/me/photo")]
+            names = {getattr(dep.call, "__name__", "") for dep in route.dependant.dependencies}
+            self.assertIn("get_current_user", names)
+        staff_route = self.routes[("GET", "/api/verify/{token}/photo")]
+        staff_dependency = staff_route.dependant.dependencies[0]
+        nested_names = {getattr(dep.call, "__name__", "") for dep in staff_dependency.dependencies}
+        self.assertIn("get_current_user", nested_names)
 
     def test_id_card_photo_consent_is_owner_only_and_member_only(self):
         for method in ("GET", "PUT"):
