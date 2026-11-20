@@ -6,6 +6,7 @@ import StorageSettings from "./components/StorageSettings.jsx";
 import ContactNotificationSettings from "./components/ContactNotificationSettings.jsx";
 import MemberProfileImage from "./components/MemberProfileImage.jsx";
 import IdCardPhotoConsent from "./components/IdCardPhotoConsent.jsx";
+import VerifiedCardPhoto from "./components/VerifiedCardPhoto.jsx";
 import { listenForForegroundMessages } from "./firebase.js";
 import { api, API_BASE } from "./api/client.js";
 import TechNovaLogo from "./components/TechNovaLogo.jsx";
@@ -2434,6 +2435,14 @@ function App() {
                         <small className="verify-photo-consent">
                           ID-card photo consent: {verifyResult.photo_consent ? "Granted" : "Not granted"}
                         </small>
+                        {verifyResult.photo_consent && !verifyResult.photo_available && (
+                          <small className="verify-photo-consent">No separate ID-card photo has been uploaded.</small>
+                        )}
+                        <VerifiedCardPhoto
+                          token={token}
+                          cardToken={extractCardToken(verifyToken)}
+                          enabled={verifyResult.photo_available === true}
+                        />
                         {verifyResult.progression_type === "founder" ? (
                           <div className="verify-member-progress founder-origin-verify">
                             <b>{verifyResult.level_title || "Founder · Origin Rank"}</b>
