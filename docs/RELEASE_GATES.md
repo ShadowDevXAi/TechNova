@@ -65,3 +65,5 @@ Before production:
 - Take a verified backup before destructive migrations.
 - Prefer disabling a feature over reverting data in place.
 - Record the last known-good deployment commit and rollback steps.
+
+- Print test: print/save the ID card only; unrelated portal controls and member data must not appear in the print output.
