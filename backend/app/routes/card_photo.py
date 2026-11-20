@@ -151,13 +151,13 @@ async def upload_own_id_card_photo(
 @limiter.limit("30/minute")
 async def get_own_id_card_photo(request: Request, user: dict = Depends(get_current_user)):
     _require_member(user, active=False)
-    _require_durable_private_storage()
     current = await db.users.find_one({"_id": user["_id"]}, {"id_card_photo_consent": 1})
     if not current or current.get("id_card_photo_consent") is not True:
         raise HTTPException(403, "ID-card photo consent is not active.")
     record = await db.card_photos.find_one({"owner_id": user["_id"]})
     if not record:
         raise HTTPException(404, "No ID-card photo has been uploaded.")
+    _require_durable_private_storage()
     try:
         content = await __import__("asyncio").to_thread(read_attachment, record)
     except Exception as exc:
