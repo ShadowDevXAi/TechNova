@@ -32,6 +32,7 @@ from app.routes.profile_image import _require_member as _require_profile_image_m
 from app.routes.card_photo_consent import _require_active_member, _require_member as _require_consent_member
 from app.routes.card_photo import _normalized_jpeg, _require_member as _require_card_photo_member
 from app.core import member_rank, task_credit_value
+from app.security.image_scan import MalwareDetected, ScannerUnavailable, parse_clamd_response, scan_image_bytes
 
 
 class EcosystemContractTests(unittest.TestCase):
@@ -104,6 +105,18 @@ class EcosystemContractTests(unittest.TestCase):
         self.assertEqual(result.format, "JPEG")
         self.assertEqual(result.size, (128, 128))
         self.assertFalse(result.getexif())
+
+    def test_clamav_clean_response_is_accepted(self):
+        self.assertEqual(parse_clamd_response(b"stream: OK\\0"), "clean")
+
+    def test_clamav_malware_response_is_rejected(self):
+        with self.assertRaises(MalwareDetected):
+            parse_clamd_response(b"stream: Eicar-Test-Signature FOUND\\0")
+
+    def test_clamav_scanner_configuration_fails_closed(self):
+        with unittest.mock.patch.dict(os.environ, {"ID_PHOTO_CLAMAV_HOST": ""}, clear=False):
+            with self.assertRaises(ScannerUnavailable):
+                scan_image_bytes(b"test-image")
 
     def test_card_photo_upload_rejects_oversized_payload(self):
         upload = StarletteUploadFile(filename="too-large.png", file=BytesIO(b"x" * (5 * 1024 * 1024 + 1)))
