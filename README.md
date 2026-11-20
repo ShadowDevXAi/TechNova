@@ -169,7 +169,7 @@ The bot exports application collections as gzip-compressed JSON documents and se
 ### Member profile images: client-side encryption
 
 - Ordinary `Member` accounts can upload a JPEG, PNG or WEBP profile image from Settings. The browser encrypts it with AES-256-GCM before the request leaves the device; a per-image random salt and IV are stored as metadata.
-- A dedicated passphrase (minimum 12 characters) is used to derive the AES key with PBKDF2-SHA-256. It is never sent to the API, stored in MongoDB, or uploaded to Telegram. TechNova cannot recover an image if the member forgets this passphrase.
+- A dedicated passphrase (minimum 16 characters) is used to derive the AES key with PBKDF2-SHA-256. It is never sent to the API, stored in MongoDB, or uploaded to Telegram. TechNova cannot recover an image if the member forgets this passphrase.
 - The backend forwards ciphertext to the configured private Telegram channel and stores only Telegram file references plus encryption metadata in MongoDB. The raw image and ciphertext are not stored as MongoDB binary data.
 - The retrieval endpoint is restricted to the authenticated owner and ordinary Member role. The frontend decrypts locally; management and other members cannot retrieve the record through this endpoint.
 - This is application-layer end-to-end encryption. Telegram channels themselves are cloud chats, not Telegram Secret Chats; Telegram receives ciphertext, not the image or key. Keep channel membership restricted and apply an appropriate retention policy.
