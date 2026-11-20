@@ -87,3 +87,11 @@ The following are design targets only and must be reconciled with current Hub ro
 - For breaking changes, support old and new contracts during a documented transition.
 - Use database migrations that are safe to rerun and safe to roll back.
 - Add tests for old clients' expected fields before changing serializers.
+
+
+### ID-card photo privacy endpoints (Phase 1)
+
+- `GET/PUT /api/cards/me/photo-consent`: authenticated Member's own explicit consent state; withdrawal disables access and removes the active photo record.
+- `POST/GET/DELETE /api/cards/me/photo`: authenticated Member's own separate photo. Upload requires active consent and configured durable private S3-compatible storage. The API does not issue public object URLs.
+- `GET /api/verify/{token}/photo`: Founder/Core Management only; requires a valid active card, active member and current photo consent. Returns a normalized JPEG with private no-store headers.
+- `GET /api/verify/{token}` includes `photo_available` for authorized staff UI; it never embeds photo bytes.
