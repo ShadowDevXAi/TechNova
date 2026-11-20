@@ -1,8 +1,11 @@
 """Fast, dependency-light regression checks for the existing ecosystem contracts."""
 
 import os
+import asyncio
+from io import BytesIO
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 # Ensure the backend package is importable when this file is run from the repo root.
@@ -20,12 +23,17 @@ os.environ.setdefault("SMTP_HOST", "")
 os.environ.setdefault("SMTP_FROM_EMAIL", "")
 
 from fastapi import HTTPException
+from PIL import Image
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from fastapi.routing import APIRoute
 
 from app.main import api_app
 from app.routes.hub import HUB_COLLECTIONS, HUB_STAFF, project_join_is_allowed
-from app.routes.profile_image import _require_member
+from app.routes.profile_image import _require_member as _require_profile_image_member
+from app.routes.card_photo_consent import _require_active_member, _require_member as _require_consent_member
+from app.routes.card_photo import _normalized_jpeg, _require_member as _require_card_photo_member
 from app.core import member_rank, task_credit_value
+from app.image_scan import MalwareDetected, ScannerUnavailable, parse_clamd_response, scan_image_bytes
 
 
 class EcosystemContractTests(unittest.TestCase):
@@ -55,6 +63,12 @@ class EcosystemContractTests(unittest.TestCase):
             ("GET", "/api/verify/{token}"),
             ("POST", "/api/profile-image"),
             ("GET", "/api/profile-image"),
+            ("GET", "/api/cards/me/photo-consent"),
+            ("POST", "/api/cards/me/photo"),
+            ("GET", "/api/cards/me/photo"),
+            ("DELETE", "/api/cards/me/photo"),
+            ("GET", "/api/verify/{token}/photo"),
+            ("PUT", "/api/cards/me/photo-consent"),
             ("GET", "/api/hub/profile"),
             ("POST", "/api/hub/attendance/check-in"),
             ("POST", "/api/hub/events/{item_id}/rsvp"),
@@ -73,6 +87,78 @@ class EcosystemContractTests(unittest.TestCase):
             }
             self.assertIn("get_current_user", dependency_names)
 
+    def test_id_card_photo_endpoints_have_expected_authentication(self):
+        for method in ("POST", "GET", "DELETE"):
+            route = self.routes[(method, "/api/cards/me/photo")]
+            names = {getattr(dep.call, "__name__", "") for dep in route.dependant.dependencies}
+            self.assertIn("get_current_user", names)
+        staff_route = self.routes[("GET", "/api/verify/{token}/photo")]
+        staff_dependency = staff_route.dependant.dependencies[0]
+        nested_names = {getattr(dep.call, "__name__", "") for dep in staff_dependency.dependencies}
+        self.assertIn("get_current_user", nested_names)
+
+    def test_card_photo_upload_normalizes_to_metadata_stripped_jpeg(self):
+        source = BytesIO()
+        Image.new("RGB", (128, 128), "white").save(source, format="PNG")
+        upload = StarletteUploadFile(filename="profile.png", file=BytesIO(source.getvalue()))
+        normalized = asyncio.run(_normalized_jpeg(upload))
+        result = Image.open(BytesIO(normalized))
+        self.assertEqual(result.format, "JPEG")
+        self.assertEqual(result.size, (128, 128))
+        self.assertFalse(result.getexif())
+
+    def test_clamav_clean_response_is_accepted(self):
+        self.assertEqual(parse_clamd_response(b"stream: OK\0"), "clean")
+
+    def test_clamav_malware_response_is_rejected(self):
+        with self.assertRaises(MalwareDetected):
+            parse_clamd_response(b"stream: Eicar-Test-Signature FOUND\0")
+
+    def test_clamav_scanner_configuration_fails_closed(self):
+        with mock.patch.dict(os.environ, {"ID_PHOTO_CLAMAV_HOST": ""}, clear=False):
+            with self.assertRaises(ScannerUnavailable):
+                scan_image_bytes(b"test-image")
+
+    def test_card_photo_upload_rejects_oversized_payload(self):
+        upload = StarletteUploadFile(filename="too-large.png", file=BytesIO(b"x" * (5 * 1024 * 1024 + 1)))
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(_normalized_jpeg(upload))
+        self.assertEqual(raised.exception.status_code, 413)
+
+    def test_card_photo_upload_rejects_unsupported_format(self):
+        source = BytesIO()
+        Image.new("RGB", (128, 128), "white").save(source, format="GIF")
+        upload = StarletteUploadFile(filename="profile.gif", file=BytesIO(source.getvalue()))
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(_normalized_jpeg(upload))
+        self.assertEqual(raised.exception.status_code, 415)
+
+    def test_card_photo_member_role_is_required(self):
+        self.assertIsNone(_require_card_photo_member({"role": "Member", "status": "Active"}))
+        with self.assertRaises(HTTPException) as raised:
+            _require_card_photo_member({"role": "Faculty", "status": "Active"})
+        self.assertEqual(raised.exception.status_code, 403)
+
+    def test_id_card_photo_consent_is_owner_only_and_member_only(self):
+        for method in ("GET", "PUT"):
+            route = self.routes[(method, "/api/cards/me/photo-consent")]
+            dependency_names = {
+                getattr(dependency.call, "__name__", "")
+                for dependency in route.dependant.dependencies
+            }
+            self.assertIn("get_current_user", dependency_names)
+        self.assertIsNone(_require_consent_member({"role": "Member", "status": "Suspended"}))
+        self.assertIsNone(_require_active_member({"role": "Member", "status": "Active"}))
+        for user in (
+            {"role": "Founder", "status": "Active"},
+            {"role": "Core Management", "status": "Active"},
+            {"role": "Faculty", "status": "Active"},
+        ):
+            with self.subTest(user=user):
+                with self.assertRaises(HTTPException) as raised:
+                    _require_active_member(user)
+                self.assertEqual(raised.exception.status_code, 403)
+
     def test_project_join_respects_private_visibility(self):
         private_project = {"visibility": "Private", "members": ["existing-member"]}
         self.assertFalse(project_join_is_allowed(private_project, {"_id": "new-member", "role": "Member"}))
@@ -81,11 +167,11 @@ class EcosystemContractTests(unittest.TestCase):
         self.assertTrue(project_join_is_allowed({"visibility": "Club", "members": []}, {"_id": "new-member", "role": "Member"}))
 
     def test_private_profile_image_is_member_only(self):
-        self.assertIsNone(_require_member({"role": "Member"}))
+        self.assertIsNone(_require_profile_image_member({"role": "Member"}))
         for role in ("Founder", "Core Management", "Faculty"):
             with self.subTest(role=role):
                 with self.assertRaises(HTTPException) as raised:
-                    _require_member({"role": role})
+                    _require_profile_image_member({"role": role})
                 self.assertEqual(raised.exception.status_code, 403)
 
     def test_existing_credit_rewards_and_ranks_remain_stable(self):

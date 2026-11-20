@@ -47,6 +47,7 @@ async def ensure_indexes():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("member_id", unique=True)
     await db.profile_images.create_index("owner_id", unique=True)
+    await db.card_photos.create_index("owner_id", unique=True)
     # Verified phone numbers belong to one active account; missing values are not indexed.
     await db.users.create_index("phone_number", unique=True, sparse=True)
     await db.cards.create_index("token_hash", unique=True, sparse=True)

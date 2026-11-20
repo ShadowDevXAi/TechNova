@@ -5,6 +5,8 @@ import TwoFactorSettings from "./components/TwoFactorSettings.jsx";
 import StorageSettings from "./components/StorageSettings.jsx";
 import ContactNotificationSettings from "./components/ContactNotificationSettings.jsx";
 import MemberProfileImage from "./components/MemberProfileImage.jsx";
+import IdCardPhotoConsent from "./components/IdCardPhotoConsent.jsx";
+import VerifiedCardPhoto from "./components/VerifiedCardPhoto.jsx";
 import { listenForForegroundMessages } from "./firebase.js";
 import { api, API_BASE } from "./api/client.js";
 import TechNovaLogo from "./components/TechNovaLogo.jsx";
@@ -280,6 +282,7 @@ function App() {
     if (!autoVerifyRoute || !token || !user || page !== "Verification" || !verifyToken) return;
     let cancelled = false;
     const candidate = extractCardToken(verifyToken);
+    setVerifyToken(candidate);
     api("/verify/" + encodeURIComponent(candidate), token)
       .then(async (result) => {
         if (cancelled) return;
@@ -389,6 +392,7 @@ function App() {
                 "/verify/" + encodeURIComponent(candidate),
                 token
               );
+              setVerifyToken(candidate);
               setVerifyResult(result);
               await loadPendingReviewTasksFor(result);
             } catch (err) {
@@ -2283,6 +2287,9 @@ function App() {
                     <div className="empty">Choose a member.</div>
                   )}
                 </div>
+                <button type="button" className="secondary idcard-print-action" onClick={() => window.print()}>
+                  Print / Save ID card
+                </button>
                 {isAdmin && <div className="panel qrpanel">
                   <h3>Choose a cardholder</h3>
                   <p>Only active members can receive cards.</p>
@@ -2430,6 +2437,17 @@ function App() {
                         <small>
                           {verifyResult.role} · {verifyResult.club}
                         </small>
+                        <small className="verify-photo-consent">
+                          ID-card photo consent: {verifyResult.photo_consent ? "Granted" : "Not granted"}
+                        </small>
+                        {verifyResult.photo_consent && !verifyResult.photo_available && (
+                          <small className="verify-photo-consent">No separate ID-card photo has been uploaded.</small>
+                        )}
+                        <VerifiedCardPhoto
+                          token={token}
+                          cardToken={extractCardToken(verifyToken)}
+                          enabled={verifyResult.photo_available === true}
+                        />
                         {verifyResult.progression_type === "founder" ? (
                           <div className="verify-member-progress founder-origin-verify">
                             <b>{verifyResult.level_title || "Founder · Origin Rank"}</b>
@@ -2626,6 +2644,7 @@ function App() {
                   </div>
                 )}
                 {user.role === "Member" && <MemberProfileImage token={token} onDecrypted={setProfileImageDataUrl} />}
+                {user.role === "Member" && <IdCardPhotoConsent token={token} />}
                 <h3>Profile</h3>
                 <form onSubmit={saveProfile}>
                   <label>

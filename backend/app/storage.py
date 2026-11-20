@@ -83,3 +83,21 @@ def read_attachment(item: dict) -> bytes:
     if not stored_name:
         raise FileNotFoundError("Attachment storage key is missing")
     return (LOCAL_UPLOAD_DIR / stored_name).read_bytes()
+
+def delete_attachment(item: dict) -> None:
+    """Delete a private stored object; unknown or missing keys fail closed."""
+    if item.get("storage_backend") == "s3":
+        key = str(item.get("storage_key") or "")
+        if not key or key.startswith("/") or ".." in key.split("/"):
+            raise ValueError("Invalid private storage key")
+        _s3_client().delete_object(Bucket=settings.s3_bucket.strip(), Key=key)
+        return
+    if item.get("storage_backend") == "local":
+        stored_name = Path(str(item.get("stored_name") or "")).name
+        if not stored_name:
+            raise ValueError("Attachment storage key is missing")
+        path = LOCAL_UPLOAD_DIR / stored_name
+        if path.exists():
+            path.unlink()
+        return
+    raise ValueError("Unknown attachment storage backend")

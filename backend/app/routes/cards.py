@@ -117,6 +117,10 @@ async def verify_card(token: str, request: Request, actor: dict = Depends(allow(
         raise HTTPException(403, "Core Management can verify Member IDs only")
     await audit(actor, "card_verified", str(member["_id"]), {"member_id": member["member_id"]}, request)
     progress = await member_progress_summary(member["_id"])
+    photo_consent = member.get("id_card_photo_consent") is True
+    photo_available = False
+    if photo_consent:
+        photo_available = await db.card_photos.find_one({"owner_id": member["_id"]}, {"_id": 1}) is not None
     return {
         "valid": True,
         "status": "Active",
@@ -124,6 +128,8 @@ async def verify_card(token: str, request: Request, actor: dict = Depends(allow(
         "member_id": member["member_id"],
         "role": member["role"],
         "team": member.get("team", "Unassigned"),
+        "photo_consent": photo_consent,
+        "photo_available": photo_available,
         "club": "TechNova",
         "progression_type": progress.get("progression_type", "xp"),
         "xp": progress["xp"],
