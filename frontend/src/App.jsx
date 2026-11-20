@@ -4,6 +4,7 @@ import PushNotificationSettings from "./components/PushNotificationSettings.jsx"
 import TwoFactorSettings from "./components/TwoFactorSettings.jsx";
 import StorageSettings from "./components/StorageSettings.jsx";
 import ContactNotificationSettings from "./components/ContactNotificationSettings.jsx";
+import MemberProfileImage from "./components/MemberProfileImage.jsx";
 import { listenForForegroundMessages } from "./firebase.js";
 import { api, API_BASE } from "./api/client.js";
 import TechNovaLogo from "./components/TechNovaLogo.jsx";
@@ -144,6 +145,8 @@ function App() {
     new_password: "",
   });
   const [profileForm, setProfileForm] = useState({ name: "" });
+  const [profileImageDataUrl, setProfileImageDataUrl] = useState("");
+  useEffect(() => { setProfileImageDataUrl(""); }, [user?.id]);
   const [audit, setAudit] = useState([]);
 
   // Show a short success toast after a member or management action completes.
@@ -1054,7 +1057,7 @@ function App() {
             <p>Learn together. Ship together.</p>
           </div>
           <div className="who">
-            <div className="avatar">{initials(user.name)}</div>
+            <div className="avatar">{profileImageDataUrl ? <img src={profileImageDataUrl} alt="" /> : initials(user.name)}</div>
             <div className="whotext">
               <b>{user.name}</b>
               <small>
@@ -1104,7 +1107,7 @@ function App() {
               <Bell size={17} />
               {unreadNotifications > 0 && <span className="notification-count">{unreadNotifications > 9 ? "9+" : unreadNotifications}</span>}
             </button>
-            <div className="avatar">{initials(user.name)}</div>
+            <div className="avatar">{profileImageDataUrl ? <img src={profileImageDataUrl} alt="" /> : initials(user.name)}</div>
           </div>
         </header>
 
@@ -2622,6 +2625,7 @@ function App() {
                     </div>
                   </div>
                 )}
+                {user.role === "Member" && <MemberProfileImage token={token} onDecrypted={setProfileImageDataUrl} />}
                 <h3>Profile</h3>
                 <form onSubmit={saveProfile}>
                   <label>

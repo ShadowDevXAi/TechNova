@@ -27,7 +27,7 @@ REDACT_KEYS = re.compile(
 )
 EXCLUDED_COLLECTIONS = {
     "password_resets", "email_verifications", "auth_challenges",
-    "trusted_devices", "push_tokens",
+    "trusted_devices", "push_tokens", "profile_images",
 }
 
 

@@ -164,3 +164,14 @@ Keep the backend at one running instance while Telegram long polling is enabled;
 The bot exports application collections as gzip-compressed JSON documents and separately sends stored task attachments. Passwords, password hashes, reset/verification/authentication tokens, OTPs, push tokens, API keys and service credentials are excluded. Attachment delivery is queued in MongoDB and does not block the upload request.
 
 **Privacy and retention:** Telegram is a third-party service and private channels are not end-to-end encrypted. Tell members which categories of data are backed up, obtain any required consent/legal basis, restrict channel membership, and define a retention/deletion policy before enabling this integration. Do not use this channel for highly confidential documents. The current upload integration covers task attachments; additional future upload endpoints must explicitly enqueue their files too.
+
+
+### Member profile images: client-side encryption
+
+- Ordinary `Member` accounts can upload a JPEG, PNG or WEBP profile image from Settings. The browser encrypts it with AES-256-GCM before the request leaves the device; a per-image random salt and IV are stored as metadata.
+- A dedicated passphrase (minimum 16 characters) is used to derive the AES key with PBKDF2-SHA-256. It is never sent to the API, stored in MongoDB, or uploaded to Telegram. TechNova cannot recover an image if the member forgets this passphrase.
+- The backend forwards ciphertext to the configured private Telegram channel and stores only Telegram file references plus encryption metadata in MongoDB. The raw image and ciphertext are not stored as MongoDB binary data.
+- The retrieval endpoint is restricted to the authenticated owner and ordinary Member role. The frontend decrypts locally; management and other members cannot retrieve the record through this endpoint.
+- This is application-layer end-to-end encryption. Telegram channels themselves are cloud chats, not Telegram Secret Chats; Telegram receives ciphertext, not the image or key. Keep channel membership restricted and apply an appropriate retention policy.
+- The current implementation limits original images to 5 MB and encrypted uploads to 6 MB. Configure the existing `TELEGRAM_ENABLED`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_ID`, and `TELEGRAM_BACKUP_CHAT_ID` backend environment variables and grant the bot permission to post in the private channel.
+- The member must keep their passphrase safe. A forgotten passphrase cannot be reset by administrators because the key is deliberately not escrowed.
