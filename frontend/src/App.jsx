@@ -282,6 +282,7 @@ function App() {
     if (!autoVerifyRoute || !token || !user || page !== "Verification" || !verifyToken) return;
     let cancelled = false;
     const candidate = extractCardToken(verifyToken);
+    setVerifyToken(candidate);
     api("/verify/" + encodeURIComponent(candidate), token)
       .then(async (result) => {
         if (cancelled) return;
@@ -391,6 +392,7 @@ function App() {
                 "/verify/" + encodeURIComponent(candidate),
                 token
               );
+              setVerifyToken(candidate);
               setVerifyResult(result);
               await loadPendingReviewTasksFor(result);
             } catch (err) {
