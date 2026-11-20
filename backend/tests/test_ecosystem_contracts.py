@@ -33,7 +33,7 @@ from app.routes.profile_image import _require_member as _require_profile_image_m
 from app.routes.card_photo_consent import _require_active_member, _require_member as _require_consent_member
 from app.routes.card_photo import _normalized_jpeg, _require_member as _require_card_photo_member
 from app.core import member_rank, task_credit_value
-from app.security.image_scan import MalwareDetected, ScannerUnavailable, parse_clamd_response, scan_image_bytes
+from app.image_scan import MalwareDetected, ScannerUnavailable, parse_clamd_response, scan_image_bytes
 
 
 class EcosystemContractTests(unittest.TestCase):
