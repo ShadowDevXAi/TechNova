@@ -36,7 +36,7 @@ The current repository already includes:
 ## Phase delivery status
 
 - **Phase 0:** merged to `main` through PR #25.
-- **Phase 1A (in progress):** explicit member-owned ID-card photo-consent recording and staff-visible consent status. This is consent metadata only; no image is published, uploaded, or returned by the verification API yet.
+- **Phase 1 (implemented in PR #39):** explicit member-owned ID-card photo consent, separate photo upload, image normalization, private S3-compatible storage, authenticated staff-only photo retrieval, withdrawal/deletion, and a member settings UI. Durable storage configuration is required before upload.
 
 ## Phased delivery
 
