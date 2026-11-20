@@ -5,6 +5,7 @@ import asyncio
 from io import BytesIO
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 # Ensure the backend package is importable when this file is run from the repo root.
@@ -114,7 +115,7 @@ class EcosystemContractTests(unittest.TestCase):
             parse_clamd_response(b"stream: Eicar-Test-Signature FOUND\\0")
 
     def test_clamav_scanner_configuration_fails_closed(self):
-        with unittest.mock.patch.dict(os.environ, {"ID_PHOTO_CLAMAV_HOST": ""}, clear=False):
+        with mock.patch.dict(os.environ, {"ID_PHOTO_CLAMAV_HOST": ""}, clear=False):
             with self.assertRaises(ScannerUnavailable):
                 scan_image_bytes(b"test-image")
 
