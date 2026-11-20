@@ -11476,3 +11476,46 @@ button:disabled { cursor: not-allowed; }
   object-fit: cover;
   border-radius: inherit;
 }
+
+.id-photo-upload {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.id-photo-upload form {
+  display: grid;
+  gap: 10px;
+}
+.id-photo-upload label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+.id-photo-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+}
+.id-photo-preview img {
+  width: 84px;
+  height: 104px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border, rgba(148, 163, 184, .25));
+}
+.verified-card-photo {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin: 12px 0;
+}
+.verified-card-photo img {
+  width: 112px;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--border, rgba(148, 163, 184, .3));
+}
+.verified-card-photo small { color: var(--muted, #94a3b8); }
