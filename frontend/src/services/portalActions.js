@@ -913,6 +913,7 @@ export default function createPortalActions(context) {
       }
       setPendingReviewTasks([]);
       setReviewQueueMemberId("");
+      setVerifyToken(candidate);
       let v = await api("/verify/" + encodeURIComponent(candidate), token);
       setVerifyResult(v);
       await loadPendingReviewTasksFor(v);
