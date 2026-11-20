@@ -9,7 +9,6 @@ import asyncio
 import io
 import secrets
 import warnings
-from uuid import uuid4
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -119,7 +118,7 @@ async def upload_own_id_card_photo(
     latest = await db.users.find_one({"_id": user["_id"]}, {"id_card_photo_consent": 1, "status": 1})
     if not latest or latest.get("status") != "Active" or latest.get("id_card_photo_consent") is not True:
         try:
-            await __import__("asyncio").to_thread(delete_attachment, stored)
+            await asyncio.to_thread(delete_attachment, stored)
         except Exception:
             pass
         raise HTTPException(409, "Photo consent changed during upload. The new photo was not activated.")
