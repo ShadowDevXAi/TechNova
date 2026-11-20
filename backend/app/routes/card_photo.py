@@ -150,6 +150,22 @@ async def upload_own_id_card_photo(
         {"$set": record, "$setOnInsert": {"created_at": now}},
         upsert=True,
     )
+
+    # Close the remaining revoke/upload race: consent may be withdrawn after the
+    # pre-write check but before the photo metadata becomes visible. Re-check
+    # after activation and remove the record/object if consent is no longer active.
+    final_consent = await db.users.find_one(
+        {"_id": user["_id"]},
+        {"id_card_photo_consent": 1, "status": 1},
+    )
+    if not final_consent or final_consent.get("status") != "Active" or final_consent.get("id_card_photo_consent") is not True:
+        await db.card_photos.delete_one({"owner_id": user["_id"], "storage_key": stored.get("storage_key"), "stored_name": stored.get("stored_name")})
+        try:
+            await asyncio.to_thread(delete_attachment, stored)
+        except Exception:
+            pass
+        raise HTTPException(409, "Photo consent changed during upload. The photo was not activated.")
+
     if previous:
         try:
             await asyncio.to_thread(delete_attachment, previous)
