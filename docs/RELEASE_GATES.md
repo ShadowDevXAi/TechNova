@@ -22,6 +22,7 @@ Every pull request should:
 - Founder/Core Management login → TOTP → trusted device → logout/revoke.
 - Member login → profile edit → encrypted private image upload/retrieve.
 - Card issue → QR verification → revoke → verification rejected.
+- Member ID-photo consent → staff verification shows only the consent state → withdrawal is reflected immediately; no photo is returned by the consent-only phase.
 - Task assignment → submission → review → credit award exactly once.
 - Hub event → RSVP → attendance check-in → duplicate check-in rejected.
 - Project visibility → join → unauthorized account denied.
