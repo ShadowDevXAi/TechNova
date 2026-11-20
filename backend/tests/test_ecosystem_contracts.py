@@ -23,7 +23,7 @@ from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
 from app.main import api_app
-from app.routes.hub import HUB_COLLECTIONS, HUB_STAFF
+from app.routes.hub import HUB_COLLECTIONS, HUB_STAFF, project_join_is_allowed
 from app.routes.profile_image import _require_member
 from app.core import member_rank, task_credit_value
 
@@ -72,6 +72,13 @@ class EcosystemContractTests(unittest.TestCase):
                 for dependency in route.dependant.dependencies
             }
             self.assertIn("get_current_user", dependency_names)
+
+    def test_project_join_respects_private_visibility(self):
+        private_project = {"visibility": "Private", "members": ["existing-member"]}
+        self.assertFalse(project_join_is_allowed(private_project, {"_id": "new-member", "role": "Member"}))
+        self.assertTrue(project_join_is_allowed(private_project, {"_id": "existing-member", "role": "Member"}))
+        self.assertTrue(project_join_is_allowed(private_project, {"_id": "staff", "role": "Core Management"}))
+        self.assertTrue(project_join_is_allowed({"visibility": "Club", "members": []}, {"_id": "new-member", "role": "Member"}))
 
     def test_private_profile_image_is_member_only(self):
         self.assertIsNone(_require_member({"role": "Member"}))
