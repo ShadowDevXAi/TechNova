@@ -27,7 +27,7 @@ Do not automatically grant access to private member files, messages, application
 
 The encrypted profile-image endpoint is owner-only. Its browser-held passphrase is never sent to the API. Telegram stores ciphertext, not plaintext; Telegram channels are not native end-to-end encrypted chats.
 
-A public or staff-scannable ID card must not reuse the owner-only private-image endpoint. If the product needs a photo on a card that other people can view:
+A public or staff-scannable ID card must not reuse the owner-only private-image endpoint. Phase 1A records a separate, revocable preference on the member account; the verification response exposes only whether consent was granted to authenticated verification staff. It does not expose an image, and consent alone does not enable photo sharing. If the product needs a photo on a card that other people can view:
 1. Request separate, explicit member consent.
 2. Store the card-display photo as a separate resource with its own visibility and retention rules.
 3. Provide revoke/delete controls and reflect consent changes in the card.
