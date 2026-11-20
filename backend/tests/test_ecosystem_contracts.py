@@ -28,8 +28,8 @@ from fastapi.routing import APIRoute
 
 from app.main import api_app
 from app.routes.hub import HUB_COLLECTIONS, HUB_STAFF, project_join_is_allowed
-from app.routes.profile_image import _require_member
-from app.routes.card_photo_consent import _require_active_member, _require_member
+from app.routes.profile_image import _require_member as _require_profile_image_member
+from app.routes.card_photo_consent import _require_active_member, _require_member as _require_consent_member
 from app.routes.card_photo import _normalized_jpeg, _require_member as _require_card_photo_member
 from app.core import member_rank, task_credit_value
 
@@ -105,6 +105,12 @@ class EcosystemContractTests(unittest.TestCase):
         self.assertEqual(result.size, (128, 128))
         self.assertFalse(result.getexif())
 
+    def test_card_photo_upload_rejects_oversized_payload(self):
+        upload = StarletteUploadFile(filename="too-large.png", file=BytesIO(b"x" * (5 * 1024 * 1024 + 1)))
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(_normalized_jpeg(upload))
+        self.assertEqual(raised.exception.status_code, 413)
+
     def test_card_photo_upload_rejects_unsupported_format(self):
         source = BytesIO()
         Image.new("RGB", (128, 128), "white").save(source, format="GIF")
@@ -127,7 +133,7 @@ class EcosystemContractTests(unittest.TestCase):
                 for dependency in route.dependant.dependencies
             }
             self.assertIn("get_current_user", dependency_names)
-        self.assertIsNone(_require_member({"role": "Member", "status": "Suspended"}))
+        self.assertIsNone(_require_consent_member({"role": "Member", "status": "Suspended"}))
         self.assertIsNone(_require_active_member({"role": "Member", "status": "Active"}))
         for user in (
             {"role": "Founder", "status": "Active"},
@@ -147,11 +153,11 @@ class EcosystemContractTests(unittest.TestCase):
         self.assertTrue(project_join_is_allowed({"visibility": "Club", "members": []}, {"_id": "new-member", "role": "Member"}))
 
     def test_private_profile_image_is_member_only(self):
-        self.assertIsNone(_require_member({"role": "Member"}))
+        self.assertIsNone(_require_profile_image_member({"role": "Member"}))
         for role in ("Founder", "Core Management", "Faculty"):
             with self.subTest(role=role):
                 with self.assertRaises(HTTPException) as raised:
-                    _require_member({"role": role})
+                    _require_profile_image_member({"role": role})
                 self.assertEqual(raised.exception.status_code, 403)
 
     def test_existing_credit_rewards_and_ranks_remain_stable(self):
