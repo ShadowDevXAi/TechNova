@@ -28,7 +28,7 @@ export default function IdCardPhotoConsent({ token }) {
       cache: "no-store",
     });
     if (response.status === 404) {
-      setPhotoUrl("");
+      setManagedPhotoUrl("");
       return;
     }
     if (!response.ok) {
