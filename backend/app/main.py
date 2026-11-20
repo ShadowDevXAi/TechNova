@@ -23,6 +23,7 @@ from .routes.teams import router as teams_router
 from .routes.cards import router as cards_router
 from .routes.hub import router as hub_router
 from .routes.push import router as push_router
+from .routes.profile_image import router as profile_image_router
 
 logger = logging.getLogger("technova.api")
 
@@ -65,6 +66,7 @@ api_app.include_router(teams_router)
 api_app.include_router(cards_router)
 api_app.include_router(hub_router)
 api_app.include_router(push_router)
+api_app.include_router(profile_image_router)
 
 # Keep local development and the deployed Render frontend explicitly allowed.
 # Add custom frontend domains through FRONTEND_ORIGINS; never use a wildcard with credentials.
