@@ -202,3 +202,14 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+      - name: Run ecosystem contract tests
+        working-directory: backend
+        env:
+          MONGODB_URI: mongodb://127.0.0.1:27017/technova_ci
+          JWT_SECRET: technova-ci-only-secret-key-with-more-than-32-characters
+          BOOTSTRAP_FOUNDER_NAME: CI Founder
+          BOOTSTRAP_FOUNDER_EMAIL: ci-founder@example.com
+          BOOTSTRAP_FOUNDER_PASSWORD: ci-only-not-a-real-password-123
+          SMTP_HOST: ""
+          SMTP_FROM_EMAIL: ""
+        run: python -m unittest discover -s tests -v

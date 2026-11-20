@@ -2204,7 +2204,7 @@ function App() {
                   {selected ? (
                     <>
                       <div className="cardperson">
-                        <div className="photo">{initials(selected.name)}</div>
+                        <div className="photo">{selected?.id === user.id && profileImageDataUrl ? <img src={profileImageDataUrl} alt={selected.name + " profile"} /> : initials(selected.name)}</div>
                         <div>
                           <label>
                             {selected.role === "Core Management"

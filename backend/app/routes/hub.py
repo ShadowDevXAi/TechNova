@@ -30,6 +30,17 @@ HUB_COLLECTIONS = {
 # Faculty can manage Hub content and review challenges alongside club management.
 HUB_STAFF = {"Founder", "Core Management", "Faculty"}
 
+
+# Purpose: enforce the same project visibility rule on direct joins as on project listing.
+def project_join_is_allowed(project: dict, user: dict) -> bool:
+    """Allow staff, public club projects, or a member already on a private project."""
+    if user.get("role") in HUB_STAFF:
+        return True
+    return (
+        project.get("visibility", "Club") == "Club"
+        or str(user.get("_id", "")) in project.get("members", [])
+    )
+
 # Purpose: hub clean handles the hub feature flow and returns its API result.
 def hub_clean(doc):
     return {k: (str(v) if k == "_id" else v) for k,v in {
@@ -138,6 +149,9 @@ async def hub_create(collection: str, request: Request, user: dict = Depends(get
 async def hub_join_project(item_id: str, request: Request, user: dict = Depends(get_current_user)):
     project=await db.hub_projects.find_one({"_id":oid(item_id),"status":{"$ne":"Archived"}})
     if not project: raise HTTPException(404,"Project not found")
+    if not project_join_is_allowed(project, user):
+        # Do not reveal whether a private project exists to an unauthorized member.
+        raise HTTPException(404, "Project not found")
     await db.hub_projects.update_one({"_id":project["_id"]},{"$addToSet":{"members":str(user["_id"])}})
     await audit(user,"hub_project_joined",item_id,{"title":project.get("title")},request)
     return {"ok":True}
