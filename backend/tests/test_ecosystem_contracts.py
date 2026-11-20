@@ -108,11 +108,11 @@ class EcosystemContractTests(unittest.TestCase):
         self.assertFalse(result.getexif())
 
     def test_clamav_clean_response_is_accepted(self):
-        self.assertEqual(parse_clamd_response(b"stream: OK\\0"), "clean")
+        self.assertEqual(parse_clamd_response(b"stream: OK\0"), "clean")
 
     def test_clamav_malware_response_is_rejected(self):
         with self.assertRaises(MalwareDetected):
-            parse_clamd_response(b"stream: Eicar-Test-Signature FOUND\\0")
+            parse_clamd_response(b"stream: Eicar-Test-Signature FOUND\0")
 
     def test_clamav_scanner_configuration_fails_closed(self):
         with mock.patch.dict(os.environ, {"ID_PHOTO_CLAMAV_HOST": ""}, clear=False):
