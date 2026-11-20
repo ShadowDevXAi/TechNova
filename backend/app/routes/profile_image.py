@@ -111,7 +111,7 @@ async def upload_profile_image(
 
 @router.get("/api/profile-image")
 @limiter.limit("30/minute")
-async def get_profile_image(user: dict = Depends(get_current_user)):
+async def get_profile_image(request: Request, user: dict = Depends(get_current_user)):
     """Return only the signed-in Member's encrypted image; never expose another owner's image."""
     _require_member(user)
     record = await db.profile_images.find_one({"owner_id": user["_id"]})
