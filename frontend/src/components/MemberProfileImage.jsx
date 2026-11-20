@@ -81,8 +81,8 @@ export default function MemberProfileImage({ token, onDecrypted }) {
     setError("");
     setMessage("");
     if (!storedImage) return;
-    if (passphrase.length < 12) {
-      setError("Enter the private image passphrase you used when uploading (at least 12 characters).");
+    if (passphrase.length < 16) {
+      setError("Enter the private image passphrase you used when uploading (at least 16 characters).");
       return;
     }
     setBusy(true);
@@ -122,8 +122,8 @@ export default function MemberProfileImage({ token, onDecrypted }) {
       setError("The original image must be 5 MB or smaller.");
       return;
     }
-    if (passphrase.length < 12) {
-      setError("Create a private image passphrase with at least 12 characters.");
+    if (passphrase.length < 16) {
+      setError("Create a private image passphrase with at least 16 characters.");
       return;
     }
     if (!window.crypto?.subtle) {
@@ -170,7 +170,7 @@ export default function MemberProfileImage({ token, onDecrypted }) {
       <h3>Private profile image</h3>
       <p>
         Only you can decrypt this image. TechNova and Telegram store encrypted bytes, not your
-        passphrase. Use a separate passphrase of at least 12 characters and keep it safe.
+        passphrase. Use a separate passphrase of at least 16 characters and keep it safe.
       </p>
       <div className="member-profile-image-preview">
         {photoUrl ? <img src={photoUrl} alt="Your decrypted profile" /> : <span>Image locked</span>}
@@ -187,7 +187,7 @@ export default function MemberProfileImage({ token, onDecrypted }) {
           autoComplete="off"
           value={passphrase}
           onChange={(event) => setPassphrase(event.target.value)}
-          placeholder="At least 12 characters"
+          placeholder="At least 16 characters"
         />
       </label>
       <div className="profile-image-actions">
