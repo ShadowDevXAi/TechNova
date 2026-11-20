@@ -15,7 +15,7 @@ from starlette.responses import Response
 
 from ..core import audit, allow, db, get_current_user, limiter, utcnow
 from ..storage import attachment_storage_status, delete_attachment, read_attachment, store_attachment
-from ..security.image_scan import MalwareDetected, ScannerUnavailable, scan_image_bytes
+from ..image_scan import MalwareDetected, ScannerUnavailable, scan_image_bytes
 from .cards import active_card_from_token
 
 router = APIRouter()
