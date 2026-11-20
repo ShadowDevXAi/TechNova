@@ -178,7 +178,7 @@ jobs:
           print("API imports, task serializer, schedule index migration, Hub, push, health and progression checks passed.")
           PY
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
