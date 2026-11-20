@@ -4,6 +4,7 @@ import PushNotificationSettings from "./components/PushNotificationSettings.jsx"
 import TwoFactorSettings from "./components/TwoFactorSettings.jsx";
 import StorageSettings from "./components/StorageSettings.jsx";
 import ContactNotificationSettings from "./components/ContactNotificationSettings.jsx";
+import MemberProfileImage from "./components/MemberProfileImage.jsx";
 import { listenForForegroundMessages } from "./firebase.js";
 import { api, API_BASE } from "./api/client.js";
 import TechNovaLogo from "./components/TechNovaLogo.jsx";
@@ -2622,6 +2623,7 @@ function App() {
                     </div>
                   </div>
                 )}
+                {user.role === "Member" && <MemberProfileImage token={token} />}
                 <h3>Profile</h3>
                 <form onSubmit={saveProfile}>
                   <label>
