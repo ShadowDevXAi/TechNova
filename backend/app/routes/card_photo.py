@@ -1,7 +1,7 @@
 """Consent-gated ID-card photos stored in private S3-compatible object storage.
 
-Uploads are decoded and re-encoded as JPEG to strip metadata and reject malformed
-or unsupported image payloads. Photos are never served from a public object URL.
+Uploads are decoded and re-encoded as JPEG, then scanned by ClamAV before storage.
+Photos are never served from a public object URL.
 """
 import asyncio
 import io
@@ -15,6 +15,7 @@ from starlette.responses import Response
 
 from ..core import audit, allow, db, get_current_user, limiter, utcnow
 from ..storage import attachment_storage_status, delete_attachment, read_attachment, store_attachment
+from ..security.image_scan import MalwareDetected, ScannerUnavailable, scan_image_bytes
 from .cards import active_card_from_token
 
 router = APIRouter()
@@ -114,6 +115,12 @@ async def upload_own_id_card_photo(
     if current.get("id_card_photo_consent") is not True:
         raise HTTPException(403, "Grant ID-card photo consent before uploading.")
     content = await _normalized_jpeg(photo)
+    try:
+        await asyncio.to_thread(scan_image_bytes, content)
+    except MalwareDetected as exc:
+        raise HTTPException(422, "The uploaded image failed the malware scan.") from exc
+    except ScannerUnavailable as exc:
+        raise HTTPException(503, "ID-card photo scanning is unavailable. Uploads are disabled until ClamAV is healthy.") from exc
     key = f"technova/id-card-photos/{secrets.token_hex(16)}.jpg"
     try:
         stored = await asyncio.to_thread(store_attachment, key, content, "image/jpeg")
