@@ -7,6 +7,8 @@ must exist before any image is returned by card verification.
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
+from ..storage import delete_attachment
+
 from ..core import audit, db, get_current_user, limiter, utcnow
 
 router = APIRouter()
@@ -73,6 +75,18 @@ async def update_own_card_photo_consent(
         update["$set"]["id_card_photo_consent_revoked_at"] = now
 
     await db.users.update_one({"_id": user["_id"]}, update)
+    if not payload.consent:
+        # Withdrawal is effective before storage cleanup; the verification endpoint
+        # checks this flag before every read, so a cleanup failure cannot expose it.
+        photo = await db.card_photos.find_one({"owner_id": user["_id"]})
+        if photo:
+            await db.card_photos.delete_one({"_id": photo["_id"]})
+            try:
+                import asyncio
+                await asyncio.to_thread(delete_attachment, photo)
+            except Exception:
+                # The object remains private and inaccessible; lifecycle cleanup can remove it.
+                pass
     await audit(
         user,
         "id_card_photo_consent_granted" if payload.consent else "id_card_photo_consent_revoked",
