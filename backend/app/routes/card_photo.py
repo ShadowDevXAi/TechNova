@@ -99,6 +99,14 @@ async def upload_own_id_card_photo(
     user: dict = Depends(get_current_user),
 ):
     _require_member(user)
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            declared_length = int(content_length)
+        except ValueError:
+            raise HTTPException(400, "Invalid upload content length.")
+        if declared_length > MAX_UPLOAD_BYTES + 128 * 1024:
+            raise HTTPException(413, "Choose an image no larger than 5 MB.")
     _require_durable_private_storage()
     current = await db.users.find_one({"_id": user["_id"]}, {"id_card_photo_consent": 1, "status": 1})
     if not current or current.get("status") != "Active":
