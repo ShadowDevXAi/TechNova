@@ -2285,6 +2285,9 @@ function App() {
                     <div className="empty">Choose a member.</div>
                   )}
                 </div>
+                <button type="button" className="secondary idcard-print-action" onClick={() => window.print()}>
+                  Print / Save ID card
+                </button>
                 {isAdmin && <div className="panel qrpanel">
                   <h3>Choose a cardholder</h3>
                   <p>Only active members can receive cards.</p>
