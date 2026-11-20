@@ -5,11 +5,13 @@ or unsupported image payloads. Photos are never served from a public object URL.
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import secrets
 import warnings
 from uuid import uuid4
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.responses import Response
@@ -109,7 +111,7 @@ async def upload_own_id_card_photo(
     content = await _normalized_jpeg(photo)
     key = f"technova/id-card-photos/{secrets.token_hex(16)}.jpg"
     try:
-        stored = await __import__("asyncio").to_thread(store_attachment, key, content, "image/jpeg")
+        stored = await asyncio.to_thread(store_attachment, key, content, "image/jpeg")
     except Exception as exc:
         raise HTTPException(502, "Private ID-card photo storage failed. No photo was published.") from exc
 
@@ -189,7 +191,7 @@ async def get_verified_card_photo(
     card = await active_card_from_token(token)
     if not card:
         raise HTTPException(404, "Card is invalid or revoked.")
-    member = await db.users.find_one({"_id": __import__("bson").ObjectId(card["member_id"])})
+    member = await db.users.find_one({"_id": ObjectId(card["member_id"])})
     if not member or member.get("status") != "Active":
         raise HTTPException(404, "Member is not active.")
     if actor.get("role") == "Core Management" and member.get("role") != "Member":
