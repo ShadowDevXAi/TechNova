@@ -11467,3 +11467,12 @@ button:disabled { cursor: not-allowed; }
   object-fit: cover;
   border-radius: inherit;
 }
+
+/* Show the signed-in member's locally decrypted photo on their own printable ID card. */
+.photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
