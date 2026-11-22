@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     s3_secret_access_key: str = ""
     bootstrap_founder_name: str = Field(min_length=2)
     bootstrap_founder_email: EmailStr
+    # Optional owner identity; promotion is performed server-side after valid login.
+    owner_email: EmailStr | None = None
     bootstrap_founder_password: str = Field(min_length=12)
     def origins(self) -> list[str]:
         """Return normalized, unique frontend origins for the CORS allow-list."""
