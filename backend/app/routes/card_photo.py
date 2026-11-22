@@ -14,7 +14,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.responses import Response
 
 from ..core import audit, allow, db, get_current_user, limiter, utcnow
-from ..storage import attachment_storage_status, delete_attachment, read_attachment, store_attachment
+from ..id_card_photo_storage import delete_id_card_photo, read_id_card_photo, store_id_card_photo
 from ..image_scan import MalwareDetected, ScannerUnavailable, scan_image_bytes
 from .cards import active_card_from_token
 
@@ -33,12 +33,9 @@ def _require_member(user: dict, *, active: bool = True) -> None:
 
 
 def _require_durable_private_storage() -> None:
-    status = attachment_storage_status()
-    if status.get("provider") != "S3-compatible object storage" or not status.get("configured") or not status.get("durable"):
-        raise HTTPException(
-            503,
-            "ID-card photo storage is not ready. Configure private S3-compatible storage (Cloudflare R2 or S3) before uploading photos.",
-        )
+    """ID-card photo bytes are stored in the configured MongoDB database via GridFS."""
+    if db is None:
+        raise HTTPException(503, "MongoDB photo storage is unavailable.")
 
 
 async def _normalized_jpeg(upload: UploadFile) -> bytes:
@@ -86,7 +83,7 @@ async def _remove_photo_for_owner(owner_id) -> None:
     # Remove metadata first: a storage failure must never leave the photo retrievable.
     await db.card_photos.delete_one({"_id": old["_id"]})
     try:
-        await asyncio.to_thread(delete_attachment, old)
+        await delete_id_card_photo(old)
     except Exception:
         # Orphaned private object is inaccessible and can be cleaned up by storage lifecycle.
         pass
@@ -121,9 +118,8 @@ async def upload_own_id_card_photo(
         raise HTTPException(422, "The uploaded image failed the malware scan.") from exc
     except ScannerUnavailable as exc:
         raise HTTPException(503, "ID-card photo scanning is unavailable. Uploads are disabled until ClamAV is healthy.") from exc
-    key = f"technova/id-card-photos/{secrets.token_hex(16)}.jpg"
-    try:
-        stored = await asyncio.to_thread(store_attachment, key, content, "image/jpeg")
+        try:
+        stored = await store_id_card_photo(user["_id"], content)
     except Exception as exc:
         raise HTTPException(502, "Private ID-card photo storage failed. No photo was published.") from exc
 
@@ -131,7 +127,7 @@ async def upload_own_id_card_photo(
     latest = await db.users.find_one({"_id": user["_id"]}, {"id_card_photo_consent": 1, "status": 1})
     if not latest or latest.get("status") != "Active" or latest.get("id_card_photo_consent") is not True:
         try:
-            await asyncio.to_thread(delete_attachment, stored)
+            await delete_id_card_photo(stored)
         except Exception:
             pass
         raise HTTPException(409, "Photo consent changed during upload. The new photo was not activated.")
@@ -159,7 +155,7 @@ async def upload_own_id_card_photo(
         {"id_card_photo_consent": 1, "status": 1},
     )
     if not final_consent or final_consent.get("status") != "Active" or final_consent.get("id_card_photo_consent") is not True:
-        await db.card_photos.delete_one({"owner_id": user["_id"], "storage_key": stored.get("storage_key"), "stored_name": stored.get("stored_name")})
+        await db.card_photos.delete_one({"owner_id": user["_id"], "gridfs_id": stored.get("gridfs_id")})
         try:
             await asyncio.to_thread(delete_attachment, stored)
         except Exception:
@@ -168,7 +164,7 @@ async def upload_own_id_card_photo(
 
     if previous:
         try:
-            await asyncio.to_thread(delete_attachment, previous)
+            await delete_id_card_photo(previous)
         except Exception:
             pass
     await audit(user, "id_card_photo_uploaded", str(user["_id"]), {"content_type": "image/jpeg", "bytes": len(content)}, request)
@@ -187,7 +183,7 @@ async def get_own_id_card_photo(request: Request, user: dict = Depends(get_curre
         raise HTTPException(404, "No ID-card photo has been uploaded.")
     _require_durable_private_storage()
     try:
-        content = await __import__("asyncio").to_thread(read_attachment, record)
+        content = await read_id_card_photo(record)
     except Exception as exc:
         raise HTTPException(502, "Could not retrieve your private ID-card photo.") from exc
     return Response(content=content, media_type="image/jpeg", headers={
