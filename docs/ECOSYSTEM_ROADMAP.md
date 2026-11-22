@@ -33,6 +33,11 @@ The current repository already includes:
 | Analytics | Existing dashboard/operational data | Aggregated event, learning, project and security analytics |
 | Mobile | Responsive web foundation | Capacitor Android/iOS shell, camera, push, deep links and offline-safe views |
 
+## Phase delivery status
+
+- **Phase 0:** merged to `main` through PR #25.
+- **Phase 1 (implemented in PR #39):** explicit member-owned ID-card photo consent, separate photo upload, image normalization, private S3-compatible storage, authenticated staff-only photo retrieval, withdrawal/deletion, and a member settings UI. Durable storage configuration is required before upload.
+
 ## Phased delivery
 
 ### Phase 0 — Baseline and safety
@@ -47,7 +52,7 @@ Exit gate: existing registration, login, email verification, management MFA, mem
 ### Phase 1 — Identity and storage
 1. Review the merged encrypted profile-image implementation and its deployment configuration.
 2. Keep the private owner-only image endpoint private.
-3. Add a separate explicit consent field and workflow for an image displayed on a scannable ID card.
+3. Record a separate, revocable explicit consent preference (implemented in Phase 1A); build the distinct card-photo upload/review workflow only after private storage and file-scanning controls are ready.
 4. Improve card front/back layout, print/PDF output and verification details.
 5. Validate private object storage, file signatures, size limits, malware scanning, backup and restore.
 

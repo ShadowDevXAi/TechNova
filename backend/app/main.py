@@ -24,6 +24,8 @@ from .routes.cards import router as cards_router
 from .routes.hub import router as hub_router
 from .routes.push import router as push_router
 from .routes.profile_image import router as profile_image_router
+from .routes.card_photo import router as card_photo_router
+from .routes.card_photo_consent import router as card_photo_consent_router
 
 logger = logging.getLogger("technova.api")
 
@@ -67,6 +69,8 @@ api_app.include_router(cards_router)
 api_app.include_router(hub_router)
 api_app.include_router(push_router)
 api_app.include_router(profile_image_router)
+api_app.include_router(card_photo_router)
+api_app.include_router(card_photo_consent_router)
 
 # Keep local development and the deployed Render frontend explicitly allowed.
 # Add custom frontend domains through FRONTEND_ORIGINS; never use a wildcard with credentials.
