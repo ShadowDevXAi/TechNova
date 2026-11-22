@@ -34,6 +34,7 @@ from app.routes.card_photo_consent import _require_active_member, _require_membe
 from app.routes.card_photo import _normalized_jpeg, _require_member as _require_card_photo_member
 from app.core import member_rank, task_credit_value
 from app.image_scan import MalwareDetected, ScannerUnavailable, parse_clamd_response, scan_image_bytes
+from app import id_card_photo_storage
 
 
 class EcosystemContractTests(unittest.TestCase):
@@ -106,6 +107,14 @@ class EcosystemContractTests(unittest.TestCase):
         self.assertEqual(result.format, "JPEG")
         self.assertEqual(result.size, (128, 128))
         self.assertFalse(result.getexif())
+
+    def test_id_card_photo_storage_uses_mongodb_gridfs(self):
+        self.assertEqual(id_card_photo_storage.BUCKET_NAME, "id_card_photos")
+        source = (BACKEND_ROOT / "app" / "routes" / "card_photo.py").read_text()
+        self.assertIn("store_id_card_photo", source)
+        self.assertIn("read_id_card_photo", source)
+        self.assertNotIn("store_attachment", source)
+        self.assertNotIn("S3-compatible", source)
 
     def test_clamav_clean_response_is_accepted(self):
         self.assertEqual(parse_clamd_response(b"stream: OK\0"), "clean")
