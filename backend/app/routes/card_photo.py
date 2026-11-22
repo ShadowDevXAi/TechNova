@@ -1,11 +1,10 @@
-"""Consent-gated ID-card photos stored in private S3-compatible object storage.
+"""Consent-gated ID-card photos stored in MongoDB GridFS.
 
 Uploads are decoded and re-encoded as JPEG, then scanned by ClamAV before storage.
 Photos are never served from a public object URL.
 """
 import asyncio
 import io
-import secrets
 import warnings
 
 from bson import ObjectId
@@ -85,7 +84,7 @@ async def _remove_photo_for_owner(owner_id) -> None:
     try:
         await delete_id_card_photo(old)
     except Exception:
-        # Orphaned private object is inaccessible and can be cleaned up by storage lifecycle.
+        # MongoDB GridFS cleanup can be retried by a maintenance task.
         pass
 
 
@@ -118,7 +117,7 @@ async def upload_own_id_card_photo(
         raise HTTPException(422, "The uploaded image failed the malware scan.") from exc
     except ScannerUnavailable as exc:
         raise HTTPException(503, "ID-card photo scanning is unavailable. Uploads are disabled until ClamAV is healthy.") from exc
-        try:
+    try:
         stored = await store_id_card_photo(user["_id"], content)
     except Exception as exc:
         raise HTTPException(502, "Private ID-card photo storage failed. No photo was published.") from exc
@@ -157,7 +156,7 @@ async def upload_own_id_card_photo(
     if not final_consent or final_consent.get("status") != "Active" or final_consent.get("id_card_photo_consent") is not True:
         await db.card_photos.delete_one({"owner_id": user["_id"], "gridfs_id": stored.get("gridfs_id")})
         try:
-            await asyncio.to_thread(delete_attachment, stored)
+            await delete_id_card_photo(stored)
         except Exception:
             pass
         raise HTTPException(409, "Photo consent changed during upload. The photo was not activated.")
@@ -227,7 +226,7 @@ async def get_verified_card_photo(
         raise HTTPException(404, "No ID-card photo has been uploaded.")
     _require_durable_private_storage()
     try:
-        content = await __import__("asyncio").to_thread(read_attachment, record)
+        content = await read_id_card_photo(record)
     except Exception as exc:
         raise HTTPException(502, "Could not retrieve the private ID-card photo.") from exc
     await audit(actor, "id_card_photo_viewed", str(member["_id"]), {"member_id": member.get("member_id")}, request)
