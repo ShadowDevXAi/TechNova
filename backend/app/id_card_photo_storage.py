@@ -34,7 +34,8 @@ async def read_id_card_photo(record: dict) -> bytes:
     if not isinstance(file_id, ObjectId):
         raise FileNotFoundError("MongoDB GridFS photo reference is missing")
     try:
-        return await _bucket().open_download_stream(file_id).read()
+        stream = await _bucket().open_download_stream(file_id)
+        return await stream.read()
     except NoFile as exc:
         raise FileNotFoundError("MongoDB GridFS photo does not exist") from exc
 
