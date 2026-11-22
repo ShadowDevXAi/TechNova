@@ -7,15 +7,15 @@ from __future__ import annotations
 
 from bson import ObjectId
 from gridfs.errors import NoFile
-from gridfs import GridFSBucket
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from .db import db
 
 BUCKET_NAME = "id_card_photos"
 
 
-def _bucket() -> GridFSBucket:
-    return GridFSBucket(db, bucket_name=BUCKET_NAME)
+def _bucket() -> AsyncIOMotorGridFSBucket:
+    return AsyncIOMotorGridFSBucket(db, bucket_name=BUCKET_NAME)
 
 
 async def store_id_card_photo(owner_id: ObjectId, data: bytes) -> dict:
