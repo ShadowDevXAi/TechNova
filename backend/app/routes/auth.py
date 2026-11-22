@@ -137,6 +137,15 @@ async def login(data: LoginIn, request: Request):
     if not user or not verify_password(data.password,user["password_hash"]):
         await audit(None,"login_failed","",{"email":str(data.email).lower()},request)
         raise HTTPException(401,"Incorrect email or password")
+    configured_owner_email = str(settings.owner_email or settings.bootstrap_founder_email).strip().lower()
+    is_configured_owner = bool(configured_owner_email and user.get("email", "").strip().lower() == configured_owner_email)
+    # Do not activate pending, unverified or suspended accounts. Founder promotion is DB-backed.
+    if is_configured_owner and user.get("status") == "Active" and not user.get("suspended_at"):
+        if user.get("email_verification_required") and not user.get("email_verified_at"):
+            raise HTTPException(403, "Verify the owner email address before using the Founder account.")
+        if user.get("role") != "Founder":
+            await db.users.update_one({"_id": user["_id"]}, {"$set": {"role": "Founder", "owner_role": "owner", "is_owner": True}})
+            user = await db.users.find_one({"_id": user["_id"]})
     if user["status"] == "Suspended" and user.get("suspension_temporary") and user.get("suspension_until") and user["suspension_until"] <= utcnow():
         await db.users.update_one({"_id": user["_id"]}, {"$set": {"status": "Active", "suspension_until": None, "suspension_temporary": False, "suspension_expired_at": utcnow()}})
         user = await db.users.find_one({"_id": user["_id"]})
