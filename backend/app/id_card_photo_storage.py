@@ -6,6 +6,7 @@ The card_photos collection stores only owner metadata and the GridFS file ID.
 from __future__ import annotations
 
 from bson import ObjectId
+from io import BytesIO
 from gridfs.errors import NoFile
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
@@ -22,7 +23,7 @@ async def store_id_card_photo(owner_id: ObjectId, data: bytes) -> dict:
     bucket = _bucket()
     file_id = await bucket.upload_from_stream(
         f"{owner_id}.jpg",
-        data,
+        BytesIO(data),
         metadata={"owner_id": owner_id, "purpose": "technova_id_card_photo", "content_type": "image/jpeg"},
     )
     return {"storage_backend": "mongodb_gridfs", "gridfs_id": file_id}
